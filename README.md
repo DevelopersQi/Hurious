@@ -46,3 +46,6 @@ when something goes wrong.
 ## License
 
 License under the [GPL v3.0](https://github.com/LorenEteval/Furious/blob/main/LICENSE).
+
+## 记录
+最新版本打包
