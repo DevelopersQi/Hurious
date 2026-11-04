@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install macOS dependencies
         run: |
-          brew install create-dmg
+          brew install create-dmg cmake
         if: runner.os == 'macOS'
       # Remove problematic brew libs if Intel Mac
       # Credits: https://github.com/RimSort/RimSort
@@ -121,7 +121,9 @@ jobs:
             qt6-base-dev \
             patchelf \
             ccache \
-            zlib1g-dev
+            zlib1g-dev \
+            build-essential \
+            cmake
           sudo apt install -y flatpak flatpak-builder elfutils patchelf
           sudo apt install -y rpm
           flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -200,6 +202,13 @@ jobs:
           architecture: ${{ matrix.python-architecture }}
           check-latest: true
         if: matrix.id != 'windows7-amd64'
+      - name: Set up Go for Linux and macOS native bindings
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.6"
+          check-latest: true
+          cache: false
+        if: runner.os == 'Linux' || runner.os == 'macOS'
       - name: Verify runner and Python architecture
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.python-architecture }}
@@ -477,19 +486,23 @@ jobs:
       - name: Install supported binding wheels
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            binary_policy="--only-binary=Xray-core,hysteria,hysteria2,tun2socks"
+            python -m pip install \
+              --only-binary=Xray-core,hysteria,hysteria2,tun2socks \
+              --no-cache-dir \
+              --no-deps \
+              Xray-core \
+              hysteria \
+              hysteria2 \
+              tun2socks
           else
-            binary_policy=""
+            python -m pip install \
+              --no-cache-dir \
+              --no-deps \
+              "Xray-core @ git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282" \
+              hysteria \
+              "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@f478b08d66f7c0c03b15285a55cc394623727960" \
+              "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e"
           fi
-
-          python -m pip install \
-            ${binary_policy} \
-            --no-cache-dir \
-            --no-deps \
-            Xray-core \
-            hysteria \
-            hysteria2 \
-            tun2socks
         if: matrix.id != 'windows7-amd64' && matrix.id != 'windows10-amd64'
       - name: Verify Windows native and UI imports
         run: |
