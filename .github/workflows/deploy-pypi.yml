@@ -38,19 +38,13 @@ jobs:
         with:
           python-version: "3.12"
           check-latest: true
-      - name: Set up Go for native Python bindings
-        uses: actions/setup-go@v7
-        with:
-          go-version: "1.26.6"
-          check-latest: true
-          cache: false
       - name: Download Python dependencies & latest asset files
         run: |
           python -c "import sys; print(sys.version)"
           python -m pip install --upgrade pip
-          python -m pip install setuptools wheel
-          python -m pip install -r requirements.txt
-          python -m pip install requests
+          python -m pip install setuptools wheel requests
+          # Building package metadata does not require installing runtime dependencies.
+          # Deploy.py --download only needs requests.
           python Deploy.py --download
       - name: Build a binary wheel and a source tarball
         run: |
