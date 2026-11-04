@@ -1,0 +1,141 @@
+name: "Setup Python for Windows 7"
+description: "Install an upstream Python build that supports Windows 7"
+
+inputs:
+  python-version:
+    description: "Python version, such as 3.11 or 3.11.13"
+    required: true
+  architecture:
+    description: "Python architecture: x86, x64, or arm64"
+    required: false
+    default: x64
+  freethreaded:
+    description: "Use the free-threaded Python build"
+    required: false
+    default: "false"
+  check-latest:
+    description: "Compatibility input; minor versions resolve to the latest patch"
+    required: false
+  github-repo:
+    description: "Repository containing Windows 7-compatible Python releases"
+    required: false
+    default: adang1345/PythonVista
+  github-repo-branch:
+    description: "Source repository branch (reserved for compatibility)"
+    required: false
+    default: master
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve input Python version
+      shell: pwsh
+      run: |
+        $inputVersion = "\${{ inputs.python-version }}"
+        Write-Host "Input version: $inputVersion"
+
+        if ($inputVersion -match "^\d+\.\d+$") {
+          $repo = "\${{ inputs.github-repo }}"
+          $headers = @{
+            "User-Agent" = "Hurious-Windows7-Build"
+            "Accept" = "application/vnd.github+json"
+          }
+          $page = 1
+          $versions = @()
+
+          do {
+            $url = "https://api.github.com/repos/$repo/tags?per_page=100&page=$page"
+            $tags = Invoke-RestMethod -Uri $url -Headers $headers
+            foreach ($tag in $tags) {
+              $version = $tag.name -replace "^v", ""
+              if ($version -match "^$([regex]::Escape($inputVersion))\.\d+$") {
+                $versions += $version
+              }
+            }
+            $page++
+          } while ($tags.Count -eq 100)
+
+          if (-not $versions) {
+            throw "No matching tags found for Python $inputVersion in $repo"
+          }
+
+          $latest = $versions | Sort-Object { [version]$_ } | Select-Object -Last 1
+          Write-Host "Resolved Python version: $latest"
+          "RESOLVED_PYTHON_VERSION=$latest" >> $env:GITHUB_ENV
+        }
+        else {
+          "RESOLVED_PYTHON_VERSION=$inputVersion" >> $env:GITHUB_ENV
+        }
+
+    - name: Extract short version
+      shell: bash
+      run: |
+        short="$(echo "$RESOLVED_PYTHON_VERSION" | cut -d. -f1-2 | tr -d .)"
+        echo "RESOLVED_PYTHON_SHORT_VERSION=$short" >> "$GITHUB_ENV"
+
+    - name: Remove runner Python from PATH
+      shell: pwsh
+      run: |
+        $pythonCommand = Get-Command python -ErrorAction Stop
+        $pythonHome = Split-Path $pythonCommand.Source
+        Write-Host "Removing runner Python directory from PATH: $pythonHome"
+        $filteredPath = ($env:Path -split ';' | Where-Object { $_ -notlike "$pythonHome*" }) -join ';'
+        "PATH=$filteredPath" >> $env:GITHUB_ENV
+
+    - name: Install Windows 7-compatible Python
+      shell: cmd
+      run: |
+        set "input_arch=\${{ inputs.architecture }}"
+        set "python_arch=unknown"
+
+        if "%input_arch%"=="x64" set "python_arch=amd64"
+        if "%input_arch%"=="amd64" set "python_arch=amd64"
+        if "%input_arch%"=="x86" set "python_arch=x86"
+        if "%input_arch%"=="arm64" set "python_arch=arm64"
+
+        if "%python_arch%"=="unknown" (
+          echo Unsupported Python architecture: %input_arch%
+          exit /b 1
+        )
+
+        if "%python_arch%"=="x86" (
+          set "python_installer=python-%RESOLVED_PYTHON_VERSION%-full.exe"
+          set "PYTHON_WIN7_HOME=%LOCALAPPDATA%\Programs\Python\Python%RESOLVED_PYTHON_SHORT_VERSION%-32"
+        ) else (
+          set "python_installer=python-%RESOLVED_PYTHON_VERSION%-%python_arch%-full.exe"
+          set "PYTHON_WIN7_HOME=%LOCALAPPDATA%\Programs\Python\Python%RESOLVED_PYTHON_SHORT_VERSION%"
+        )
+
+        curl --fail --location --retry 3 --output "%python_installer%" "https://github.com/\${{ inputs.github-repo }}/releases/download/v%RESOLVED_PYTHON_VERSION%/%python_installer%"
+        if errorlevel 1 exit /b 1
+
+        start /wait "" "%python_installer%" /quiet PrependPath=1 Include_launcher=1 Include_freethreaded=1
+        if errorlevel 1 exit /b 1
+
+        if not exist "%PYTHON_WIN7_HOME%\python.exe" (
+          echo Python installer did not create expected path: %PYTHON_WIN7_HOME%
+          exit /b 1
+        )
+        echo PYTHON_WIN7_HOME=%PYTHON_WIN7_HOME%>>%GITHUB_ENV%
+
+    - name: Select free-threaded Python when requested
+      shell: pwsh
+      run: |
+        $freethreaded = "\${{ inputs.freethreaded }}"
+        $shortVersion = $env:RESOLVED_PYTHON_SHORT_VERSION
+        $pythonHome = $env:PYTHON_WIN7_HOME
+        if ($freethreaded -eq "true" -and [int]$shortVersion -ge 313) {
+          $versionString = "$($shortVersion.Substring(0, 1)).$($shortVersion.Substring(1))"
+          $source = Join-Path $pythonHome "python\${versionString}t.exe"
+          $destination = Join-Path $pythonHome "python.exe"
+          if (-not (Test-Path $source)) {
+            throw "Free-threaded Python executable not found: $source"
+          }
+          Copy-Item -Force $source $destination
+        }
+
+    - name: Add Python to PATH
+      shell: bash
+      run: |
+        echo "$PYTHON_WIN7_HOME" >> "$GITHUB_PATH"
+        echo "$PYTHON_WIN7_HOME/Scripts" >> "$GITHUB_PATH"
