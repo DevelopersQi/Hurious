@@ -41,7 +41,7 @@ jobs:
         include:
           - id: linux-amd64
             os: ubuntu-22.04
-            python-version: "3.13"
+            python-version: "3.11"
             python-architecture: x64
             pyside6-version: "6.8.3"
             windows-compatibility: ""
@@ -55,35 +55,35 @@ jobs:
             windows-architecture: ""
           - id: windows7-amd64
             os: windows-2025
-            python-version: "3.13"
+            python-version: "3.11"
             python-architecture: x64
             pyside6-version: "6.8.3"
             windows-compatibility: windows7
             windows-architecture: amd64
           - id: windows10-amd64
             os: windows-2025
-            python-version: "3.13"
+            python-version: "3.11"
             python-architecture: x64
             pyside6-version: "6.8.3"
             windows-compatibility: windows10
             windows-architecture: amd64
           - id: windows10-arm64
             os: windows-11-vs2026-arm
-            python-version: "3.13"
+            python-version: "3.11"
             python-architecture: arm64
             pyside6-version: "6.11.2"
             windows-compatibility: windows10
             windows-architecture: arm64
           - id: macos-intel
             os: macos-15-intel
-            python-version: "3.13"
+            python-version: "3.11"
             python-architecture: x64
             pyside6-version: "6.8.3"
             windows-compatibility: ""
             windows-architecture: ""
           - id: macos-arm64
             os: macos-14
-            python-version: "3.13"
+            python-version: "3.11"
             python-architecture: arm64
             pyside6-version: "6.8.3"
             windows-compatibility: ""
