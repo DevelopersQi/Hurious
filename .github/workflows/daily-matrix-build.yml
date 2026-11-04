@@ -446,6 +446,27 @@ jobs:
           )
 
           foreach ($binding in $bindings) {
+            if ($binding.Name -eq 'hysteria') {
+              # Hysteria 1 embeds quic-go v0.34, which intentionally rejects Go 1.21+.
+              # Build this legacy binding with its declared Go 1.20 toolchain, then
+              # restore the patched/current toolchain for the other native bindings.
+              $currentGoRoot = $env:GOROOT
+              $currentPath = $env:PATH
+              $legacyGoArchive = Join-Path $env:RUNNER_TEMP 'go1.20.14.windows-amd64.zip'
+              $legacyGoRoot = Join-Path $env:RUNNER_TEMP 'go1.20.14'
+
+              Invoke-WebRequest -Uri 'https://go.dev/dl/go1.20.14.windows-amd64.zip' -OutFile $legacyGoArchive
+              if (Test-Path -LiteralPath $legacyGoRoot) {
+                Remove-Item -LiteralPath $legacyGoRoot -Recurse -Force
+              }
+              New-Item -ItemType Directory -Path $legacyGoRoot | Out-Null
+              7z x $legacyGoArchive "-o$legacyGoRoot" -y | Out-Null
+
+              $env:GOROOT = Join-Path $legacyGoRoot 'go'
+              $env:PATH = "$(Join-Path $env:GOROOT 'bin');$currentPath"
+              go version
+            }
+
             Write-Output "Building $($binding.Name) from $($binding.Url)"
             python -m pip wheel `
               --no-cache-dir `
@@ -454,6 +475,13 @@ jobs:
               --no-binary=:all: `
               --wheel-dir $wheelDirectory `
               $binding.Url
+
+            if ($binding.Name -eq 'hysteria') {
+              $env:GOROOT = $currentGoRoot
+              $env:PATH = $currentPath
+              Write-Output 'Restored the Windows-compatible Go toolchain for the remaining bindings'
+              go version
+            }
           }
 
           $wheels = @(
