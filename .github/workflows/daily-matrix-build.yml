@@ -67,13 +67,6 @@ jobs:
             pyside6-version: "6.8.3"
             windows-compatibility: windows10
             windows-architecture: amd64
-          - id: windows10-arm64
-            os: windows-11-vs2026-arm
-            python-version: "3.11"
-            python-architecture: arm64
-            pyside6-version: "6.11.2"
-            windows-compatibility: windows10
-            windows-architecture: arm64
           - id: macos-intel
             os: macos-15-intel
             python-version: "3.11"
