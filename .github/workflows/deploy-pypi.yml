@@ -29,14 +29,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install libegl1
+      - name: Install native build prerequisites
         run: |
-          sudo apt update && sudo apt install -y libegl1
+          sudo apt update
+          sudo apt install -y libegl1 build-essential
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           check-latest: true
+      - name: Set up Go for native Python bindings
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.6"
+          check-latest: true
+          cache: false
       - name: Download Python dependencies & latest asset files
         run: |
           python -c "import sys; print(sys.version)"
