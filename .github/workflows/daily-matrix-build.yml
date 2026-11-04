@@ -18,6 +18,9 @@
 name: Daily matrix build
 
 on:
+  push:
+    branches:
+      - integrate/native-bindings-forks
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
     - cron: '17 2 * * *'
