@@ -33,31 +33,31 @@ runs:
         test -n "$python_path"
         python_home="$(dirname "$python_path")"
 
-        pyside_arch="\${{ inputs.architecture }}"
+        pyside_arch="${{ inputs.architecture }}"
         case "$pyside_arch" in
           x86|x64) ;;
           *) echo "Unsupported PySide6 architecture: $pyside_arch" >&2; exit 1 ;;
         esac
 
-        pyside_name="qt6_\${pyside_arch}_to_run_on_windows7"
-        pyside_file="\${pyside_name}.7z"
-        release_tag="\${{ inputs.release-tag }}"
+        pyside_name="qt6_${pyside_arch}_to_run_on_windows7"
+        pyside_file="${pyside_name}.7z"
+        release_tag="${{ inputs.release-tag }}"
         if [ -z "$release_tag" ]; then
-          release_tag="v\${{ inputs.pyside6-version }}"
+          release_tag="v${{ inputs.pyside6-version }}"
         fi
 
         python -c "import sys; print(sys.version)"
         python -m pip install --upgrade pip
         python -m pip install setuptools wheel
         python -m pip install --only-binary=:all: \
-          "PySide6-Essentials==\${{ inputs.pyside6-version }}" \
-          "PySide6-Addons==\${{ inputs.pyside6-version }}"
+          "PySide6-Essentials==${{ inputs.pyside6-version }}" \
+          "PySide6-Addons==${{ inputs.pyside6-version }}"
 
-        download_url="https://github.com/\${{ inputs.github-repo }}/releases/download/\${release_tag}/\${pyside_file}"
+        download_url="https://github.com/${{ inputs.github-repo }}/releases/download/${release_tag}/${pyside_file}"
         curl --fail --location --retry 3 --output "$pyside_file" "$download_url"
         test -s "$pyside_file"
 
-        7z x "$pyside_file" "-o\${pyside_name}" -y
+        7z x "$pyside_file" "-o${pyside_name}" -y
         test -d "$pyside_name"
         mkdir -p "$pyside_name/plugins"
         for plugin_dir in imageformats platforms styles; do
@@ -66,11 +66,11 @@ runs:
           fi
         done
 
-        relative_lib_path="\${{ inputs.relative-lib-path }}"
+        relative_lib_path="${{ inputs.relative-lib-path }}"
         if [ -z "$relative_lib_path" ]; then
-          pyside_lib_destination="\${python_home}/PySide6"
+          pyside_lib_destination="${python_home}/PySide6"
         else
-          pyside_lib_destination="\${python_home}/\${relative_lib_path}/PySide6"
+          pyside_lib_destination="${python_home}/${relative_lib_path}/PySide6"
         fi
 
         test -d "$pyside_lib_destination"
