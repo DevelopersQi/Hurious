@@ -414,20 +414,33 @@ jobs:
           $wheelDirectory = Join-Path $temporaryDirectory 'wheels'
           New-Item -ItemType Directory -Force -Path $wheelDirectory | Out-Null
 
+          # Build the maintained fork revisions instead of the stale PyPI
+          # source snapshots. Pin immutable commits so daily builds are reproducible.
+          # Hysteria 1 remains a separate PyPI dependency and is installed below.
           $bindings = @(
-            'Xray-core'
-            'hysteria2'
-            'tun2socks'
+            @{
+              Name = 'Xray-core'
+              Url = 'git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282'
+            }
+            @{
+              Name = 'hysteria2'
+              Url = 'git+https://github.com/DevelopersQi/hysteria2-python.git@14b6e27f7670c115961cc4a468463ba04240fc76'
+            }
+            @{
+              Name = 'tun2socks'
+              Url = 'git+https://github.com/DevelopersQi/tun2socks-python.git@50e7ddd81e5317ac1f6f5a2f96d694f54508fe7c'
+            }
           )
 
           foreach ($binding in $bindings) {
+            Write-Output "Building $($binding.Name) from $($binding.Url)"
             python -m pip wheel `
               --no-cache-dir `
               --no-build-isolation `
               --no-deps `
               --no-binary=:all: `
               --wheel-dir $wheelDirectory `
-              $binding
+              $binding.Url
           }
 
           $wheels = @(
