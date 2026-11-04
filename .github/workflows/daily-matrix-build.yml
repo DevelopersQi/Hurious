@@ -424,11 +424,11 @@ jobs:
             }
             @{
               Name = 'hysteria2'
-              Url = 'git+https://github.com/DevelopersQi/hysteria2-python.git@14b6e27f7670c115961cc4a468463ba04240fc76'
+              Url = 'git+https://github.com/DevelopersQi/hysteria2-python.git@f478b08d66f7c0c03b15285a55cc394623727960'
             }
             @{
               Name = 'tun2socks'
-              Url = 'git+https://github.com/DevelopersQi/tun2socks-python.git@50e7ddd81e5317ac1f6f5a2f96d694f54508fe7c'
+              Url = 'git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e'
             }
           )
 
