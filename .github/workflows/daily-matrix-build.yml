@@ -425,11 +425,15 @@ jobs:
 
           # Build the maintained fork revisions instead of the stale PyPI
           # source snapshots. Pin immutable commits so daily builds are reproducible.
-          # Hysteria 1 remains a separate PyPI dependency and is installed below.
+          # Build Hysteria 1 from its recovered, immutable source revision.
           $bindings = @(
             @{
               Name = 'Xray-core'
               Url = 'git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282'
+            }
+            @{
+              Name = 'hysteria'
+              Url = 'git+https://github.com/qilegeguai-rgb/hysteria-python.git@99d4f04f4a475532e70c4f6a353bd6b47e83f86a'
             }
             @{
               Name = 'hysteria2'
@@ -464,8 +468,8 @@ jobs:
 
           $unexpectedWheels = @($wheels | Where-Object Name -NotLike '*win_amd64.whl')
 
-          if ($wheels.Count -ne 3 -or $unexpectedWheels.Count -ne 0) {
-            throw 'Expected exactly three locally built win_amd64 wheels'
+          if ($wheels.Count -ne 4 -or $unexpectedWheels.Count -ne 0) {
+            throw 'Expected exactly four locally built win_amd64 wheels'
           }
 
           $wheelPaths = @($wheels.FullName)
@@ -475,14 +479,6 @@ jobs:
             --no-deps `
             $wheelPaths
         if: matrix.id == 'windows7-amd64' || matrix.id == 'windows10-amd64'
-      - name: Install pre-built Hysteria1 wheel
-        run: |
-          python -m pip install \
-            --only-binary=hysteria \
-            --no-cache-dir \
-            --no-deps \
-            hysteria
-        if: matrix.id == 'windows7-amd64' || matrix.id == 'windows10-amd64'
       - name: Install supported binding wheels
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -491,7 +487,7 @@ jobs:
               --no-cache-dir \
               --no-deps \
               Xray-core \
-              hysteria \
+              "hysteria @ git+https://github.com/qilegeguai-rgb/hysteria-python.git@99d4f04f4a475532e70c4f6a353bd6b47e83f86a" \
               hysteria2 \
               tun2socks
           else
