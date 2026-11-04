@@ -190,7 +190,7 @@ jobs:
           wix extension list -g
         if: runner.os == 'Windows'
       - name: Set up Python for Windows7
-        uses: ./.github/actions/setup-python-win7
+        uses: DevelopersQi/LorenEteval_setup-python-win7@18aab37082fbf522fc1bf4df7631aafd3186c661
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
@@ -247,7 +247,7 @@ jobs:
               )
           PY
       - name: Set up PySide6 for Windows7
-        uses: ./.github/actions/setup-pyside6-win7
+        uses: DevelopersQi/LorenEteval_setup-pyside6-win7@aa0989d281e3dab9c8e08f112401ec7e92e3a164
         with:
           pyside6-version: ${{ matrix.pyside6-version }}
           architecture: x64
