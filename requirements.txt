@@ -8,7 +8,7 @@ mss
 zxing-cpp
 pillow
 Xray-core @ git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282
-hysteria @ git+https://github.com/qilegeguai-rgb/hysteria-python.git@99d4f04f4a475532e70c4f6a353bd6b47e83f86a
+hysteria @ git+https://github.com/DevelopersQi/hysteria-python.git@99d4f04f4a475532e70c4f6a353bd6b47e83f86a
 hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@f478b08d66f7c0c03b15285a55cc394623727960
 tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e
 sysproxy; sys_platform == "win32"
