@@ -89,6 +89,7 @@ jobs:
             windows-compatibility: ""
             windows-architecture: ""
     env:
+      PIP_INDEX_URL: https://pypi.org/simple
       GO_WIN7_VERSION: "1.26.7"
       WIX_VERSION: "6.0.2"
       WIX_INSTALLER_SHA256: "A8A5CC7443353CEF3AB900C60CD7A3A5EE601746319D104AC7B12AD0CED2345C"
@@ -272,6 +273,7 @@ jobs:
               'hysteria',
               'hysteria2',
               'tun2socks',
+              'sysproxy',
           }
 
           requirements = []
@@ -509,6 +511,13 @@ jobs:
               "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e"
           fi
         if: matrix.id != 'windows7-amd64' && matrix.id != 'windows10-amd64'
+      - name: Install Windows system proxy binding
+        run: |
+          python -m pip install \
+            --only-binary=sysproxy \
+            --no-cache-dir \
+            sysproxy
+        if: runner.os == 'Windows'
       - name: Verify Windows native and UI imports
         run: |
           python - <<'PY'
