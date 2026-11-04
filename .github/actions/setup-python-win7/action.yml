@@ -31,11 +31,11 @@ runs:
     - name: Resolve input Python version
       shell: pwsh
       run: |
-        $inputVersion = "\${{ inputs.python-version }}"
+        $inputVersion = "${{ inputs.python-version }}"
         Write-Host "Input version: $inputVersion"
 
         if ($inputVersion -match "^\d+\.\d+$") {
-          $repo = "\${{ inputs.github-repo }}"
+          $repo = "${{ inputs.github-repo }}"
           $headers = @{
             "User-Agent" = "Hurious-Windows7-Build"
             "Accept" = "application/vnd.github+json"
@@ -85,7 +85,7 @@ runs:
     - name: Install Windows 7-compatible Python
       shell: cmd
       run: |
-        set "input_arch=\${{ inputs.architecture }}"
+        set "input_arch=${{ inputs.architecture }}"
         set "python_arch=unknown"
 
         if "%input_arch%"=="x64" set "python_arch=amd64"
@@ -106,7 +106,7 @@ runs:
           set "PYTHON_WIN7_HOME=%LOCALAPPDATA%\Programs\Python\Python%RESOLVED_PYTHON_SHORT_VERSION%"
         )
 
-        curl --fail --location --retry 3 --output "%python_installer%" "https://github.com/\${{ inputs.github-repo }}/releases/download/v%RESOLVED_PYTHON_VERSION%/%python_installer%"
+        curl --fail --location --retry 3 --output "%python_installer%" "https://github.com/${{ inputs.github-repo }}/releases/download/v%RESOLVED_PYTHON_VERSION%/%python_installer%"
         if errorlevel 1 exit /b 1
 
         start /wait "" "%python_installer%" /quiet PrependPath=1 Include_launcher=1 Include_freethreaded=1
@@ -121,12 +121,12 @@ runs:
     - name: Select free-threaded Python when requested
       shell: pwsh
       run: |
-        $freethreaded = "\${{ inputs.freethreaded }}"
+        $freethreaded = "${{ inputs.freethreaded }}"
         $shortVersion = $env:RESOLVED_PYTHON_SHORT_VERSION
         $pythonHome = $env:PYTHON_WIN7_HOME
         if ($freethreaded -eq "true" -and [int]$shortVersion -ge 313) {
           $versionString = "$($shortVersion.Substring(0, 1)).$($shortVersion.Substring(1))"
-          $source = Join-Path $pythonHome "python\${versionString}t.exe"
+          $source = Join-Path $pythonHome "python${versionString}t.exe"
           $destination = Join-Path $pythonHome "python.exe"
           if (-not (Test-Path $source)) {
             throw "Free-threaded Python executable not found: $source"
