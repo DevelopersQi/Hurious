@@ -573,7 +573,8 @@ jobs:
       - name: Verify Linux application imports without WebEngine
         if: runner.os == 'Linux'
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_DEBUG_PLUGINS: "1"
+          QT_LOGGING_RULES: "qt.core.plugin.*=true;qt.qpa.*=true;qt.webengine.*=true"
         run: |
           python - <<'PY'
           import importlib
@@ -928,8 +929,11 @@ jobs:
 
           Write-Host "Starting packaged application: $application"
           Write-Host "Working directory: $PWD"
-          Write-Host "QT_QPA_PLATFORM=$env:QT_QPA_PLATFORM (unset means Qt default Windows platform)"
-          $process = Start-Process -FilePath $application -PassThru
+          Write-Host "QT_QPA_PLATFORM=$env:QT_QPA_PLATFORM (empty means Qt default Windows platform)"
+          Write-Host "QT_DEBUG_PLUGINS=$env:QT_DEBUG_PLUGINS"
+          $stdoutLog = Join-Path $diagnosticDirectory 'application-stdout.txt'
+          $stderrLog = Join-Path $diagnosticDirectory 'application-stderr.txt'
+          $process = Start-Process -FilePath $application -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
           $applicationChildId = $null
 
           try {
