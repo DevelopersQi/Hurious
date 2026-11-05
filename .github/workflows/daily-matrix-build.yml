@@ -607,6 +607,8 @@ jobs:
         if: runner.os == 'Windows'
       - name: Verify Linux application imports without WebEngine
         if: runner.os == 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
           python - <<'PY'
           import importlib
@@ -657,7 +659,25 @@ jobs:
           PY
       - name: Download latest asset files
         run: |
-          python Deploy.py --download
+          # GitHub-hosted geo assets can occasionally return HTTP 5xx/504.
+          # Retry the complete download; do not continue with an incomplete package.
+          for attempt in 1 2 3; do
+            echo "Asset download attempt ${attempt}/3"
+
+            if python Deploy.py --download; then
+              echo "All required deployment assets downloaded successfully"
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 15))
+              echo "Asset download failed; retrying in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+
+          echo "Required deployment assets could not be downloaded after 3 attempts"
+          exit 1
       - name: Run deploy script
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
