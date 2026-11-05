@@ -97,6 +97,7 @@ if PLATFORM == 'Windows':
         f'--disable-console '
         f'--assume-yes-for-downloads '
         f'{NUITKA_PACKAGE_DATA_OPTIONS}'
+        f'--include-module=win32session '
         f'--nofollow-import-to=numpy '
         f'{NUITKA_BINARY_VERSION_OPTION}'
         f'--windows-icon-from-ico=\"Icons/png/rocket-takeoff-window.png\" '
