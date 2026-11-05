@@ -570,12 +570,20 @@ jobs:
               "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e"
           fi
         if: matrix.id != 'windows7-amd64' && matrix.id != 'windows10-amd64'
-      - name: Install Windows system proxy binding
+      - name: Build and install Windows system proxy binding
         run: |
-          python -m pip install \
-            --only-binary=sysproxy \
+          python -m pip install --no-cache-dir "pybind11>=2.10,<3"
+          python -m pip wheel \
+            --no-build-isolation \
+            --no-deps \
             --no-cache-dir \
-            sysproxy
+            --wheel-dir "$RUNNER_TEMP/sysproxy-wheels" \
+            "git+https://github.com/DevelopersQi/sysproxy.git@89d7e3b28cd68e2c4f3f1f3b287707be0cfa750e"
+          python -m pip install \
+            --no-index \
+            --no-deps \
+            --force-reinstall \
+            "$RUNNER_TEMP"/sysproxy-wheels/sysproxy-*.whl
         if: runner.os == 'Windows'
       - name: Verify Windows native and UI imports
         run: |
