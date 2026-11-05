@@ -634,20 +634,9 @@ def main():
 
             raise
 
-        wixui = 'WixUI_InstallDir.wxs'
-
-        code, success = downloadFromURL(
-            f'https://raw.githubusercontent.com/LorenEteval/wix/'
-            f'refs/heads/main/src/ext/UI/wixlib/{wixui}',
-            msifolder / wixui,
-        )
-
-        if success:
-            logger.info(f'download \'{wixui}\' success\'')
-        else:
-            logger.error(f'download \'{wixui}\' failed\'. Status code: {code}')
-
-            raise
+        # WixUI_InstallDir is supplied by the installed WixToolset.UI.wixext
+        # extension and referenced directly by Product.wxs; no external source
+        # download is required here.
 
         cwd = os.getcwd()
 

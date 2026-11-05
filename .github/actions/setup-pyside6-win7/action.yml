@@ -1,0 +1,78 @@
+name: "Setup PySide6 for Windows 7"
+description: "Install PySide6 and replace Qt runtime files with Windows 7-compatible builds"
+
+inputs:
+  pyside6-version:
+    description: "PySide6 version, for example 6.8.3"
+    required: true
+  architecture:
+    description: "Qt architecture: x86 or x64"
+    required: false
+    default: x64
+  relative-lib-path:
+    description: "Python library path relative to the interpreter directory"
+    required: false
+    default: Lib/site-packages
+  github-repo:
+    description: "Repository containing patched Qt 6 runtime archives"
+    required: false
+    default: crystalidea/qt6windows7
+  release-tag:
+    description: "Qt compatibility archive release tag"
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install PySide6 and Windows 7-compatible Qt runtime
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        python_path="$(which python)"
+        test -n "$python_path"
+        python_home="$(dirname "$python_path")"
+
+        pyside_arch="${{ inputs.architecture }}"
+        case "$pyside_arch" in
+          x86|x64) ;;
+          *) echo "Unsupported PySide6 architecture: $pyside_arch" >&2; exit 1 ;;
+        esac
+
+        pyside_name="qt6_${pyside_arch}_to_run_on_windows7"
+        pyside_file="${pyside_name}.7z"
+        release_tag="${{ inputs.release-tag }}"
+        if [ -z "$release_tag" ]; then
+          release_tag="v${{ inputs.pyside6-version }}"
+        fi
+
+        python -c "import sys; print(sys.version)"
+        python -m pip install --upgrade pip
+        python -m pip install setuptools wheel
+        python -m pip install --only-binary=:all: \
+          "PySide6-Essentials==${{ inputs.pyside6-version }}" \
+          "PySide6-Addons==${{ inputs.pyside6-version }}"
+
+        download_url="https://github.com/${{ inputs.github-repo }}/releases/download/${release_tag}/${pyside_file}"
+        curl --fail --location --retry 3 --output "$pyside_file" "$download_url"
+        test -s "$pyside_file"
+
+        7z x "$pyside_file" "-o${pyside_name}" -y
+        test -d "$pyside_name"
+        mkdir -p "$pyside_name/plugins"
+        for plugin_dir in imageformats platforms styles; do
+          if [ -d "$pyside_name/$plugin_dir" ]; then
+            mv "$pyside_name/$plugin_dir" "$pyside_name/plugins/"
+          fi
+        done
+
+        relative_lib_path="${{ inputs.relative-lib-path }}"
+        if [ -z "$relative_lib_path" ]; then
+          pyside_lib_destination="${python_home}/PySide6"
+        else
+          pyside_lib_destination="${python_home}/${relative_lib_path}/PySide6"
+        fi
+
+        test -d "$pyside_lib_destination"
+        cp -R "$pyside_name/." "$pyside_lib_destination/"
+        python -c "from PySide6 import QtCore; print('PySide6', QtCore.__version__, 'Qt', QtCore.qVersion())"
