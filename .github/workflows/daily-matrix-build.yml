@@ -925,6 +925,42 @@ jobs:
           print(f'Verified {len(binaries)} packaged {expected} PE binaries')
           PY
         if: runner.os == 'Windows'
+      - name: Smoke test packaged Windows application startup
+        if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $application = Join-Path $PWD 'Furious-Deploy/Furious.dist/Furious.exe'
+
+          if (-not (Test-Path -LiteralPath $application -PathType Leaf)) {
+            throw "Packaged application was not found: $application"
+          }
+
+          Write-Host "Starting packaged application: $application"
+          $process = Start-Process -FilePath $application -PassThru
+
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(20)
+
+            while ([DateTime]::UtcNow -lt $deadline) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+
+              if ($process.HasExited) {
+                throw "Packaged application exited during startup with code $($process.ExitCode)"
+              }
+            }
+
+            Write-Host "Packaged application remained alive for 20 seconds."
+          }
+          finally {
+            $process.Refresh()
+
+            if (-not $process.HasExited) {
+              taskkill.exe /PID $process.Id /T /F | Out-Host
+            }
+          }
       - name: Store the distribution packages
         uses: actions/upload-artifact@v7
         with:
