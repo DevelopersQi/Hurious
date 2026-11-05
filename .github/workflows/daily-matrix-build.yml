@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install macOS dependencies
         run: |
-          brew install create-dmg
+          brew install create-dmg cmake
         if: runner.os == 'macOS'
       # Remove problematic brew libs if Intel Mac
       # Credits: https://github.com/RimSort/RimSort
