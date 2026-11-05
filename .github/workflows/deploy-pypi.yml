@@ -17,26 +17,76 @@
 
 name: Github Deploy
 
-on: [ push, pull_request ]
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 defaults:
   run:
     shell: bash
 
+# Keep ordinary branch checks cheap. A tag has its own full release pipeline.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  ci:
+    name: Lightweight CI
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Check Python syntax
+        run: |
+          python -m compileall -q \
+            Furious \
+            tests \
+            Main.py \
+            Furious-GUI.py \
+            Translation.py \
+            setup.py \
+            Deploy.py
+      - name: Validate project metadata
+        run: |
+          python - <<'PY'
+          import pathlib
+          import tomllib
+
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+          assert project["project"]["name"] == "Furious-GUI"
+          assert project["build-system"]["build-backend"] == "setuptools.build_meta"
+          print("pyproject.toml metadata is valid")
+          PY
+
   deploy-binaries:
-    name: Build binaries
+    name: Build six-platform release binaries
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     uses: ./.github/workflows/daily-matrix-build.yml
 
   github-release:
     name: Upload to GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     needs:
       - deploy-binaries
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # IMPORTANT: mandatory for making GitHub Releases
-      id-token: write  # IMPORTANT: mandatory for sigstore
+      contents: write
     steps:
       - name: Download all the dists
         uses: actions/download-artifact@v8
@@ -44,21 +94,20 @@ jobs:
           pattern: binary-distributions-*
           merge-multiple: true
           path: dist/
-      - name: Create GitHub Release
+      - name: Create GitHub Release if needed
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create
-          '${{ github.ref_name }}'
-          --repo '${{ github.repository }}'
-          --notes ""
-          --generate-notes
-          --title 'Furious ${{ github.ref_name }}'
-      - name: Upload artifact to GitHub Release
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --generate-notes \
+              --title "Furious ${GITHUB_REF_NAME}"
+          fi
+      - name: Upload artifacts to GitHub Release
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        # Upload to GitHub Release using the `gh` CLI.
-        run: >-
-          gh release upload
-          '${{ github.ref_name }}' dist/**
-          --repo '${{ github.repository }}'
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/** \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
