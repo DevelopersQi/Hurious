@@ -33,6 +33,7 @@ import sys
 import logging
 import functools
 import traceback
+import multiprocessing
 
 __all__ = ['main']
 
@@ -120,6 +121,10 @@ def runAppMain():
 
 def main():
     """Run the module command-line entry point."""
+    # A frozen Windows executable re-enters this entry point for multiprocessing
+    # workers. Handle the worker command line before starting the GUI process.
+    multiprocessing.freeze_support()
+
     try:
         if len(sys.argv) > 1 and sys.argv[1] == AppBuiltinCommand.Clear.value:
             runClearSettings()
