@@ -377,6 +377,11 @@ jobs:
           cache: false
         if: (runner.os == 'Linux' || runner.os == 'macOS') && matrix.id != 'windows7-amd64' && matrix.id != 'windows10-amd64'
       - name: Build Hysteria 1 with legacy Go
+        env:
+          # The pinned legacy pybind11 CMakeLists requests compatibility below
+          # CMake 3.5. CMake 4 removed that compatibility mode unless this
+          # minimum policy version is explicitly supplied.
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: |
           python -m pip install \
             --no-cache-dir \
@@ -518,10 +523,24 @@ jobs:
             Write-Output "  $($wheel.Name)"
           }
 
-          $unexpectedWheels = @($wheels | Where-Object Name -NotLike '*win_amd64.whl')
+          # Hysteria 1 is a pure-Python wheel (py3-none-any); the other
+          # three bindings must be native Windows AMD64 wheels.
+          $nativeWheels = @($wheels | Where-Object Name -Like '*win_amd64.whl')
+          $purePythonWheels = @($wheels | Where-Object Name -Like '*-py3-none-any.whl')
+          $expectedNative = @('xray_core', 'hysteria2', 'tun2socks')
 
-          if ($wheels.Count -ne 4 -or $unexpectedWheels.Count -ne 0) {
-            throw 'Expected exactly four locally built win_amd64 wheels'
+          if ($nativeWheels.Count -ne 3 -or $purePythonWheels.Count -ne 1 -or $wheels.Count -ne 4) {
+            throw "Expected 3 win_amd64 wheels and 1 py3-none-any wheel; found $($nativeWheels.Count) native, $($purePythonWheels.Count) pure, $($wheels.Count) total"
+          }
+
+          foreach ($package in $expectedNative) {
+            if (-not ($nativeWheels | Where-Object Name -Match "^$package-")) {
+              throw "Missing native win_amd64 wheel for $package"
+            }
+          }
+
+          if (-not ($purePythonWheels | Where-Object Name -Match '^hysteria-')) {
+            throw 'Missing pure-Python hysteria wheel'
           }
 
           $wheelPaths = @($wheels.FullName)
@@ -551,12 +570,20 @@ jobs:
               "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e"
           fi
         if: matrix.id != 'windows7-amd64' && matrix.id != 'windows10-amd64'
-      - name: Install Windows system proxy binding
+      - name: Build and install Windows system proxy binding
         run: |
-          python -m pip install \
-            --only-binary=sysproxy \
+          python -m pip install --no-cache-dir "pybind11>=2.10,<3"
+          python -m pip wheel \
+            --no-build-isolation \
+            --no-deps \
             --no-cache-dir \
-            sysproxy
+            --wheel-dir "$RUNNER_TEMP/sysproxy-wheels" \
+            "git+https://github.com/DevelopersQi/sysproxy.git@89d7e3b28cd68e2c4f3f1f3b287707be0cfa750e"
+          python -m pip install \
+            --no-index \
+            --no-deps \
+            --force-reinstall \
+            "$RUNNER_TEMP"/sysproxy-wheels/sysproxy-*.whl
         if: runner.os == 'Windows'
       - name: Verify Windows native and UI imports
         run: |
