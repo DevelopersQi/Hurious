@@ -236,6 +236,7 @@ jobs:
               'hysteria2',
               'tun2socks',
               'sysproxy',
+              'win32session',
           }
 
           requirements = []
@@ -550,13 +551,14 @@ jobs:
             --no-deps \
             --force-reinstall \
             "$RUNNER_TEMP"/sysproxy-wheels/sysproxy-*.whl
+          python -m pip install --no-cache-dir "win32session==0.1.0"
         if: runner.os == 'Windows'
       - name: Verify Windows native and UI imports
         run: |
           python - <<'PY'
           import importlib
 
-          for name in ('xray', 'hysteria', 'hysteria2', 'tun2socks', 'sysproxy'):
+          for name in ('xray', 'hysteria', 'hysteria2', 'tun2socks', 'sysproxy', 'win32session'):
               module = importlib.import_module(name)
               print(f'{name}: {module.__file__}')
 
