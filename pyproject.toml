@@ -27,6 +27,7 @@ dependencies = [
     "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@f478b08d66f7c0c03b15285a55cc394623727960",
     "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e",
     "sysproxy; sys_platform == 'win32'",
+    "win32session==0.2.1; sys_platform == 'win32'",
     "darkdetect; sys_platform != 'darwin'",
     "darkdetect[macos-listener]; sys_platform == 'darwin'",
     "pyobjc-core; sys_platform == 'darwin'",
