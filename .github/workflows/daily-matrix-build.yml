@@ -572,9 +572,6 @@ jobs:
         if: runner.os == 'Windows'
       - name: Verify Linux application imports without WebEngine
         if: runner.os == 'Linux'
-        env:
-          QT_DEBUG_PLUGINS: "1"
-          QT_LOGGING_RULES: "qt.core.plugin.*=true;qt.qpa.*=true;qt.webengine.*=true"
         run: |
           python - <<'PY'
           import importlib
@@ -914,7 +911,8 @@ jobs:
         if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_DEBUG_PLUGINS: "1"
+          QT_LOGGING_RULES: "qt.core.plugin.*=true;qt.qpa.*=true;qt.webengine.*=true"
         run: |
           $application = Join-Path $PWD 'Furious-Deploy/Furious.dist/Furious.exe'
 
