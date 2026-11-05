@@ -21,6 +21,7 @@ on:
   push:
     branches:
       - integrate/native-bindings-forks
+      - fix/windows-startup-smoke-test
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
     - cron: '17 2 * * *'
