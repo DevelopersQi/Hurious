@@ -607,8 +607,6 @@ jobs:
         if: runner.os == 'Windows'
       - name: Verify Linux application imports without WebEngine
         if: runner.os == 'Linux'
-        env:
-          QT_QPA_PLATFORM: offscreen
         run: |
           python - <<'PY'
           import importlib
@@ -945,7 +943,7 @@ jobs:
 
           Write-Host "Starting packaged application: $application"
           Write-Host "Working directory: $PWD"
-          Write-Host "QT_QPA_PLATFORM=$env:QT_QPA_PLATFORM"
+          Write-Host "QT_QPA_PLATFORM=$env:QT_QPA_PLATFORM (unset means Qt default Windows platform)"
           $process = Start-Process -FilePath $application -PassThru
           $applicationChildId = $null
 
@@ -980,6 +978,7 @@ jobs:
             }
 
             Write-Host "GUI worker process started with PID $applicationChildId."
+            $childProcess = [System.Diagnostics.Process]::GetProcessById($applicationChildId)
 
             $deadline = [DateTime]::UtcNow.AddSeconds(20)
 
@@ -991,10 +990,10 @@ jobs:
                 throw "Packaged application parent exited during startup with code $($process.ExitCode)"
               }
 
-              $child = Get-Process -Id $applicationChildId -ErrorAction SilentlyContinue
+              $childProcess.Refresh()
 
-              if (-not $child) {
-                throw "GUI worker process $applicationChildId exited during startup."
+              if ($childProcess.HasExited) {
+                throw "GUI worker process $applicationChildId exited during startup with code $($childProcess.ExitCode)."
               }
             }
 
@@ -1012,6 +1011,23 @@ jobs:
               } |
               Format-List ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine |
               Out-File -FilePath (Join-Path $diagnosticDirectory 'processes.txt') -Encoding utf8
+
+            try {
+              Get-WinEvent -FilterHashtable @{
+                LogName = 'Application'
+                StartTime = (Get-Date).AddMinutes(-5)
+              } -ErrorAction Stop |
+                Where-Object {
+                  $_.ProviderName -in @('Application Error', 'Windows Error Reporting') -and
+                  $_.Message -match 'Furious.exe'
+                } |
+                Select-Object TimeCreated, ProviderName, Id, LevelDisplayName, Message |
+                Format-List |
+                Out-File -FilePath (Join-Path $diagnosticDirectory 'application-errors.txt') -Encoding utf8
+            }
+            catch {
+              $_ | Out-File -FilePath (Join-Path $diagnosticDirectory 'event-log-query-error.txt') -Encoding utf8
+            }
 
             $crashLogRoots = @(
               (Join-Path $PWD 'Furious/CrashLog'),
