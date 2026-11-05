@@ -1032,6 +1032,18 @@ jobs:
               }
             }
 
+            # Capture per-process Python diagnostics and Nuitka's forced
+            # stdout/stderr files from the system temporary directory.
+            Get-ChildItem -LiteralPath $env:TEMP -File -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -like 'Furious-startup-*.log' -or
+                $_.Name -like '_Furious_Enable_Stdout*' -or
+                $_.Name -like '_Furious_Enable_Stderr*'
+              } |
+              ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $diagnosticDirectory -Force
+              }
+
             throw
           }
           finally {
