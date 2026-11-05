@@ -938,7 +938,14 @@ jobs:
             throw "Packaged application was not found: $application"
           }
 
+          $diagnosticDirectory = Join-Path $env:RUNNER_TEMP 'furious-startup-diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagnosticDirectory | Out-Null
+          $transcript = Join-Path $diagnosticDirectory 'startup-transcript.txt'
+          Start-Transcript -Path $transcript -Force | Out-Null
+
           Write-Host "Starting packaged application: $application"
+          Write-Host "Working directory: $PWD"
+          Write-Host "QT_QPA_PLATFORM=$env:QT_QPA_PLATFORM"
           $process = Start-Process -FilePath $application -PassThru
           $applicationChildId = $null
 
@@ -993,13 +1000,53 @@ jobs:
 
             Write-Host "Packaged GUI worker remained alive for 20 seconds."
           }
+          catch {
+            $failure = $_
+            Write-Host "Startup smoke test failed: $failure"
+            $failure | Out-File -FilePath (Join-Path $diagnosticDirectory 'failure.txt') -Encoding utf8
+
+            Get-CimInstance Win32_Process |
+              Where-Object {
+                $_.Name -match 'Furious|QtWebEngine|python' -or
+                $_.ParentProcessId -eq $process.Id
+              } |
+              Format-List ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine |
+              Out-File -FilePath (Join-Path $diagnosticDirectory 'processes.txt') -Encoding utf8
+
+            $crashLogRoots = @(
+              (Join-Path $PWD 'Furious/CrashLog'),
+              (Join-Path $PWD 'Furious-Deploy/Furious.dist/Furious/CrashLog'),
+              (Join-Path $PWD 'Furious-Deploy/Furious.dist/CrashLog')
+            )
+
+            foreach ($root in $crashLogRoots) {
+              if (Test-Path -LiteralPath $root) {
+                Write-Host "Crash log directory found: $root"
+                Get-ChildItem -LiteralPath $root -File -Recurse |
+                  ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination $diagnosticDirectory -Force
+                  }
+              }
+            }
+
+            throw
+          }
           finally {
             $process.Refresh()
 
             if (-not $process.HasExited) {
               taskkill.exe /PID $process.Id /T /F | Out-Host
             }
+
+            Stop-Transcript | Out-Null
           }
+      - name: Upload Windows startup diagnostics
+        if: always() && runner.os == 'Windows' && matrix.id == 'windows10-amd64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: furious-windows-startup-diagnostics
+          path: ${{ runner.temp }}/furious-startup-diagnostics/
+          if-no-files-found: warn
       - name: Store the distribution packages
         uses: actions/upload-artifact@v7
         with:
