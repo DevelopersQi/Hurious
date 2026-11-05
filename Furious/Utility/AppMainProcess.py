@@ -33,10 +33,25 @@ import operator
 import functools
 import traceback
 import multiprocessing
+import tempfile
 
 __all__ = ['AppMainProcess']
 
 logger = logging.getLogger(__name__)
+
+
+def writeStartupDiagnostic(message):
+    """Append process startup diagnostics to the system temporary directory."""
+    try:
+        path = os.path.join(tempfile.gettempdir(), f'Furious-startup-{os.getpid()}.log')
+        with open(path, 'a', encoding='utf-8') as file:
+            file.write(
+                f'{datetime.datetime.now().isoformat()} pid={os.getpid()} '
+                f'ppid={os.getppid()} {message}\\n'
+            )
+    except Exception:
+        # Diagnostics must never prevent the application from starting.
+        pass
 
 if PLATFORM == 'Windows':
     ProcessContext = multiprocessing
@@ -130,11 +145,28 @@ class AppMainProcess(ProcessContext.Process):
 
     def run(self):
         """Run the app main process task."""
+        writeStartupDiagnostic(
+            f'worker-run-enter executable={sys.executable!r} '
+            f'argv={sys.argv!r} frozen={getattr(sys, "frozen", False)!r} '
+            f'cwd={os.getcwd()!r}'
+        )
         sys.excepthook = self.exceptHook
 
-        self.application = self.func()
+        try:
+            writeStartupDiagnostic('worker-before-application-construction')
+            self.application = self.func()
+            writeStartupDiagnostic('worker-after-application-construction')
 
-        for sig in [signal.SIGTERM, signal.SIGINT]:
-            signal.signal(sig, self.handler)
+            for sig in [signal.SIGTERM, signal.SIGINT]:
+                signal.signal(sig, self.handler)
 
-        sys.exit(self.application.run())
+            writeStartupDiagnostic('worker-before-application-run')
+            result = self.application.run()
+            writeStartupDiagnostic(f'worker-application-run-returned result={result!r}')
+            sys.exit(result)
+        except BaseException as exception:
+            writeStartupDiagnostic(
+                f'worker-exception={type(exception).__name__}: {exception!r}\\n'
+                f'{traceback.format_exc()}'
+            )
+            raise
