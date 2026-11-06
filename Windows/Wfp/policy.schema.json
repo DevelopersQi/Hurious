@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://furious.example/schemas/windows-application-routing-v1.json",
+  "title": "Furious Windows application routing policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generation", "backend", "rules"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generation": { "type": "integer", "minimum": 0 },
+    "backend": {
+      "enum": ["none", "xray", "hysteria2", "tun2socks"]
+    },
+    "rules": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "process", "action", "enabled", "priority"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "name": { "type": "string", "maxLength": 256 },
+          "process": { "type": "string", "minLength": 1, "maxLength": 520 },
+          "action": { "enum": ["proxy", "direct"] },
+          "enabled": { "type": "boolean" },
+          "priority": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
+        }
+      }
+    }
+  }
+}
