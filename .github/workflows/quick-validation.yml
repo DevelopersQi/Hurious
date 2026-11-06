@@ -68,5 +68,6 @@ jobs:
             tests.test_system_network_detection \
             tests.test_tun2socks_launch \
             tests.test_connection_startup_async \
+            tests.test_runtime_lifecycle \
             tests.test_wintun_deployment \
             -v
