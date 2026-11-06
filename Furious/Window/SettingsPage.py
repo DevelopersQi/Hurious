@@ -1096,7 +1096,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 _('Configure'),
             )
             self.routingSection.addCard(self.customRoutingCard)
-        self.routingSection.addCard(self.proxyBypassCard)
+        self.connectionSection.addCard(self.proxyBypassCard)
 
         self.networkSection.addCard(self.networkTestCard)
         self.networkSection.addCard(self.forceLocalhostCard)
@@ -1469,6 +1469,10 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         for section in (
             self.generalSection,
             self.connectionSection,
+            self.routingSection,
+            self.networkSection,
+            self.privacySection,
+            self.advancedSection,
             self.applicationSection,
             *self.pluginSections,
         ):
