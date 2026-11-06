@@ -23,6 +23,15 @@ not yet an end-to-end transparent proxy. Validate driver signing, SCM startup,
 filter rollback and unload behavior in a disposable Windows 10 x64 VM before
 enabling endpoint redirection.
 
+The current classify path requires process-ID metadata but correctly treats
+redirect-record metadata as optional for a first-time connection. It queries
+redirect state only when a redirect-record handle is present. IPv4 loopback
+(127.0.0.0/8) and IPv6 loopback (::1) destinations are passed through unchanged
+so local IPC and developer services are not captured by the transparent proxy.
+These safeguards do not replace explicit exclusions for the broker and proxy
+core processes; those exclusions must be implemented and tested before enabling
+a live endpoint.
+
 A production redirect path additionally requires:
 - ALE application identity based on the WFP application ID (not PID alone);
 - backend endpoint discovery and safe SET/CLEAR endpoint configuration;
