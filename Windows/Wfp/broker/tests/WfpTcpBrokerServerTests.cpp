@@ -3,7 +3,7 @@
 #include <cassert>
 #include <cstdint>
 
-int main() {
+void TestBrokerServerLifecycle() {
     sockaddr_in socksAddress{};
     socksAddress.sin_family = AF_INET;
     socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
