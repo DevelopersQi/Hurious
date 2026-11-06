@@ -300,8 +300,8 @@ class EndpointInfoServiceTest(unittest.TestCase):
 
         return service, controller, client
 
-    def testInspectionDefaultsOffAndNeverIssuesProviderRequests(self):
-        """Require an explicit opt-in before any endpoint provider is contacted."""
+    def testInspectionDefaultsOnAndWaitsForVisiblePage(self):
+        """Enable endpoint inspection by default without eager network requests."""
         settings = QtCore.QSettings()
         settings.remove(PROXY_ENDPOINT_INFO_SETTING)
 
@@ -317,8 +317,8 @@ class EndpointInfoServiceTest(unittest.TestCase):
         service.setPageVisible(True)
         service.refresh()
 
-        self.assertFalse(service.enabled)
-        self.assertEqual(service.state, EndpointInfoState.Disabled)
+        self.assertTrue(service.enabled)
+        self.assertEqual(service.state, EndpointInfoState.Loading)
         self.assertEqual(client.requests, [])
         self.assertEqual(client.configuredProxies, [])
 
@@ -382,7 +382,7 @@ class EndpointInfoServiceTest(unittest.TestCase):
         client.deleteLater()
         service.deleteLater()
 
-    def testSettingsCardDefaultsOffPersistsAndExposesInAppPrivacyAction(self):
+    def testSettingsCardDefaultsOnPersistsAndExposesInAppPrivacyAction(self):
         """Bind one Fluent switch and one local privacy action to the preference."""
         privacyRequests = []
 
@@ -393,7 +393,7 @@ class EndpointInfoServiceTest(unittest.TestCase):
             )
 
             self.assertIsInstance(card.checkBox, AppQSwitch)
-            self.assertFalse(card.checkBox.isChecked())
+            self.assertTrue(card.checkBox.isChecked())
             self.assertEqual(card.privacyButton.objectName(), 'SettingsLinkButton')
             self.assertEqual(card.privacyButton.text(), _('Data usage'))
 
