@@ -477,7 +477,8 @@ class CoreRuntimeFactory(PluginCapability):
             return False
 
         raise TUNPreparationError(
-            f'TUN backend {backend!r} is not supported by this core runtime'
+            'The selected TUN backend is not supported by this core. '
+            'Select Auto or a compatible backend.'
         )
 
     def usesApplicationTun2socks(self, config) -> bool:
