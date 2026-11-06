@@ -76,11 +76,6 @@ class _ConnectionStartAttempt:
     committed: bool = False
 
     @property
-    def activeTUNBackend(self):
-        """Return the backend prepared for the current connection attempt."""
-        return self._activeTUNBackend
-
-    @property
     def runtimes(self):
         """Return an ordered execution-resource snapshot for this attempt."""
         return [lease.runtime for lease in self.leases]
@@ -1115,6 +1110,11 @@ class ConnectionManager(Mixins.CleanupOnExit):
     def runtimes(self):
         """Return committed runtimes without exposing the mutable owner list."""
         return [lease.runtime for lease in self._leases]
+
+    @property
+    def activeTUNBackend(self):
+        """Return the backend selected for the current connection lifecycle."""
+        return self._activeTUNBackend
 
     def _connectionDnsResolver(self) -> DnsResolver:
         """Return the resolver owned by this connection-manager lifecycle."""
