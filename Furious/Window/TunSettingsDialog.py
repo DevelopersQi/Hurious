@@ -375,10 +375,6 @@ class TunSettingsDialog(GuiEditorWidgetQDialog):
             'primaryAdapterInterfaceIP': info.get('ip', ''),
             'defaultPrimaryGatewayIP': info.get('gateway', ''),
         }
-        self._detectedNetworkValues = {
-            key: value for key, value in values.items() if value
-        }
-
         for item in self.findChildren(GuiTUNSettingsItemXXX):
             if item.key in values and values[item.key]:
                 item.setText(values[item.key])
