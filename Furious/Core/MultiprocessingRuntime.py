@@ -174,6 +174,18 @@ class MultiprocessingRuntime(CoreRuntime):
         code = process.exitcode if process is not None else None
         event = self.interpretExit(code, requested=self._stopRequested)
 
+        # A short-lived child may exit before the GUI timer drains its output.
+        # Flush that queue now so startup failures retain the binding's actual
+        # stderr/stdout diagnostic instead of exposing only a generic exit code.
+        details = self._output.drainPendingMessages()
+        if details:
+            event = RuntimeExit(
+                event.code,
+                event.reason,
+                event.message,
+                details,
+            )
+
         self._lastExit = event
         self.setState(
             RuntimeState.Exited if not event.unexpected else RuntimeState.Failed
