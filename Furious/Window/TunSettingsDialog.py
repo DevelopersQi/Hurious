@@ -362,7 +362,13 @@ class TunSettingsDialog(GuiEditorWidgetQDialog):
     @QtCore.Slot(dict)
     def _applyDetectedNetworkInfo(self, info: dict):
         """Fill host-interface fields when automatic detection is enabled."""
-        if self._config.get('autoDetectPrimaryAdapter', 'True') != 'True':
+        autoDetectControls = [
+            item
+            for item in self.findChildren(GuiTUNSettingsItemSwitchXXX)
+            if item.key == 'autoDetectPrimaryAdapter'
+        ]
+
+        if autoDetectControls and not autoDetectControls[0].isChecked():
             return
 
         values = {
