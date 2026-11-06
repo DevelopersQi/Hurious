@@ -164,6 +164,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.python-architecture }}
           check-latest: true
+          cache: pip
+          cache-dependency-path: requirements.txt
         if: matrix.id != 'windows7-amd64'
       - name: Set up Go for Linux and macOS native bindings
         uses: actions/setup-go@v7
