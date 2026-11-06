@@ -948,6 +948,11 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
         """Activate exactly one selected server before requesting connection."""
         indexes = self.userServersQTableWidget.selectedIndex
 
+        if not indexes:
+            # No row is selected: keep the profile already activated in storage.
+            activeIndex = Storage.UserActivatedItemIndex()
+            return 0 <= activeIndex < len(Storage.UserServers())
+
         if len(indexes) != 1:
             return False
 
