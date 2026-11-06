@@ -47,11 +47,23 @@ def startTun2socks(msgQueue: multiprocessing.Queue, *args):
         else:
             redirect = True
 
-        ProcessOutputRedirector.launch(
-            msgQueue,
-            functools.partial(tun2socks.startFromArgs, *args),
-            redirect,
-        )
+        # The pinned Python binding exposes exactly five parameters:
+        # startFromArgs(device, networkInterface, logLevel, proxy, restAPI).
+        # The optional TCP-buffer values belong to the former CLI wrapper and
+        # must not be forwarded to this pybind11 API (doing so exits with code 1).
+        coreArgs = args[:5]
+
+        try:
+            ProcessOutputRedirector.launch(
+                msgQueue,
+                functools.partial(tun2socks.startFromArgs, *coreArgs),
+                redirect,
+            )
+        except Exception as ex:
+            msgQueue.putMessage(
+                f'tun2socks startup failed: {type(ex).__name__}: {ex}'
+            )
+            raise
 
 
 class Tun2socks(MultiprocessingRuntime):
