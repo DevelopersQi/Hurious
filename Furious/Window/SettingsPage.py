@@ -501,44 +501,39 @@ class _ApplicationThemeSettingsCard(_SettingsCard):
 
 
 class _TUNBackendSettingsCard(QFrame):
-    """Present global TUN backends as a compact, explanatory choice grid."""
+    """Present global TUN backends as a compact, clearly selected choice grid."""
 
     Options = (
         (
             'auto',
-            _('Automatic (Recommended)'),
-            _(
-                'Prefer a native TUN backend when the active node supports it; '
-                'otherwise use Tun2socks.'
-            ),
+            _('Auto (Recommended)'),
+            _('Use native TUN when supported; otherwise use Tun2socks.'),
         ),
         (
             'tun2socks',
             _('Tun2socks'),
-            _(
-                'Compatibility option for routing traffic through the external '
-                'Tun2socks adapter.'
-            ),
+            _('Compatibility mode using the Tun2socks adapter.'),
         ),
         (
             'xray',
             _('Xray-core Native TUN'),
-            _('Use Xray-core native TUN when the active node uses Xray-core.'),
+            _('Use Xray-core built-in TUN.'),
         ),
         (
             'hysteria2',
             _('Hysteria 2 Native TUN'),
-            _('Use Hysteria 2 native TUN when the active node uses Hysteria 2.'),
+            _('Use Hysteria 2 built-in TUN.'),
         ),
     )
 
     def __init__(self, title='', description='', parent=None):
-        """Build a two-column selector with clear per-backend guidance."""
+        """Build a two-column selector with an unmistakable selected state."""
         super().__init__(parent)
         self.setObjectName('TUNBackendSettingsCard')
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.iconFileName = 'diagram-3.svg'
         self._available = True
+        self._optionFrames = {}
 
         self.titleLabel = AppQLabel(title, parent=self)
         self.titleLabel.setObjectName('SettingsCardTitle')
@@ -550,21 +545,23 @@ class _TUNBackendSettingsCard(QFrame):
         self.buttonGroup.setExclusive(True)
         self.optionButtons = {}
 
-        headerLayout = QVBoxLayout()
-        headerLayout.setContentsMargins(0, 0, 0, 0)
-        headerLayout.setSpacing(3)
-        headerLayout.addWidget(self.titleLabel)
-        headerLayout.addWidget(self.descriptionLabel)
-
         optionsWidget = QWidget(self)
+        optionsWidget.setObjectName('TUNBackendOptions')
+        optionsWidget.setStyleSheet(
+            'QFrame#TUNBackendOption[selected="true"] {'
+            ' border: 1px solid palette(highlight);'
+            ' background-color: palette(alternate-base);'
+            '}'
+        )
         optionsLayout = QGridLayout(optionsWidget)
         optionsLayout.setContentsMargins(0, 4, 0, 0)
-        optionsLayout.setHorizontalSpacing(18)
-        optionsLayout.setVerticalSpacing(10)
+        optionsLayout.setHorizontalSpacing(10)
+        optionsLayout.setVerticalSpacing(8)
 
         for index, (backend, label, helpText) in enumerate(self.Options):
             optionWidget = QFrame(optionsWidget)
             optionWidget.setObjectName('TUNBackendOption')
+            optionWidget.setProperty('selected', False)
             optionWidget.setFrameShape(QFrame.Shape.StyledPanel)
             optionLayout = QVBoxLayout(optionWidget)
             optionLayout.setContentsMargins(10, 8, 10, 8)
@@ -573,8 +570,9 @@ class _TUNBackendSettingsCard(QFrame):
             radio = QRadioButton(label, optionWidget)
             radio.setObjectName('TUNBackendOptionRadio')
             radio.setProperty('backend', backend)
-            self.buttonGroup.addButton(radio)
+            self.buttonGroup.addButton(radio, index)
             self.optionButtons[backend] = radio
+            self._optionFrames[backend] = optionWidget
 
             helpLabel = AppQLabel(helpText, parent=optionWidget)
             helpLabel.setObjectName('SettingsCardDescription')
@@ -586,7 +584,7 @@ class _TUNBackendSettingsCard(QFrame):
             optionsLayout.addWidget(optionWidget, index // 2, index % 2)
 
         self.statusLabel = AppQLabel(
-            _('Changes apply the next time you connect with TUN mode enabled.'),
+            _('Applies the next time you connect with TUN enabled.'),
             parent=self,
         )
         self.statusLabel.setObjectName('SettingsCardDescription')
@@ -595,25 +593,29 @@ class _TUNBackendSettingsCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(8)
-        layout.addLayout(headerLayout)
+        layout.addWidget(self.titleLabel)
+        layout.addWidget(self.descriptionLabel)
         layout.addWidget(optionsWidget)
         layout.addWidget(self.statusLabel)
 
-        self.sync()
-        self.buttonGroup.idClicked.connect(self._selectionChanged)
         self.buttonGroup.buttonToggled.connect(self._buttonToggled)
+        self.buttonGroup.idClicked.connect(self._selectionChanged)
+        self.sync()
 
     def _buttonToggled(self, button, checked):
-        """Keep option availability and visual state in sync."""
-        if checked:
-            button.setProperty('selected', True)
-            button.style().unpolish(button)
-            button.style().polish(button)
-        else:
-            button.setProperty('selected', False)
+        """Highlight the selected option card using the active theme palette."""
+        backend = button.property('backend')
+        optionFrame = self._optionFrames.get(backend)
+        if optionFrame is None:
+            return
+
+        optionFrame.setProperty('selected', bool(checked))
+        optionFrame.style().unpolish(optionFrame)
+        optionFrame.style().polish(optionFrame)
+        optionFrame.update()
 
     def sync(self, backend=None):
-        """Reflect the persisted backend without emitting another change."""
+        """Reflect the persisted backend without writing it again."""
         selectedBackend = (
             backend if isinstance(backend, str) else AppSettings.get('TUNBackend')
         )
@@ -624,6 +626,11 @@ class _TUNBackendSettingsCard(QFrame):
             blocker = QtCore.QSignalBlocker(self.buttonGroup)
             radio.setChecked(True)
             del blocker
+            for optionBackend, optionButton in self.optionButtons.items():
+                self._buttonToggled(
+                    optionButton,
+                    optionBackend == selectedBackend,
+                )
 
     def setIconFileName(self, iconFileName):
         """Keep the settings-section icon suppression protocol compatible."""
