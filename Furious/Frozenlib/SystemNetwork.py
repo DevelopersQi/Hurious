@@ -41,7 +41,7 @@ def _run(command: list[str]) -> str:
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=4,
+            timeout=2,
             check=True,
         )
     except (OSError, subprocess.SubprocessError) as ex:
