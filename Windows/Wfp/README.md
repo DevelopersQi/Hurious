@@ -10,6 +10,7 @@ separate from the Python UI and proxy-core process lifecycle.
 - `driver/`: WDK kernel callout driver. Performs bounded, non-blocking classification
   only; it must never perform file, registry, network or user-mode IPC in classify callbacks.
 - `include/`: stable policy and control-plane ABI shared by the service and driver.
+- `broker/`: native TCP redirect metadata, SOCKS5 CONNECT and bidirectional relay primitives.
 - `tests/`: Windows integration tests and packet-capture test plans.
 
 ## Safety gates
@@ -34,6 +35,11 @@ to eight auxiliary process exclusions. The kernel validates and enforces the
 supplied list. Backend lifecycle wiring to populate and refresh Xray/Hysteria2
 PIDs is still pending; this ABI support alone does not make those exclusions
 active.
+
+The initial native TCP broker primitives now live in `broker/`. They are not
+yet a running listener service and do not publish endpoint ports or a broker PID.
+The WFP endpoint remains unconfigured until listener lifecycle and backend
+inbound discovery are integrated and validated.
 
 A production redirect path additionally requires:
 - ALE application identity based on the WFP application ID (not PID alone);
