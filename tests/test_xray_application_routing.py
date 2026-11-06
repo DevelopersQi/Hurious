@@ -121,7 +121,7 @@ class XrayApplicationRoutingRulesTest(TestCase):
     def test_newline_and_wildcard_process_selectors_are_rejected(self):
         get_patch, set_patch = self.settings()
         with get_patch, set_patch:
-            for process in ('browser\\n.exe', 'browser*.exe', 'browser?.exe'):
+            for process in ('browser\n.exe', 'browser*.exe', 'browser?.exe'):
                 with self.subTest(process=process):
                     with self.assertRaisesRegex(ValueError, 'valid EXE path'):
                         Routing.saveApplicationRoutingRules([
