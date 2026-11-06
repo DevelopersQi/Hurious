@@ -275,6 +275,39 @@ class XrayNativeTUNTest(unittest.TestCase):
 
         manager.cleanup()
 
+    def testAutomaticBackendSelectsXrayNativeTUN(self):
+        """Select Xray native TUN automatically, regardless of legacy toggle."""
+        registry = mock.Mock()
+        registry.factoryForConfig.return_value.factoryId = 'official.xray'
+        registry.prepareTUN.return_value = True
+        manager = _RecordingConnectionManager()
+
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.SystemRuntime.isTUNMode',
+                return_value=True,
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.AppSettings.get',
+                return_value='auto',
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.getPluginRegistry',
+                return_value=registry,
+            ),
+        ):
+            nativeTUN, applicationTun2socks = manager._prepareTUNPolicy(
+                self.configuration(nativeTUN=False), False
+            )
+
+        self.assertTrue(nativeTUN)
+        self.assertFalse(applicationTun2socks)
+        registry.prepareTUN.assert_called_once()
+        self.assertEqual(registry.prepareTUN.call_args.args[1], 'xray')
+        self.assertEqual(manager.activeTUNBackend, 'xray')
+        registry.usesApplicationTun2socks.assert_not_called()
+
+
     def testManagedTUNPreparationFailureDoesNotFallBackToTun2socks(self):
         """Fail an unavailable managed TUN instead of changing networking mode."""
         original = self.configuration(nativeTUN=True)
@@ -525,6 +558,38 @@ class Hysteria2NativeTUNTest(unittest.TestCase):
         self.assertEqual(runtime, original)
         self.assertEqual(original, snapshot)
         self.assertNotIn('tun', speedTest)
+
+    def testAutomaticBackendSelectsHysteria2NativeTUN(self):
+        """Select Hysteria 2 native TUN automatically for Hysteria 2 profiles."""
+        registry = mock.Mock()
+        registry.factoryForConfig.return_value.factoryId = 'official.hysteria2'
+        registry.prepareTUN.return_value = True
+        manager = _RecordingConnectionManager()
+
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.SystemRuntime.isTUNMode',
+                return_value=True,
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.AppSettings.get',
+                return_value='auto',
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.getPluginRegistry',
+                return_value=registry,
+            ),
+        ):
+            nativeTUN, applicationTun2socks = manager._prepareTUNPolicy(
+                self.configuration(nativeTUN=False), False
+            )
+
+        self.assertTrue(nativeTUN)
+        self.assertFalse(applicationTun2socks)
+        registry.prepareTUN.assert_called_once()
+        self.assertEqual(registry.prepareTUN.call_args.args[1], 'hysteria2')
+        self.assertEqual(manager.activeTUNBackend, 'hysteria2')
+        registry.usesApplicationTun2socks.assert_not_called()
 
     def testConnectionManagerDoesNotPairCustomTUNWithTun2socks(self):
         """Stop host tun2socks selection once Hysteria 2 owns native TUN."""
