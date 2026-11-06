@@ -1184,13 +1184,13 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self.categoryTabs.setMovable(False)
 
         categories = (
-            (_('General'), (self.generalSection,)),
-            (_('Connection'), (self.connectionSection,)),
-            (_('Routing Rules'), (self.routingSection,)),
-            (_('Network'), (self.networkSection,)),
-            (_('Privacy and Statistics'), (self.privacySection,)),
-            (_('Advanced'), (self.advancedSection,)),
-            (_('Application'), (self.applicationSection,)),
+            ('General', (self.generalSection,)),
+            ('Connection', (self.connectionSection,)),
+            ('Routing Rules', (self.routingSection,)),
+            ('Network', (self.networkSection,)),
+            ('Privacy and Statistics', (self.privacySection,)),
+            ('Advanced', (self.advancedSection,)),
+            ('Application', (self.applicationSection,)),
         )
         self._categoryTitles = [title for title, _sections in categories]
         for title, sections in categories:
