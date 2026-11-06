@@ -56,7 +56,7 @@ if(BUILD_TESTING)
     target_compile_definitions(FuriousWfpNamedPipeIntegrationTests PRIVATE
         WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
     )
-    target_link_libraries(FuriousWfpNamedPipeIntegrationTests PRIVATE advapi32)
+    target_link_libraries(FuriousWfpNamedPipeIntegrationTests PRIVATE advapi32 fwpuclnt)
     if(MSVC)
         target_compile_options(FuriousWfpNamedPipeIntegrationTests PRIVATE /W4 /WX /permissive-)
     endif()

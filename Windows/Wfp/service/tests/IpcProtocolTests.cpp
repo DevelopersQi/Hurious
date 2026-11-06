@@ -75,9 +75,9 @@ int main() {
     policyRule.Priority = 10;
     policyRule.Enabled = 1;
     policyRule.Action = FuriousWfpActionProxy;
-    const wchar_t imagePath[] = L"C:\\Program Files\\Furious\\app.exe";
-    policyRule.ImagePathChars = static_cast<uint32_t>((sizeof(imagePath) / sizeof(imagePath[0])) - 1);
-    std::memcpy(policyRule.ImagePath, imagePath, sizeof(imagePath));
+    policyRule.ImagePathChars = executableChars;
+    std::memcpy(policyRule.ImagePath, currentExecutable,
+                (static_cast<size_t>(executableChars) + 1) * sizeof(wchar_t));
     std::array<uint8_t, sizeof(policyHeader) + sizeof(policyRule)> policyBytes = {};
     std::memcpy(policyBytes.data(), &policyHeader, sizeof(policyHeader));
     std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
@@ -89,6 +89,9 @@ int main() {
     CHECK(CopyPolicySnapshot(policySnapshot, &storedGeneration) == ERROR_SUCCESS);
     CHECK(policySnapshot.size() == policyBytes.size());
     CHECK(storedGeneration == 1);
+    std::vector<furious::wfp::policy::CompiledApplicationRule> storedCompiled;
+    CHECK(furious::wfp::ipc::CopyCompiledPolicySnapshot(storedCompiled) == ERROR_SUCCESS);
+    CHECK(storedCompiled.size() == 1 && !storedCompiled[0].AppId.empty());
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
                           policyBytes.data(), policyBytes.size()) == ERROR_REVISION_MISMATCH);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY,

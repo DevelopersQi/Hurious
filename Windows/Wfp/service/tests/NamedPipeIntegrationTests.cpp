@@ -108,9 +108,15 @@ int main() {
     rule.Priority = 10;
     rule.Enabled = 1;
     rule.Action = FuriousWfpActionProxy;
-    const wchar_t imagePath[] = L"C:\\Program Files\\Furious\\sample.exe";
-    rule.ImagePathChars = static_cast<uint32_t>((sizeof(imagePath) / sizeof(imagePath[0])) - 1);
-    std::memcpy(rule.ImagePath, imagePath, sizeof(imagePath));
+    wchar_t currentExecutable[FURIOUS_WFP_MAX_IMAGE_PATH_CHARS] = {};
+    const DWORD executableChars = GetModuleFileNameW(
+        nullptr, currentExecutable, static_cast<DWORD>(_countof(currentExecutable)));
+    if (executableChars == 0 || executableChars >= _countof(currentExecutable)) {
+        return Fail("GetModuleFileNameW failed", stopEvent, server, worker);
+    }
+    rule.ImagePathChars = executableChars;
+    std::memcpy(rule.ImagePath, currentExecutable,
+                (static_cast<size_t>(executableChars) + 1) * sizeof(wchar_t));
     std::array<uint8_t, sizeof(policyHeader) + sizeof(rule)> payload = {};
     std::memcpy(payload.data(), &policyHeader, sizeof(policyHeader));
     std::memcpy(payload.data() + sizeof(policyHeader), &rule, sizeof(rule));
@@ -131,6 +137,11 @@ int main() {
         snapshot.size() != payload.size() || generation != 7) {
         return Fail("SET_POLICY did not update the policy snapshot", stopEvent, server, worker);
     }
+    std::vector<furious::wfp::policy::CompiledApplicationRule> compiledSnapshot;
+    if (furious::wfp::ipc::CopyCompiledPolicySnapshot(compiledSnapshot) != ERROR_SUCCESS ||
+        compiledSnapshot.size() != 1 || compiledSnapshot[0].AppId.empty()) {
+        return Fail("SET_POLICY did not compile the WFP application ID", stopEvent, server, worker);
+    }
 
     const auto clearRequest = MakeRequest(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, 0x1234567Au);
     response = {};
@@ -143,6 +154,10 @@ int main() {
     if (furious::wfp::ipc::CopyPolicySnapshot(snapshot, &generation) != ERROR_SUCCESS ||
         !snapshot.empty() || generation != 7) {
         return Fail("CLEAR_POLICY did not clear the policy snapshot", stopEvent, server, worker);
+    }
+    if (furious::wfp::ipc::CopyCompiledPolicySnapshot(compiledSnapshot) != ERROR_SUCCESS ||
+        !compiledSnapshot.empty()) {
+        return Fail("CLEAR_POLICY did not clear compiled application IDs", stopEvent, server, worker);
     }
 
     SetEvent(stopEvent);

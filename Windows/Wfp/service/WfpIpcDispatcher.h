@@ -3,7 +3,7 @@
 #include <windows.h>
 
 #include "../include/WfpControlProtocol.h"
-#include "WfpPolicyValidator.h"
+#include "WfpPolicyCompiler.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +25,7 @@ public:
         std::memcpy(&header, data, sizeof(header));
 
         std::vector<uint8_t> candidate;
+        std::vector<furious::wfp::policy::CompiledApplicationRule> compiledCandidate;
         try {
             const auto* first = static_cast<const uint8_t*>(data);
             candidate.assign(first, first + size);
@@ -32,11 +33,18 @@ public:
             return ERROR_NOT_ENOUGH_MEMORY;
         }
 
+        const DWORD compileStatus = furious::wfp::policy::CompilePolicy(
+            data, size, compiledCandidate);
+        if (compileStatus != ERROR_SUCCESS) {
+            return compileStatus;
+        }
+
         std::lock_guard<std::mutex> lock(mutex_);
         if (header.PolicyGeneration <= generation_) {
             return ERROR_REVISION_MISMATCH;
         }
         policy_.swap(candidate);
+        compiledPolicy_.swap(compiledCandidate);
         generation_ = header.PolicyGeneration;
         return ERROR_SUCCESS;
     }
@@ -54,15 +62,28 @@ public:
         return ERROR_SUCCESS;
     }
 
+    DWORD CopyCompiledSnapshot(
+        std::vector<furious::wfp::policy::CompiledApplicationRule>& output) const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
+        try {
+            output = compiledPolicy_;
+        } catch (...) {
+            return ERROR_NOT_ENOUGH_MEMORY;
+        }
+        return ERROR_SUCCESS;
+    }
+
     DWORD Clear() noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
         policy_.clear();
+        compiledPolicy_.clear();
         return ERROR_SUCCESS;
     }
 
 private:
     mutable std::mutex mutex_;
     std::vector<uint8_t> policy_;
+    std::vector<furious::wfp::policy::CompiledApplicationRule> compiledPolicy_;
     uint64_t generation_ = 0;
 };
 
@@ -74,6 +95,11 @@ inline PolicyStore& GetPolicyStore() noexcept {
 inline DWORD CopyPolicySnapshot(std::vector<uint8_t>& output,
                                 uint64_t* generation = nullptr) noexcept {
     return GetPolicyStore().CopySnapshot(output, generation);
+}
+
+inline DWORD CopyCompiledPolicySnapshot(
+    std::vector<furious::wfp::policy::CompiledApplicationRule>& output) noexcept {
+    return GetPolicyStore().CopyCompiledSnapshot(output);
 }
 
 inline DWORD DispatchCommand(uint32_t command,
