@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+from Furious.Frozenlib import AppSettings, registerAppSettings
 from Furious.Repository import *
 
 import json
@@ -137,7 +138,7 @@ def getApplicationRoutingRules():
         if not isinstance(process, str):
             continue
 
-        process = process.strip().replace('\\\\', '/')
+        process = process.strip().replace(chr(92), '/')
         if not process or process.casefold() in seen:
             continue
 
