@@ -191,6 +191,30 @@ class TUNSettingsUITest(unittest.TestCase):
                 self.assertIn(key, catalogue)
                 self.assertTrue(catalogue[key].get('ZH'))
 
+    def test_automatic_tun_backend_matches_the_active_core(self):
+        source = read_source('Furious/Service/ConnectionManager.py')
+        self.assertIn("'official.xray': 'xray'", source)
+        self.assertIn("'official.hysteria2': 'hysteria2'", source)
+        self.assertIn(
+            "if tunBackend == 'auto' and automaticBackend:",
+            source,
+        )
+        self.assertIn(
+            'pluginTUN = registry.prepareTUN(config, automaticBackend)',
+            source,
+        )
+
+    def test_manual_tun_backend_overrides_are_kept_out_of_general_settings(self):
+        source = read_source('Furious/Window/SettingsPage.py')
+        self.assertNotIn(
+            'self.generalSection.addCard(self.tunBackendCard)',
+            source,
+        )
+        self.assertIn(
+            'self.connectionSection.addCard(self.tunBackendCard)',
+            source,
+        )
+
     def test_system_network_widget_retranslates_its_visible_strings(self):
         source = read_source('Furious/Qt/SystemNetworkInfo.py')
         self.assertIn('class SystemNetworkInfoWidget(AppQGroupBox):', source)
