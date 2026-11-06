@@ -212,6 +212,27 @@ class ProcessOutputRedirector:
     TemporaryDir = QtCore.QTemporaryDir()
 
     @staticmethod
+    def _produceMessages(msgQueue: MsgQueue, temporaryFile: str, finished):
+        """Forward all available output and stop after the writer closes."""
+        with open(temporaryFile, 'rb') as stream:
+            while True:
+                line = stream.readline()
+
+                if line:
+                    if not line.isspace():
+                        try:
+                            msgQueue.putMessage(line.decode('utf-8', 'replace'))
+                        except (OSError, ValueError):
+                            pass
+
+                    continue
+
+                if finished.is_set():
+                    return
+
+                time.sleep(MsgQueue.MSG_PRODUCE_THRESHOLD / 1000)
+
+    @staticmethod
     def launch(msgQueue: MsgQueue, entrypoint: Callable[[], None], redirect: bool):
         """Run an entry point while forwarding output to a message queue."""
         if not callable(entrypoint):
@@ -239,27 +260,11 @@ class ProcessOutputRedirector:
 
         finished = threading.Event()
 
-        def produceMsg():
-            """Forward output and flush the final bytes before child exit."""
-            with open(temporaryFile, 'rb') as stream:
-                while True:
-                    line = stream.readline()
-
-                    if line:
-                        if not line.isspace():
-                            try:
-                                msgQueue.putMessage(line.decode('utf-8', 'replace'))
-                            except (OSError, ValueError):
-                                pass
-
-                        continue
-
-                    if finished.is_set():
-                        return
-
-                    time.sleep(MsgQueue.MSG_PRODUCE_THRESHOLD / 1000)
-
-        producer = threading.Thread(target=produceMsg, daemon=True)
+        producer = threading.Thread(
+            target=ProcessOutputRedirector._produceMessages,
+            args=(msgQueue, temporaryFile, finished),
+            daemon=True,
+        )
         producer.start()
 
         try:
