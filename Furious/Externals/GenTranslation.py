@@ -4,9 +4,9 @@ TRANSLATION = {
         "ZH": "自定义路由规则",
         "isReviewed": "True"
     },
-    "Create routing profiles and configure domain, IP, port, protocol, and process rules. Select a profile in the routing selector to apply it.": {
+    "Create Xray routing profiles and configure domain, IP, port, protocol, and process rules. This feature currently supports Xray-core. Select a profile in the routing selector to apply it.": {
         "source": ["Furious.Window.SettingsPage"],
-        "ZH": "创建路由配置，设置域名、IP、端口、协议和进程规则。创建后，在路由选择器中选择配置即可应用。",
+        "ZH": "创建 Xray 路由配置，设置域名、IP、端口、协议和进程规则。目前仅支持 Xray 核心。创建后，在路由选择器中选择配置即可应用。",
         "isReviewed": "True"
     },
     "Configure": {
