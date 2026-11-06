@@ -420,12 +420,29 @@ static VOID NTAPI FuriousClassify(
             classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
             return;
         }
-        // Preserve IPv6 loopback connections for local IPC and services.
+        // Preserve IPv6 loopback and IPv4-mapped 127/8 destinations.
+        // Winsock applications may address local services through either
+        // ::1 or ::ffff:127.x.x.x; redirecting either form can break IPC or
+        // create a local proxy loop.
         {
+            const UCHAR* address = remote->sin6_addr.u.Byte;
             IN6_ADDR loopbackAddress = { 0 };
+            BOOLEAN isLoopback = FALSE;
             loopbackAddress.u.Byte[15] = 1;
-            if (RtlCompareMemory(&remote->sin6_addr, &loopbackAddress,
+            if (RtlCompareMemory(address, &loopbackAddress,
                                  sizeof(loopbackAddress)) == sizeof(loopbackAddress)) {
+                isLoopback = TRUE;
+            } else {
+                static const UCHAR mappedPrefix[12] = {
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF
+                };
+                if (RtlCompareMemory(address, mappedPrefix, sizeof(mappedPrefix)) ==
+                        sizeof(mappedPrefix) &&
+                    (address[12] == 127)) {
+                    isLoopback = TRUE;
+                }
+            }
+            if (isLoopback) {
                 FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
                 FwpsReleaseClassifyHandle0(classifyHandle);
                 ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
