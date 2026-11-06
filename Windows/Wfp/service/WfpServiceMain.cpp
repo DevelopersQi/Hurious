@@ -42,6 +42,13 @@ DWORD CleanupWfp(
     furious::wfp::DriverLifecycle& driver,
     bool filtersInstalled,
     bool providerReady) {
+    if (driver.IsPresent()) {
+        const DWORD clearStatus = furious::wfp::driver::ClearEndpointConfig();
+        if (clearStatus != ERROR_SUCCESS) {
+            return clearStatus;
+        }
+    }
+
     if (filtersInstalled) {
         const DWORD filterStatus = engine.RemoveRedirectFilters();
         if (filterStatus != ERROR_SUCCESS) {
@@ -95,6 +102,12 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
         if (status == ERROR_SUCCESS &&
             (driverStatus.Flags & FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED) == 0) {
             status = ERROR_INVALID_STATE;
+        }
+        if (status == ERROR_SUCCESS) {
+            // A previous service crash may have left an endpoint configured.
+            // Clear it before enabling filters; no traffic is redirected until
+            // a live backend endpoint is explicitly configured.
+            status = furious::wfp::driver::ClearEndpointConfig();
         }
     }
     if (status == ERROR_SUCCESS) {

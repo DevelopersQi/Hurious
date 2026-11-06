@@ -36,9 +36,11 @@ application routing being active.
 Before enabling traffic filters or redirect:
 - resolve each executable path to a canonical WFP application ID;
 - verify provider, sublayer and callout ownership before reusing objects;
-- load and negotiate the driver ABI and register matching management callouts;
-- implement redirect-state tracking, original-destination preservation and
-  explicit proxy/core exclusions;
+- package a correctly signed driver beside the service executable and validate
+  SCM start/stop behavior under the actual service account;
+- connect live backend endpoint discovery to SET_ENDPOINT_CONFIG and clear it
+  whenever the backend exits or changes;
+- implement the proxy-side WSAIoctl redirect-context/redirect-record relay path;
 - implement TCP and UDP separately, with IPv4 and IPv6 parity;
 - reconcile stale filters after crashes and ensure safe rollback;
 - test allowed and denied client tokens, impersonation failures, malformed
