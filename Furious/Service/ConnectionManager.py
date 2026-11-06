@@ -48,6 +48,7 @@ from Furious.Service.DnsResolver import DnsResolver
 from Furious.Core.Tun2socks import Tun2socks
 from Furious.Frozenlib.SystemNetwork import resolvePrimaryAdapterInterfaceName
 from Furious.Service.RuntimeLease import RuntimeEventRouter, RuntimeLease
+from Furious.Service.WfpRuntimeSnapshot import WfpRuntimeSnapshot
 
 from typing import Callable, Tuple, Union
 from dataclasses import dataclass, field
@@ -117,6 +118,7 @@ class _ConnectionStartAttempt:
 
         self.manager._leases.extend(self.leases)
         self.leases.clear()
+        self.manager._advanceWfpRuntimeGeneration()
 
         self.committed = True
 
@@ -1108,6 +1110,24 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._startGeneration = 0
         self._activeStartOperation = None
         self._activeTUNBackend = None
+        self._wfpRuntimeGeneration = 0
+
+    def _advanceWfpRuntimeGeneration(self):
+        """Advance the identity of the committed runtime ownership snapshot."""
+        self._wfpRuntimeGeneration = (
+            self._wfpRuntimeGeneration + 1
+        ) & 0xFFFFFFFFFFFFFFFF
+
+        if self._wfpRuntimeGeneration == 0:
+            self._wfpRuntimeGeneration = 1
+
+    @property
+    def wfpRuntimeSnapshot(self):
+        """Return a validated immutable snapshot for future WFP endpoint updates."""
+        return WfpRuntimeSnapshot(
+            self._wfpRuntimeGeneration or 1,
+            self.wfpExcludedProcessIds,
+        )
 
     @property
     def runtimes(self):
@@ -1831,15 +1851,18 @@ class ConnectionManager(Mixins.CleanupOnExit):
         lease.release()
 
         self._leases.remove(lease)
+        self._advanceWfpRuntimeGeneration()
 
     def stopAll(self):
         """Stop every managed proxy-core and TUN runtime."""
         self.cancelStart()
 
-        for lease in reversed(self._leases):
-            lease.release()
+        if self._leases:
+            for lease in reversed(self._leases):
+                lease.release()
 
-        self._leases.clear()
+            self._leases.clear()
+            self._advanceWfpRuntimeGeneration()
 
     def cleanup(self):
         """Release resources owned by the core manager."""
