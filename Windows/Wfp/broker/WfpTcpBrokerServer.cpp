@@ -9,6 +9,19 @@
 namespace furious::wfp::broker {
 namespace {
 
+bool IsLoopbackSocksAddress(const sockaddr* address) noexcept {
+    if (address == nullptr) return false;
+    if (address->sa_family == AF_INET) {
+        const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(address);
+        return (ntohl(ipv4->sin_addr.s_addr) & 0xFF000000u) == 0x7F000000u;
+    }
+    if (address->sa_family == AF_INET6) {
+        const auto* ipv6 = reinterpret_cast<const sockaddr_in6*>(address);
+        return IN6_IS_ADDR_LOOPBACK(&ipv6->sin6_addr) != 0;
+    }
+    return false;
+}
+
 void CloseSocket(SOCKET& socket) noexcept {
     if (socket != INVALID_SOCKET) {
         closesocket(socket);
@@ -96,6 +109,7 @@ bool TcpBrokerServer::Start(
     size_t workerCount,
     size_t maximumSessions) noexcept {
     if (!stopping_.load() || socksAddress == nullptr ||
+        !IsLoopbackSocksAddress(socksAddress) ||
         (!enableIpv4 && !enableIpv6) ||
         workerCount == 0 || maximumSessions == 0) {
         return false;
@@ -187,9 +201,13 @@ void TcpBrokerServer::AcceptLoop() noexcept {
                     std::lock_guard<std::mutex> lock(queueMutex_);
                     if (!stopping_.load() &&
                         sessionsInFlight_.load() < maximumSessions_) {
-                        pendingClients_.push_back(client);
-                        sessionsInFlight_.fetch_add(1);
-                        queued = true;
+                        try {
+                            pendingClients_.push_back(client);
+                            sessionsInFlight_.fetch_add(1);
+                            queued = true;
+                        } catch (...) {
+                            queued = false;
+                        }
                     }
                 }
                 if (queued) {
@@ -233,7 +251,12 @@ void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
             closesocket(client);
             return;
         }
-        activeSockets_.insert(client);
+        try {
+            activeSockets_.insert(client);
+        } catch (...) {
+            closesocket(client);
+            return;
+        }
     }
 
     RedirectedTcpConnection redirected;
@@ -282,12 +305,15 @@ void TcpBrokerServer::Stop() noexcept {
         return;
     }
 
-    CloseSocket(ipv4Listener_);
-    CloseSocket(ipv6Listener_);
+    // Keep listener handle values stable until the accept thread leaves select().
+    if (ipv4Listener_ != INVALID_SOCKET) closesocket(ipv4Listener_);
+    if (ipv6Listener_ != INVALID_SOCKET) closesocket(ipv6Listener_);
 
     if (acceptThread_.joinable()) {
         acceptThread_.join();
     }
+    ipv4Listener_ = INVALID_SOCKET;
+    ipv6Listener_ = INVALID_SOCKET;
 
     {
         std::lock_guard<std::mutex> lock(queueMutex_);
