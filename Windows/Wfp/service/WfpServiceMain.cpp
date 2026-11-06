@@ -125,8 +125,8 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
     DWORD pipeStatus = ERROR_SUCCESS;
     if (status == ERROR_SUCCESS) {
         try {
-            pipeThread = std::thread([&pipeServer, &pipeStatus]() {
-                pipeStatus = pipeServer.Run(gStopEvent);
+            pipeThread = std::thread([&pipeServer, &pipeStatus, &engine]() {
+                pipeStatus = pipeServer.Run(gStopEvent, &engine);
                 if (pipeStatus != ERROR_SUCCESS) {
                     SetEvent(gStopEvent);
                 }

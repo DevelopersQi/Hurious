@@ -94,7 +94,7 @@ DWORD WriteResponse(HANDLE pipe, const FURIOUS_WFP_IPC_RESPONSE& response) noexc
     return written == sizeof(response) ? ERROR_SUCCESS : ERROR_WRITE_FAULT;
 }
 
-DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
+DWORD ServeClient(HANDLE pipe, HANDLE stopEvent, furious::wfp::Engine* engine) noexcept {
     std::array<BYTE, FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE> requestBytes = {};
     DWORD requestSize = 0;
     if (!ReadRequest(pipe, stopEvent, requestBytes.data(),
@@ -128,7 +128,7 @@ DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
         ? requestBytes.data() + sizeof(request) : nullptr;
     const size_t payloadSize = requestSize - sizeof(request);
     response.Win32Status = furious::wfp::ipc::DispatchCommand(
-        request.Command, payload, payloadSize);
+        request.Command, payload, payloadSize, engine);
     response.ServiceState = SERVICE_RUNNING;
     furious::wfp::ipc::PopulateBrokerResponse(&response);
 
@@ -139,7 +139,7 @@ DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
 
 namespace furious::wfp {
 
-DWORD PipeServer::Run(HANDLE stopEvent) noexcept {
+DWORD PipeServer::Run(HANDLE stopEvent, Engine* engine) noexcept {
     if (stopEvent == nullptr) {
         return ERROR_INVALID_HANDLE;
     }
@@ -186,7 +186,7 @@ DWORD PipeServer::Run(HANDLE stopEvent) noexcept {
         if (!stopping_.load() && WaitForSingleObject(stopEvent, 0) != WAIT_OBJECT_0) {
             DWORD mode = PIPE_READMODE_MESSAGE | PIPE_NOWAIT;
             if (SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr)) {
-                ServeClient(pipe, stopEvent);
+                ServeClient(pipe, stopEvent, engine);
             }
         }
 

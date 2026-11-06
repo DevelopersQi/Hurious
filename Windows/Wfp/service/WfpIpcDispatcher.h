@@ -4,6 +4,7 @@
 
 #include "../include/WfpControlProtocol.h"
 #include "WfpDriverClient.h"
+#include "WfpEngine.h"
 #include "WfpPolicyCompiler.h"
 #include "../broker/WfpTcpBrokerServer.h"
 
@@ -17,7 +18,7 @@ namespace furious::wfp::ipc {
 
 class PolicyStore final {
 public:
-    DWORD Set(const void* data, size_t size) noexcept {
+    DWORD Set(const void* data, size_t size, furious::wfp::Engine* engine = nullptr) noexcept {
         if (furious::wfp::policy::ValidatePolicy(data, size) !=
             furious::wfp::policy::ValidationResult::Valid) {
             return ERROR_INVALID_DATA;
@@ -44,6 +45,10 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (header.PolicyGeneration <= generation_) {
             return ERROR_REVISION_MISMATCH;
+        }
+        if (engine != nullptr) {
+            const DWORD applyStatus = engine->ApplyApplicationPolicy(compiledCandidate);
+            if (applyStatus != ERROR_SUCCESS) return applyStatus;
         }
         policy_.swap(candidate);
         compiledPolicy_.swap(compiledCandidate);
@@ -75,8 +80,13 @@ public:
         return ERROR_SUCCESS;
     }
 
-    DWORD Clear() noexcept {
+    DWORD Clear(furious::wfp::Engine* engine = nullptr) noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (engine != nullptr) {
+            const std::vector<furious::wfp::policy::CompiledApplicationRule> empty;
+            const DWORD applyStatus = engine->ApplyApplicationPolicy(empty);
+            if (applyStatus != ERROR_SUCCESS) return applyStatus;
+        }
         policy_.clear();
         compiledPolicy_.clear();
         return ERROR_SUCCESS;
@@ -157,7 +167,8 @@ inline DWORD StartBroker(const void* payload, size_t payloadSize) noexcept {
 }
 inline DWORD DispatchCommand(uint32_t command,
                              const void* payload,
-                             size_t payloadSize) noexcept {
+                             size_t payloadSize,
+                             furious::wfp::Engine* engine = nullptr) noexcept {
     switch (command) {
     case FURIOUS_WFP_IPC_COMMAND_START_BROKER: return StartBroker(payload, payloadSize);
     case FURIOUS_WFP_IPC_COMMAND_STOP_BROKER: return payloadSize == 0 ? StopBroker() : ERROR_INVALID_PARAMETER;
@@ -188,12 +199,12 @@ inline DWORD DispatchCommand(uint32_t command,
         if (payload == nullptr || payloadSize == 0) {
             return ERROR_INVALID_DATA;
         }
-        return GetPolicyStore().Set(payload, payloadSize);
+        return GetPolicyStore().Set(payload, payloadSize, engine);
     case FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY:
         if (payloadSize != 0) {
             return ERROR_INVALID_PARAMETER;
         }
-        return GetPolicyStore().Clear();
+        return GetPolicyStore().Clear(engine);
     default:
         return ERROR_INVALID_FUNCTION;
     }

@@ -6,6 +6,8 @@
 
 namespace furious::wfp {
 
+class Engine;
+
 class PipeServer final {
 public:
     PipeServer() noexcept = default;
@@ -14,7 +16,7 @@ public:
     PipeServer(const PipeServer&) = delete;
     PipeServer& operator=(const PipeServer&) = delete;
 
-    DWORD Run(HANDLE stopEvent) noexcept;
+    DWORD Run(HANDLE stopEvent, Engine* engine = nullptr) noexcept;
     void Stop() noexcept;
 
 private:

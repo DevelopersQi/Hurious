@@ -389,6 +389,7 @@ static VOID NTAPI FuriousClassify(
     redirectContext->AddressFamily = addressFamily;
     redirectContext->Protocol = protocol;
     redirectContext->OriginalProcessId = (FURIOUS_WFP_U32)inMetaValues->processId;
+    redirectContext->RulePriority = (FURIOUS_WFP_U32)filter->context;
     redirectContext->PolicyGeneration = endpoint.PolicyGeneration;
 
     status = FwpsAcquireClassifyHandle0((VOID*)classifyContext, 0, &classifyHandle);

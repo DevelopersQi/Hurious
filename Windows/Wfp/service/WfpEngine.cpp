@@ -4,6 +4,8 @@
 
 #include <cstring>
 #include <cwchar>
+#include <rpc.h>
+#include <limits>
 
 namespace {
 
@@ -92,38 +94,94 @@ DWORD EnsureCallout(HANDLE engine, const GUID& key, const GUID& layer,
     return status;
 }
 
-DWORD EnsureRedirectFilter(HANDLE engine, const GUID& filterKey,
-                           const GUID& calloutKey, const GUID& layer,
-                           const wchar_t* name) {
+DWORD DeleteLegacyRedirectFilter(HANDLE engine, const GUID& filterKey, const GUID& calloutKey, const GUID& layer) {
+    FWPM_FILTER0* existing = nullptr;
+    DWORD status = FwpmFilterGetByKey0(engine, &filterKey, &existing);
+    if (status == FWP_E_FILTER_NOT_FOUND) return ERROR_SUCCESS;
+    if (status != ERROR_SUCCESS) return status;
+    const bool owned = IsOwnedFilter(existing, filterKey, calloutKey, layer);
+    FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
+    if (!owned) return ERROR_INVALID_DATA;
+    status = FwpmFilterDeleteByKey0(engine, &filterKey);
+    return status == FWP_E_FILTER_NOT_FOUND ? ERROR_SUCCESS : status;
+}
+
+bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
+    if (filter == nullptr || filter->providerKey == nullptr ||
+        std::memcmp(filter->providerKey, &kProviderKey, sizeof(kProviderKey)) != 0 ||
+        std::memcmp(&filter->subLayerKey, &kSublayerKey, sizeof(kSublayerKey)) != 0 ||
+        !IsExpectedText(filter->displayData.name, L"Furious application route rule") ||
+        filter->numFilterConditions != 2 || filter->filterCondition == nullptr) return false;
+    const bool v4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, sizeof(GUID)) == 0;
+    const bool v6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, sizeof(GUID)) == 0;
+    if (!v4 && !v6) return false;
+    const auto& app = filter->filterCondition[0];
+    const auto& protocol = filter->filterCondition[1];
+    if (std::memcmp(&app.fieldKey, &FWPM_CONDITION_ALE_APP_ID, sizeof(GUID)) != 0 ||
+        app.matchType != FWP_MATCH_EQUAL || app.conditionValue.type != FWP_BYTE_BLOB_TYPE ||
+        app.conditionValue.byteBlob == nullptr || app.conditionValue.byteBlob->size == 0 ||
+        std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) != 0 ||
+        protocol.matchType != FWP_MATCH_EQUAL || protocol.conditionValue.type != FWP_UINT8 ||
+        protocol.conditionValue.uint8 != 6) return false;
+    if (filter->action.type == FWP_ACTION_PERMIT) return true;
+    if (filter->action.type != FWP_ACTION_CALLOUT_TERMINATING) return false;
+    const GUID& callout = v4 ? kConnectRedirectV4CalloutKey : kConnectRedirectV6CalloutKey;
+    return std::memcmp(&filter->action.calloutKey, &callout, sizeof(GUID)) == 0;
+}
+
+DWORD DeleteApplicationFilter(HANDLE engine, const GUID& key) {
+    FWPM_FILTER0* existing = nullptr;
+    DWORD status = FwpmFilterGetByKey0(engine, &key, &existing);
+    if (status == FWP_E_FILTER_NOT_FOUND) return ERROR_SUCCESS;
+    if (status != ERROR_SUCCESS) return status;
+    const bool owned = IsOwnedApplicationFilter(existing);
+    FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
+    if (!owned) return ERROR_INVALID_DATA;
+    status = FwpmFilterDeleteByKey0(engine, &key);
+    return status == FWP_E_FILTER_NOT_FOUND ? ERROR_SUCCESS : status;
+}
+
+DWORD AddApplicationRuleFilter(HANDLE engine,
+    const furious::wfp::policy::CompiledApplicationRule& rule,
+    const GUID& layer, const GUID& calloutKey, GUID* createdKey) {
+    if (createdKey == nullptr || rule.AppId.empty() ||
+        rule.AppId.size() > (std::numeric_limits<UINT32>::max)()) return ERROR_INVALID_PARAMETER;
     FWPM_FILTER0 filter = {};
-    filter.filterKey = filterKey;
-    filter.displayData.name = const_cast<wchar_t*>(name);
-    filter.displayData.description =
-        const_cast<wchar_t*>(L"Furious IPv4/IPv6 ALE connect redirect filter");
+    const RPC_STATUS uuidStatus = UuidCreate(&filter.filterKey);
+    if (uuidStatus != RPC_S_OK && uuidStatus != RPC_S_UUID_LOCAL_ONLY) return uuidStatus;
+    filter.displayData.name = const_cast<wchar_t*>(L"Furious application route rule");
+    filter.displayData.description = const_cast<wchar_t*>(L"Per-application TCP route rule");
     filter.providerKey = const_cast<GUID*>(&kProviderKey);
     filter.layerKey = layer;
     filter.subLayerKey = kSublayerKey;
-    filter.weight.type = FWP_EMPTY;
-    filter.action.type = FWP_ACTION_CALLOUT_TERMINATING;
-    filter.action.calloutKey = calloutKey;
-
-    DWORD status = FwpmFilterAdd0(engine, &filter, nullptr, nullptr);
-    if (status != FWP_E_ALREADY_EXISTS) {
-        return status;
-    }
-
-    FWPM_FILTER0* existing = nullptr;
-    status = FwpmFilterGetByKey0(engine, &filterKey, &existing);
-    if (status == ERROR_SUCCESS &&
-        !IsOwnedFilter(existing, filterKey, calloutKey, layer)) {
-        status = ERROR_INVALID_DATA;
-    }
-    if (existing != nullptr) {
-        FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
-    }
+    UINT64 weight = 0x100000000ULL - static_cast<UINT64>(rule.Priority);
+    filter.weight.type = FWP_UINT64;
+    filter.weight.uint64 = &weight;
+    filter.context = static_cast<UINT64>(rule.Priority);
+    if (rule.Action == FuriousWfpActionProxy) {
+        filter.action.type = FWP_ACTION_CALLOUT_TERMINATING;
+        filter.action.calloutKey = calloutKey;
+    } else if (rule.Action == FuriousWfpActionDirect) {
+        filter.action.type = FWP_ACTION_PERMIT;
+    } else return ERROR_INVALID_DATA;
+    FWP_BYTE_BLOB appId = {};
+    appId.size = static_cast<UINT32>(rule.AppId.size());
+    appId.data = const_cast<UINT8*>(rule.AppId.data());
+    FWPM_FILTER_CONDITION0 conditions[2] = {};
+    conditions[0].fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    conditions[0].matchType = FWP_MATCH_EQUAL;
+    conditions[0].conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    conditions[0].conditionValue.byteBlob = &appId;
+    conditions[1].fieldKey = FWPM_CONDITION_IP_PROTOCOL;
+    conditions[1].matchType = FWP_MATCH_EQUAL;
+    conditions[1].conditionValue.type = FWP_UINT8;
+    conditions[1].conditionValue.uint8 = 6;
+    filter.numFilterConditions = static_cast<UINT32>(_countof(conditions));
+    filter.filterCondition = conditions;
+    const DWORD status = FwpmFilterAdd0(engine, &filter, nullptr, nullptr);
+    if (status == ERROR_SUCCESS) *createdKey = filter.filterKey;
     return status;
 }
-
 DWORD CommitOrAbort(HANDLE engine, DWORD operationStatus) {
     if (operationStatus == ERROR_SUCCESS) {
         const DWORD commitStatus = FwpmTransactionCommit0(engine);
@@ -155,6 +213,7 @@ DWORD Engine::Open() {
     session.displayData.name = const_cast<wchar_t*>(L"Furious WFP management session");
     session.displayData.description =
         const_cast<wchar_t*>(L"Owns Furious application-routing filters");
+    session.flags = FWPM_SESSION_FLAG_DYNAMIC;
 
     return FwpmEngineOpen0(
         nullptr,
@@ -226,119 +285,120 @@ DWORD Engine::EnsureProviderAndSublayer() {
 }
 
 DWORD Engine::InstallRedirectFilters() {
-    if (handle_ == nullptr) {
-        return ERROR_INVALID_HANDLE;
-    }
+    if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
 
+    // Commit removal of legacy catch-all filters separately. If callout
+    // registration fails, no system-wide redirect filter is left behind.
     DWORD status = FwpmTransactionBegin0(handle_, 0);
-    if (status != ERROR_SUCCESS) {
-        return status;
+    if (status != ERROR_SUCCESS) return status;
+    status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV4FilterKey,
+        kConnectRedirectV4CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V4);
+    if (status == ERROR_SUCCESS) {
+        status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV6FilterKey,
+            kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
     }
+    status = CommitOrAbort(handle_, status);
+    if (status != ERROR_SUCCESS) return status;
 
+    status = FwpmTransactionBegin0(handle_, 0);
+    if (status != ERROR_SUCCESS) return status;
     status = EnsureCallout(handle_, kConnectRedirectV4CalloutKey,
-                           FWPM_LAYER_ALE_CONNECT_REDIRECT_V4,
-                           L"Furious IPv4 connect redirect");
+        FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, L"Furious IPv4 connect redirect");
     if (status == ERROR_SUCCESS) {
         status = EnsureCallout(handle_, kConnectRedirectV6CalloutKey,
-                               FWPM_LAYER_ALE_CONNECT_REDIRECT_V6,
-                               L"Furious IPv6 connect redirect");
+            FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, L"Furious IPv6 connect redirect");
     }
-    if (status == ERROR_SUCCESS) {
-        status = EnsureRedirectFilter(handle_, kConnectRedirectV4FilterKey,
-                                      kConnectRedirectV4CalloutKey,
-                                      FWPM_LAYER_ALE_CONNECT_REDIRECT_V4,
-                                      L"Furious IPv4 redirect filter");
-    }
-    if (status == ERROR_SUCCESS) {
-        status = EnsureRedirectFilter(handle_, kConnectRedirectV6FilterKey,
-                                      kConnectRedirectV6CalloutKey,
-                                      FWPM_LAYER_ALE_CONNECT_REDIRECT_V6,
-                                      L"Furious IPv6 redirect filter");
-    }
-
     return CommitOrAbort(handle_, status);
 }
 
-DWORD Engine::RemoveRedirectFilters() {
-    if (handle_ == nullptr) {
-        return ERROR_INVALID_HANDLE;
+DWORD Engine::ApplyApplicationPolicy(
+    const std::vector<furious::wfp::policy::CompiledApplicationRule>& rules) {
+    if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
+    std::vector<GUID> candidateKeys;
+    try {
+        candidateKeys.reserve(rules.size() * 2);
+    } catch (...) {
+        return ERROR_NOT_ENOUGH_MEMORY;
     }
 
     DWORD status = FwpmTransactionBegin0(handle_, 0);
-    if (status != ERROR_SUCCESS) {
-        return status;
+    if (status != ERROR_SUCCESS) return status;
+    for (const GUID& key : applicationFilterKeys_) {
+        status = DeleteApplicationFilter(handle_, key);
+        if (status != ERROR_SUCCESS) break;
+    }
+    if (status == ERROR_SUCCESS) {
+        status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV4FilterKey,
+            kConnectRedirectV4CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V4);
+    }
+    if (status == ERROR_SUCCESS) {
+        status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV6FilterKey,
+            kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
     }
 
-    const GUID* filterKeys[] = {
-        &kConnectRedirectV4FilterKey, &kConnectRedirectV6FilterKey
-    };
-    const GUID* calloutKeys[] = {
-        &kConnectRedirectV4CalloutKey, &kConnectRedirectV6CalloutKey
-    };
-
-    for (const GUID* key : filterKeys) {
-        FWPM_FILTER0* existing = nullptr;
-        DWORD current = FwpmFilterGetByKey0(handle_, key, &existing);
-        if (current == FWP_E_FILTER_NOT_FOUND) {
-            current = ERROR_SUCCESS;
-        } else if (current == ERROR_SUCCESS) {
-            const bool isV4 = std::memcmp(key, &kConnectRedirectV4FilterKey,
-                                          sizeof(GUID)) == 0;
-            const GUID& calloutKey = isV4 ? kConnectRedirectV4CalloutKey
-                                          : kConnectRedirectV6CalloutKey;
-            const GUID& layer = isV4 ? FWPM_LAYER_ALE_CONNECT_REDIRECT_V4
-                                     : FWPM_LAYER_ALE_CONNECT_REDIRECT_V6;
-            if (!IsOwnedFilter(existing, *key, calloutKey, layer)) {
-                current = ERROR_INVALID_DATA;
-            }
+    for (const auto& rule : rules) {
+        if (status != ERROR_SUCCESS) break;
+        GUID key = {};
+        status = AddApplicationRuleFilter(handle_, rule,
+            FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, kConnectRedirectV4CalloutKey, &key);
+        if (status == ERROR_SUCCESS) {
+            try { candidateKeys.push_back(key); }
+            catch (...) { status = ERROR_NOT_ENOUGH_MEMORY; }
         }
-        if (existing != nullptr) {
-            FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
+        if (status == ERROR_SUCCESS) {
+            status = AddApplicationRuleFilter(handle_, rule,
+                FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, kConnectRedirectV6CalloutKey, &key);
         }
-        if (current == ERROR_SUCCESS) {
-            current = FwpmFilterDeleteByKey0(handle_, key);
-            if (current == FWP_E_FILTER_NOT_FOUND) {
-                current = ERROR_SUCCESS;
-            }
-        }
-        if (current != ERROR_SUCCESS) {
-            status = current;
-            break;
+        if (status == ERROR_SUCCESS) {
+            try { candidateKeys.push_back(key); }
+            catch (...) { status = ERROR_NOT_ENOUGH_MEMORY; }
         }
     }
 
+    status = CommitOrAbort(handle_, status);
+    if (status == ERROR_SUCCESS) applicationFilterKeys_.swap(candidateKeys);
+    return status;
+}
+
+DWORD Engine::RemoveRedirectFilters() {
+    if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
+    DWORD status = FwpmTransactionBegin0(handle_, 0);
+    if (status != ERROR_SUCCESS) return status;
+    for (const GUID& key : applicationFilterKeys_) {
+        status = DeleteApplicationFilter(handle_, key);
+        if (status != ERROR_SUCCESS) break;
+    }
+    if (status == ERROR_SUCCESS) {
+        status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV4FilterKey,
+            kConnectRedirectV4CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V4);
+    }
+    if (status == ERROR_SUCCESS) {
+        status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV6FilterKey,
+            kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
+    }
+    const GUID* calloutKeys[] = { &kConnectRedirectV4CalloutKey, &kConnectRedirectV6CalloutKey };
     if (status == ERROR_SUCCESS) {
         for (const GUID* key : calloutKeys) {
             FWPM_CALLOUT0* existing = nullptr;
             DWORD current = FwpmCalloutGetByKey0(handle_, key, &existing);
-            if (current == FWP_E_CALLOUT_NOT_FOUND) {
-                current = ERROR_SUCCESS;
-            } else if (current == ERROR_SUCCESS) {
-                const bool isV4 = std::memcmp(key, &kConnectRedirectV4CalloutKey,
-                                              sizeof(GUID)) == 0;
+            if (current == FWP_E_CALLOUT_NOT_FOUND) current = ERROR_SUCCESS;
+            else if (current == ERROR_SUCCESS) {
+                const bool isV4 = std::memcmp(key, &kConnectRedirectV4CalloutKey, sizeof(GUID)) == 0;
                 const GUID& layer = isV4 ? FWPM_LAYER_ALE_CONNECT_REDIRECT_V4
                                          : FWPM_LAYER_ALE_CONNECT_REDIRECT_V6;
-                if (!IsOwnedCallout(existing, *key, layer)) {
-                    current = ERROR_INVALID_DATA;
-                }
+                if (!IsOwnedCallout(existing, *key, layer)) current = ERROR_INVALID_DATA;
             }
-            if (existing != nullptr) {
-                FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
-            }
+            if (existing != nullptr) FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
             if (current == ERROR_SUCCESS) {
                 current = FwpmCalloutDeleteByKey0(handle_, key);
-                if (current == FWP_E_CALLOUT_NOT_FOUND) {
-                    current = ERROR_SUCCESS;
-                }
+                if (current == FWP_E_CALLOUT_NOT_FOUND) current = ERROR_SUCCESS;
             }
-            if (current != ERROR_SUCCESS) {
-                status = current;
-                break;
-            }
+            if (current != ERROR_SUCCESS) { status = current; break; }
         }
     }
-
-    return CommitOrAbort(handle_, status);
+    status = CommitOrAbort(handle_, status);
+    if (status == ERROR_SUCCESS) applicationFilterKeys_.clear();
+    return status;
 }
 
 DWORD Engine::RemoveProviderAndSublayer() {
@@ -402,6 +462,7 @@ void Engine::Close() noexcept {
         FwpmEngineClose0(handle_);
         handle_ = nullptr;
     }
+    applicationFilterKeys_.clear();
 }
 
 } // namespace furious::wfp
