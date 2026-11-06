@@ -33,10 +33,28 @@ import sys
 import logging
 import functools
 import traceback
+import multiprocessing
+import os
+import tempfile
+from datetime import datetime
 
 __all__ = ['main']
 
 logger = logging.getLogger(__name__)
+
+
+def writeStartupDiagnostic(message):
+    """Append early startup diagnostics outside the packaged application directory."""
+    try:
+        path = os.path.join(tempfile.gettempdir(), f'Furious-startup-{os.getpid()}.log')
+        with open(path, 'a', encoding='utf-8') as file:
+            file.write(
+                f'{datetime.now().isoformat()} pid={os.getpid()} '
+                f'ppid={os.getppid()} {message}\\n'
+            )
+    except Exception:
+        # Diagnostics must never prevent the application from starting.
+        pass
 
 
 def runClearSettings():
@@ -60,10 +78,22 @@ def runAppMain():
     """Run app main."""
     process = AppMainProcess(functools.partial(DesktopApplication, sys.argv))
 
-    process.start()
-    process.join()
+    writeStartupDiagnostic(
+        f'parent-before-start executable={sys.executable!r} '
+        f'argv={sys.argv!r} frozen={getattr(sys, "frozen", False)!r}'
+    )
+    try:
+        process.start()
+        writeStartupDiagnostic(f'parent-after-start child_pid={process.pid!r}')
+        process.join()
+    except BaseException as exception:
+        writeStartupDiagnostic(
+            f'parent-start-or-join-exception={type(exception).__name__}: {exception}'
+        )
+        raise
 
     exitcode = process.exitcode
+    writeStartupDiagnostic(f'parent-after-join child_pid={process.pid!r} exitcode={exitcode!r}')
 
     if exitcode == 0:
         sys.exit(exitcode)
@@ -120,6 +150,17 @@ def runAppMain():
 
 def main():
     """Run the module command-line entry point."""
+    # A frozen Windows executable re-enters this entry point for multiprocessing
+    # workers. Handle the worker command line before starting the GUI process.
+    writeStartupDiagnostic(
+        f'entry executable={sys.executable!r} argv={sys.argv!r} '
+        f'cwd={os.getcwd()!r} frozen={getattr(sys, "frozen", False)!r} '
+        f'platform={sys.platform!r}'
+    )
+    writeStartupDiagnostic('before-multiprocessing-freeze-support')
+    multiprocessing.freeze_support()
+    writeStartupDiagnostic('after-multiprocessing-freeze-support')
+
     try:
         if len(sys.argv) > 1 and sys.argv[1] == AppBuiltinCommand.Clear.value:
             runClearSettings()
