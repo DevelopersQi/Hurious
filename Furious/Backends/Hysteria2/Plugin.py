@@ -120,8 +120,6 @@ class Hysteria2ActionProvider(ActionProvider):
 
     def createActions(self, parent=None, **kwargs):
         """Create Hysteria 2 native TUN management actions."""
-        isCoreActive = kwargs.pop('isCoreActive', lambda coreType: False)
-
         # These modules require a fully initialized Furious.Qt package.
         from Furious.Qt import AppQAction
         from Furious.Qt import gettext as _
@@ -153,13 +151,6 @@ class Hysteria2CoreRuntimeFactory(CoreRuntimeFactory):
         # remains available through the global backend selector when elevated.
         if PLATFORM == 'Linux':
             return hasHysteria2TUNConfig(config)
-
-        if PLATFORM == 'Linux' and not SystemRuntime.isAdmin():
-            # Native Hysteria 2 creates the interface and routing table in its
-            # own process, so it cannot use ConnectionManager's privileged helper.
-            raise TUNPreparationError(
-                'Hysteria 2 native TUN requires Linux superuser privileges'
-            )
 
         settings = getHysteria2TUNSettings()
         serverAddresses = resolveHysteria2ServerAddresses(config)
