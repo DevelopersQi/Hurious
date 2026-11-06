@@ -624,16 +624,14 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
         self.syncRuntimeStatus()
 
     def retranslate(self):
-        """Refresh option labels and runtime status for the active UI language."""
-        for backend, label in self._optionLabels.items():
-            self.optionButtons[backend].setText(_(label))
-            self._optionHelpLabels[backend].setText(
-                _(next(
-                    helpText
-                    for optionBackend, _optionLabel, helpText in self.Options
-                    if optionBackend == backend
-                ))
-            )
+        """Refresh all plain Qt option labels for the active UI language."""
+        for backend, label, helpText in self.Options:
+            radio = self.optionButtons.get(backend)
+            helpLabel = self._optionHelpLabels.get(backend)
+            if radio is not None:
+                radio.setText(_(label))
+            if helpLabel is not None:
+                helpLabel.setText(_(helpText))
 
         self.syncRuntimeStatus()
 
@@ -688,13 +686,6 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
             )
 
         self.statusLabel.setText(message)
-
-    def retranslate(self):
-        """Refresh plain Qt radio labels when the application language changes."""
-        for backend, label, _helpText in self.Options:
-            radio = self.optionButtons.get(backend)
-            if radio is not None:
-                radio.setText(_(label))
 
     def setIconFileName(self, iconFileName):
         """Keep the settings-section icon suppression protocol compatible."""
