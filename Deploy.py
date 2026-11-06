@@ -29,6 +29,9 @@ import logging
 import tarfile
 import pathlib
 import argparse
+import hashlib
+import io
+import zipfile
 import datetime
 import subprocess
 import urllib.request
@@ -53,6 +56,19 @@ DEPLOY_DIR_NAME = f'{APPLICATION_NAME}-Deploy'
 
 HYSTERIA_DATA_DIR = DATA_DIR / 'hysteria'
 WINDOWS_7_COMPATIBILITY_DLL_NAME = 'api-ms-win-core-path-l1-1-0.dll'
+WINTUN_VERSION = '0.14.1'
+WINTUN_SHA256 = '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51'
+WINTUN_URL = f'https://www.wintun.net/builds/wintun-{WINTUN_VERSION}.zip'
+WINTUN_BUILD_ASSET_DIR = ROOT_DIR / '.build-assets' / 'wintun'
+WINTUN_ARCHITECTURES = {
+    'amd64': 'amd64',
+    'x86_64': 'amd64',
+    'x86': 'x86',
+    'i386': 'x86',
+    'i686': 'x86',
+    'arm64': 'arm64',
+    'aarch64': 'arm64',
+}
 
 NUITKA_BINARY_VERSION_OPTION = (
     f'--company-name={APPLICATION_NAME} '
@@ -352,6 +368,73 @@ def downloadHy1Asset():
         return True
 
 
+def downloadWintunAsset():
+    """Download the official, checksum-pinned Wintun runtime for this Windows build."""
+    if PLATFORM != 'Windows':
+        return True
+
+    architecture = WINTUN_ARCHITECTURES.get(PLATFORM_MACHINE_LOWER)
+
+    if not architecture:
+        logger.error(
+            f'Wintun does not provide a supported DLL for {PLATFORM_MACHINE_LOWER}'
+        )
+        return False
+
+    try:
+        with urllib.request.urlopen(WINTUN_URL, timeout=60) as response:
+            archiveData = response.read()
+
+        digest = hashlib.sha256(archiveData).hexdigest()
+
+        if digest != WINTUN_SHA256:
+            raise ValueError(
+                f'Wintun archive SHA-256 mismatch: expected {WINTUN_SHA256}, '
+                f'got {digest}'
+            )
+
+        dllMember = f'wintun/bin/{architecture}/wintun.dll'
+        licenseMember = 'wintun/LICENSE.txt'
+
+        with zipfile.ZipFile(io.BytesIO(archiveData)) as archive:
+            names = set(archive.namelist())
+
+            for member in (dllMember, licenseMember):
+                if member not in names:
+                    raise FileNotFoundError(
+                        f'Wintun archive is missing required file: {member}'
+                    )
+
+            dllData = archive.read(dllMember)
+            licenseData = archive.read(licenseMember)
+
+        if not dllData.startswith(b'MZ'):
+            raise ValueError('Downloaded Wintun DLL is not a valid PE image')
+
+        destination = WINTUN_BUILD_ASSET_DIR / architecture
+        destination.mkdir(parents=True, exist_ok=True)
+
+        dllPath = destination / 'wintun.dll'
+        temporaryDllPath = dllPath.with_suffix('.dll.tmp')
+        temporaryDllPath.write_bytes(dllData)
+        temporaryDllPath.replace(dllPath)
+
+        licensePath = WINTUN_BUILD_ASSET_DIR / 'LICENSE.txt'
+        temporaryLicensePath = licensePath.with_suffix('.txt.tmp')
+        temporaryLicensePath.write_bytes(licenseData)
+        temporaryLicensePath.replace(licensePath)
+
+    except Exception as ex:
+        logger.error(f'failed to download or verify Wintun {WINTUN_VERSION}: {ex}')
+        return False
+
+    logger.info(
+        f'Wintun {WINTUN_VERSION} ({architecture}) downloaded and SHA-256 verified'
+    )
+
+    return True
+
+
 def cleanup():
     def rmtree(path, action: str = ''):
         try:
@@ -378,6 +461,7 @@ def cleanup():
                 logger.info(f'{action} success')
 
     rmtree(ROOT_DIR / DEPLOY_DIR_NAME, 'remove deployment dir')
+    rmtree(WINTUN_BUILD_ASSET_DIR, 'remove Wintun build assets')
 
     if PLATFORM == 'Windows':
         # More cleanup on Windows
@@ -433,6 +517,7 @@ def download():
             downloadXrayAssets(URL_GEOSITE, XRAY_ASSET_PATH_GEOSITE),
             downloadXrayAssets(URL_GEOIP, XRAY_ASSET_PATH_GEOIP),
             downloadHy1Asset(),
+            downloadWintunAsset(),
         ]
     )
 
@@ -510,6 +595,24 @@ def main():
 
     if PLATFORM == 'Windows':
         distributionPath = ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist'
+
+        wintunArchitecture = WINTUN_ARCHITECTURES.get(PLATFORM_MACHINE_LOWER)
+        wintunDll = WINTUN_BUILD_ASSET_DIR / wintunArchitecture / 'wintun.dll'
+        wintunLicense = WINTUN_BUILD_ASSET_DIR / 'LICENSE.txt'
+
+        if not wintunDll.is_file() or not wintunLicense.is_file():
+            raise FileNotFoundError(
+                'Verified Wintun runtime or its license is missing; '
+                'run Deploy.py --download before packaging'
+            )
+
+        shutil.copy2(wintunDll, distributionPath / 'wintun.dll')
+        shutil.copy2(wintunLicense, distributionPath / 'Wintun-LICENSE.txt')
+
+        logger.info(
+            f'included Wintun {WINTUN_VERSION} ({wintunArchitecture}) '
+            'and its binary redistribution license'
+        )
 
         if winVerCompatible.casefold() == 'windows7':
             compatibilityDll = pathlib.Path(sys.executable).with_name(
