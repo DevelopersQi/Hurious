@@ -27,9 +27,9 @@ concurrency:
 
 jobs:
   quick-checks:
-    name: Python syntax and TUN UI regression checks
+    name: Python syntax and TUN runtime regression checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -38,12 +38,30 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Compile Python sources
         run: |
           python -m compileall -q Deploy.py Furious tests
           echo "Python syntax validation passed"
 
-      - name: Run dependency-free TUN UI and translation regression tests
+      - name: Install lightweight runtime-test dependencies
         run: |
-          python -m unittest tests.test_tun_settings_ui -v
+          python -m pip install --upgrade pip
+          python -m pip install \
+            PySide6-Essentials PySide6-Addons \
+            ujson pybase64 segno icmplib mss zxing-cpp pillow darkdetect
+
+      - name: Run TUN UI, backend-selection, network, startup, and packaging tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m unittest \
+            tests.test_tun_settings_ui \
+            tests.test_native_tun_semantics \
+            tests.test_system_network_detection \
+            tests.test_tun2socks_launch \
+            tests.test_connection_startup_async \
+            tests.test_wintun_deployment \
+            -v
