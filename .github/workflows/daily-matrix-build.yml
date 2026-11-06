@@ -668,6 +668,52 @@ jobs:
             export WIN_VER_COMPATIBLE="${{ matrix.windows-compatibility }}"
           fi
           python Deploy.py
+      - name: Verify bundled Wintun runtime
+        if: runner.os == 'Windows'
+        env:
+          EXPECTED_WINTUN_ARCHITECTURE: ${{ matrix.windows-architecture }}
+        run: |
+          python - <<'PY'
+          import os
+          import struct
+          from pathlib import Path
+
+          distribution = Path('Furious-Deploy/Furious.dist')
+          dll = distribution / 'wintun.dll'
+          license_file = distribution / 'Wintun-LICENSE.txt'
+
+          if not dll.is_file() or dll.stat().st_size < 1024:
+              raise SystemExit(f'Bundled Wintun DLL is missing or empty: {dll}')
+          if not license_file.is_file() or license_file.stat().st_size == 0:
+              raise SystemExit(f'Wintun redistribution license is missing: {license_file}')
+
+          data = dll.read_bytes()
+          if data[:2] != b'MZ' or len(data) < 0x40:
+              raise SystemExit('Bundled wintun.dll has an invalid DOS/PE header')
+
+          pe_offset = struct.unpack_from('<I', data, 0x3C)[0]
+          if data[pe_offset:pe_offset + 4] != b'PE\\0\\0':
+              raise SystemExit('Bundled wintun.dll has an invalid PE signature')
+
+          machine = struct.unpack_from('<H', data, pe_offset + 4)[0]
+          expected = {
+              'amd64': 0x8664,
+              'x86': 0x014C,
+              'arm64': 0xAA64,
+          }[os.environ['EXPECTED_WINTUN_ARCHITECTURE']]
+
+          if machine != expected:
+              raise SystemExit(
+                  f'Wintun PE machine mismatch: expected 0x{expected:04X}, '
+                  f'got 0x{machine:04X}'
+              )
+
+          print(
+              f'Bundled Wintun DLL verified: {dll.stat().st_size} bytes, '
+              f'PE machine 0x{machine:04X}'
+          )
+          print(f'Wintun license verified: {license_file}')
+          PY
       - name: Verify Linux distribution excludes WebEngine
         if: runner.os == 'Linux'
         run: |
