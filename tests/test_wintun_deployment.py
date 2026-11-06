@@ -36,7 +36,9 @@ class WintunDeploymentTest(TestCase):
 
         with zipfile.ZipFile(buffer, 'w') as archive:
             archive.writestr('wintun/bin/amd64/wintun.dll', b'MZ' + b'fake-pe')
-            archive.writestr('wintun/LICENSE.txt', b'Wintun binary redistribution license')
+            archive.writestr(
+                'wintun/LICENSE.txt', b'Wintun binary redistribution license'
+            )
 
         return buffer.getvalue()
 
