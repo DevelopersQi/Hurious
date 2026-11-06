@@ -1312,14 +1312,14 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         try:
             processes = self._runningProcesses()
         except Exception as ex:
-            AppQMessageBox.warning(
+            QMessageBox.warning(
                 self, _('Unable to Read Processes'),
                 _('Could not enumerate running applications: {error}').format(error=ex),
             )
             return
 
         if not processes:
-            AppQMessageBox.information(
+            QMessageBox.information(
                 self, _('No Applications Found'),
                 _('No selectable running applications were found.'),
             )
@@ -1345,7 +1345,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             return
         name = os.path.basename(path)
         if name.casefold() in self.ProtectedProcesses:
-            AppQMessageBox.warning(
+            QMessageBox.warning(
                 self, _('Protected Process'),
                 _('Proxy core and Furious processes cannot be added to application rules.'),
             )
@@ -1400,7 +1400,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         for row in range(self.table.rowCount()):
             name, process, action, enabled = self._rowValues(row)
             if process.rsplit('/', 1)[-1].casefold() in self.ProtectedProcesses:
-                AppQMessageBox.warning(
+                QMessageBox.warning(
                     self, _('Protected Process'),
                     _('Proxy core and Furious processes cannot be added to application rules.'),
                 )
@@ -1412,7 +1412,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         try:
             saveApplicationRoutingRules(rules)
         except (TypeError, ValueError) as ex:
-            AppQMessageBox.warning(self, _('Invalid Application Rule'), str(ex))
+            QMessageBox.warning(self, _('Invalid Application Rule'), str(ex))
             return
         self.accept()
 
@@ -1432,6 +1432,7 @@ class XrayRoutingWindow(AppQMainWindow):
 
         self.applicationRulesButton = AppQPushButton(_('Application Rules...'))
         self.applicationRulesButton.clicked.connect(self.openApplicationRules)
+        self.applicationRulesButton.setVisible(PLATFORM == 'Windows')
 
         self.addButton, self.previewButton, self.renameButton, self.deleteButton = (
             AppQPushButton(
