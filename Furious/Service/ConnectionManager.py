@@ -1126,6 +1126,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             controller.requestFinished.connect(self._onWfpIpcRequestFinished)
             self._wfpIpcController = controller
         return self._wfpIpcController
+
     def _onWfpIpcRequestFinished(self, requestId, command, result, error):
         """Log asynchronous WFP control-plane results without affecting proxy state."""
         if error:

@@ -45,8 +45,11 @@ bool TcpBrokerServer::CreateListener(
     }
 
     BOOL exclusive = TRUE;
-    setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-        reinterpret_cast<const char*>(&exclusive), sizeof(exclusive));
+    if (setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+            reinterpret_cast<const char*>(&exclusive), sizeof(exclusive)) == SOCKET_ERROR) {
+        CloseSocket(listener);
+        return false;
+    }
 
     if (family == AF_INET) {
         sockaddr_in address{};
@@ -68,8 +71,11 @@ bool TcpBrokerServer::CreateListener(
         port = ntohs(address.sin_port);
     } else if (family == AF_INET6) {
         DWORD onlyV6 = 1;
-        setsockopt(listener, IPPROTO_IPV6, IPV6_V6ONLY,
-            reinterpret_cast<const char*>(&onlyV6), sizeof(onlyV6));
+        if (setsockopt(listener, IPPROTO_IPV6, IPV6_V6ONLY,
+                reinterpret_cast<const char*>(&onlyV6), sizeof(onlyV6)) == SOCKET_ERROR) {
+            CloseSocket(listener);
+            return false;
+        }
 
         sockaddr_in6 address{};
         address.sin6_family = AF_INET6;
@@ -94,6 +100,12 @@ bool TcpBrokerServer::CreateListener(
     }
 
     if (listen(listener, SOMAXCONN) == SOCKET_ERROR) {
+        CloseSocket(listener);
+        port = 0;
+        return false;
+    }
+    u_long nonblocking = 1;
+    if (ioctlsocket(listener, FIONBIO, &nonblocking) == SOCKET_ERROR) {
         CloseSocket(listener);
         port = 0;
         return false;
@@ -199,6 +211,11 @@ void TcpBrokerServer::AcceptLoop() noexcept {
             for (;;) {
                 SOCKET client = accept(listener, nullptr, nullptr);
                 if (client == INVALID_SOCKET) {
+                    const int error = WSAGetLastError();
+                    if (error != WSAEWOULDBLOCK && error != WSAEINTR &&
+                        !stopping_.load()) {
+                        Sleep(10);
+                    }
                     break;
                 }
 
@@ -221,10 +238,6 @@ void TcpBrokerServer::AcceptLoop() noexcept {
                 } else {
                     closesocket(client);
                 }
-
-                // Listener sockets are blocking. One accepted connection per
-                // readiness notification avoids spinning on accept().
-                break;
             }
         }
     }

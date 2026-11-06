@@ -36,9 +36,13 @@ class _Transport:
         magic, version, header_size, total_size, command, request_id = (
             struct.unpack("<IHHIIQ", request[:24])
         )
+        broker_pid = 5678 if command == COMMAND_START_BROKER else 0
+        port_v4 = 32001 if command == COMMAND_START_BROKER else 0
+        port_v6 = 32002 if command == COMMAND_START_BROKER else 0
         response = struct.pack(
             "<IHHIIQIIIHH",
-            magic, version, 24, 40, command, request_id, self.status, 4, 0, 0, 0,
+            magic, version, 24, 40, command, request_id, self.status, 4,
+            broker_pid, port_v4, port_v6,
         )
         return self.response_mutator(response) if self.response_mutator else response
 
@@ -120,6 +124,15 @@ class WfpIpcClientTest(unittest.TestCase):
         with self.assertRaises(WfpIpcProtocolError):
             WfpIpcClient(_Transport(response_mutator=corrupt)).status()
 
+    def testResponseParserRejectsInconsistentBrokerTelemetry(self):
+        request_id = 19
+        malformed = struct.pack(
+            "<IHHIIQIIIHH", IPC_MAGIC, IPC_VERSION, 24, 40,
+            COMMAND_STATUS, request_id, 0, 4, 1234, 0, 0,
+        )
+        with self.assertRaisesRegex(WfpIpcProtocolError, "telemetry"):
+            parse_response(malformed, COMMAND_STATUS, request_id)
+
     def testResponseParserRejectsMalformedProtocolHeaders(self):
         request_id = 77
         valid = struct.pack(
@@ -162,7 +175,9 @@ class WfpIpcClientTest(unittest.TestCase):
         client.clearEndpointConfig()
         self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
                          COMMAND_CLEAR_ENDPOINT_CONFIG)
-        client.startBroker("127.0.0.1", 10808)
+        broker = client.startBroker("127.0.0.1", 10808)
+        self.assertEqual(broker.broker_process_id, 5678)
+        self.assertEqual(broker.tcp_port_v4, 32001)
         self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
                          COMMAND_START_BROKER)
         client.stopBroker()

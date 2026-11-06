@@ -120,8 +120,13 @@ def parse_response(data, command, request_id):
         or response_id != int(request_id)
     ):
         raise WfpIpcProtocolError("WFP service response does not match the request")
+    if bool(broker_pid) != bool(tcp_port_v4 or tcp_port_v6):
+        raise WfpIpcProtocolError("WFP broker telemetry is internally inconsistent")
 
-    return WfpIpcResponse(response_command, response_id, status, state, broker_pid, tcp_port_v4, tcp_port_v6)
+    return WfpIpcResponse(
+        response_command, response_id, status, state,
+        broker_pid, tcp_port_v4, tcp_port_v6,
+    )
 
 
 def pack_broker_start_request(
@@ -371,7 +376,13 @@ class WfpIpcClient:
             socks_host, socks_port,
             listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6,
         )
-        return self.request(COMMAND_START_BROKER, payload)
+        response = self.request(COMMAND_START_BROKER, payload)
+        if response.broker_process_id == 0 or not (response.tcp_port_v4 or response.tcp_port_v6):
+            raise WfpIpcProtocolError("WFP broker started without valid PID/listener telemetry")
+        return response
 
     def stopBroker(self):
-        return self.request(COMMAND_STOP_BROKER)
+        response = self.request(COMMAND_STOP_BROKER)
+        if response.broker_process_id or response.tcp_port_v4 or response.tcp_port_v6:
+            raise WfpIpcProtocolError("WFP broker remained active after stop")
+        return response

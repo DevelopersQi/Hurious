@@ -32,7 +32,7 @@ public:
         int socksAddressLength,
         bool enableIpv4 = true,
         bool enableIpv6 = true,
-        size_t workerCount = 4,
+        size_t workerCount = 8,
         size_t maximumSessions = 128) noexcept;
 
     void Stop() noexcept;
