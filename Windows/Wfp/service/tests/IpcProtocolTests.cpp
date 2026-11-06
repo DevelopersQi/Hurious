@@ -75,6 +75,10 @@ int main() {
     policyRule.Priority = 10;
     policyRule.Enabled = 1;
     policyRule.Action = FuriousWfpActionProxy;
+    wchar_t currentExecutable[FURIOUS_WFP_MAX_IMAGE_PATH_CHARS] = {};
+    const DWORD executableChars = GetModuleFileNameW(
+        nullptr, currentExecutable, static_cast<DWORD>(_countof(currentExecutable)));
+    CHECK(executableChars > 0 && executableChars < _countof(currentExecutable));
     policyRule.ImagePathChars = executableChars;
     std::memcpy(policyRule.ImagePath, currentExecutable,
                 (static_cast<size_t>(executableChars) + 1) * sizeof(wchar_t));
