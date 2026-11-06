@@ -454,6 +454,32 @@ class CoreRuntimeFactory(PluginCapability):
         """
         return False
 
+    def prepareTUNForBackend(self, config, backend: str) -> bool:
+        """Prepare TUN for an explicit host selection without breaking older plugins.
+
+        Third-party factories that only implement prepareTUN remain compatible
+        with automatic mode. Explicit tun2socks is accepted only when the
+        factory confirms that the configuration has no authoritative native TUN.
+        Native backends must opt in by overriding this method.
+        """
+        backend = str(backend or 'auto').strip().casefold()
+
+        if backend == 'auto':
+            return self.prepareTUN(config)
+
+        if backend == 'tun2socks':
+            if not self.usesApplicationTun2socks(config):
+                raise TUNPreparationError(
+                    'The configuration already defines a native TUN interface; '
+                    'remove that custom TUN configuration before selecting Tun2socks'
+                )
+
+            return False
+
+        raise TUNPreparationError(
+            f'TUN backend {backend!r} is not supported by this core runtime'
+        )
+
     def usesApplicationTun2socks(self, config) -> bool:
         """Return whether the host should provide tun2socks for this profile."""
         return True
