@@ -38,7 +38,7 @@ public:
     void Stop() noexcept;
 
     bool IsRunning() const noexcept;
-    DWORD ProcessId() const noexcept;
+    std::uint32_t ProcessId() const noexcept;
     TcpBrokerListenerPorts ListenerPorts() const noexcept;
 
 private:
