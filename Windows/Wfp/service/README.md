@@ -1,15 +1,16 @@
-# WFP management service implementation
+# WFP management service
 
-The first native service increment owns only the Furious provider and sublayer.
-It opens the local BFE engine, creates those objects transactionally and removes
-only the Furious-owned provider on teardown.
+The Windows service executable owns the Furious provider and sublayer in the local
+BFE engine. It reports SCM lifecycle state, handles STOP/SHUTDOWN, and attempts
+transactional cleanup on normal shutdown.
 
-This is not yet a Windows Service Control Manager executable and does not install
-filters. The next increment must add:
-1. SCM service lifetime and recovery policy;
-2. authenticated, local-only IPC with strict message size/version validation;
-3. driver device discovery and ABI negotiation;
-4. transactional filter/callout registration and exact cleanup;
-5. health reporting and crash/restart reconciliation.
+This is an early lifecycle implementation, not a production-ready privileged
+service. Before release it still needs:
+- an installer that creates the service with least-privilege service ACLs;
+- crash recovery and stale-filter reconciliation after abnormal termination;
+- authenticated local IPC and strict, versioned request validation;
+- driver presence/ABI negotiation and health monitoring;
+- integration tests for BFE unavailable, access denied, partial startup and cleanup errors.
 
-The service must run elevated. Never expose an unauthenticated network listener.
+Do not expose a network listener. Do not install it on production machines during
+development. No traffic filters are added by this milestone.

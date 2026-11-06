@@ -2,10 +2,8 @@
 #include <fwpsk.h>
 #include <initguid.h>
 
-// Initial driver milestone: register a pass-through ALE callout only.
-// No filters are installed by this driver yet, so network traffic is unchanged.
-// Redirect/block behavior must not be added until the service ABI and recovery
-// path have passed Windows 10 x64 integration tests.
+// Bootstrap milestone: register a pass-through ALE callout only.
+// No management filters are installed yet; network traffic remains unchanged.
 
 DEFINE_GUID(
     FURIOUS_WFP_ALE_CONNECT_V4_CALLOUT,
@@ -31,10 +29,8 @@ static VOID NTAPI FuriousClassify(
     UNREFERENCED_PARAMETER(filter);
     UNREFERENCED_PARAMETER(flowContext);
 
-    // A callout must never claim a packet/flow in this bootstrap milestone.
-    // CONTINUE lets the remaining WFP filters and the Windows default policy run.
     if (classifyOut != NULL &&
-        (classifyOut-> rights & FWPS_RIGHT_ACTION_WRITE) != 0) {
+        (classifyOut->rights & FWPS_RIGHT_ACTION_WRITE) != 0) {
         classifyOut->actionType = FWP_ACTION_CONTINUE;
     }
 }
@@ -63,7 +59,6 @@ static VOID NTAPI FuriousFlowDelete(
 static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
-
     if (gCalloutRegistered) {
         FwpsCalloutUnregisterById0(gCalloutId);
         gCalloutRegistered = FALSE;
@@ -79,7 +74,6 @@ NTSTATUS DriverEntry(
     NTSTATUS status;
 
     UNREFERENCED_PARAMETER(registryPath);
-
     driverObject->DriverUnload = FuriousUnload;
 
     callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_V4_CALLOUT;
@@ -87,14 +81,9 @@ NTSTATUS DriverEntry(
     callout.notifyFn = FuriousNotify;
     callout.flowDeleteFn = FuriousFlowDelete;
 
-    status = FwpsCalloutRegister0(
-        driverObject,
-        &callout,
-        &gCalloutId);
-
+    status = FwpsCalloutRegister0(driverObject, &callout, &gCalloutId);
     if (NT_SUCCESS(status)) {
         gCalloutRegistered = TRUE;
     }
-
     return status;
 }
