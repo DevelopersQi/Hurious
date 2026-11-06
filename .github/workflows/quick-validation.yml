@@ -62,7 +62,7 @@ jobs:
 
       - name: Build WFP callout driver for Windows 10 x64
         run: |
-          msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.26100.0
+          msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
 
       - name: Verify driver binary was produced
         shell: pwsh

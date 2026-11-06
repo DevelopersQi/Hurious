@@ -12,7 +12,7 @@ installer/service registration, or tested Windows 10 x64 installation flow.
 ## Reproducible CI build
 
 The root `packages.config` pins the Windows SDK and WDK NuGet packages to
-10.0.26100.6584. `Directory.Build.props` imports the x64 WDK build integration.
+10.0.28000.2526. `Directory.Build.props` imports the x64 WDK build integration.
 The `windows-wfp-driver-build` workflow job builds the Release x64 `.sys`
 against the Windows 10 target and uploads the unsigned binary as a short-lived
 CI artifact.
