@@ -184,7 +184,7 @@ def saveApplicationRoutingRules(rules):
         if not isinstance(process, str):
             raise ValueError(f'application rule {index + 1} has an invalid process')
 
-        process = process.strip().replace('\\\\', '/')
+        process = process.strip().replace(chr(92), '/')
         if not process or any(token in process for token in ('*', '?', '\\n', '\\r')):
             raise ValueError(f'application rule {index + 1} needs a valid EXE path or process name')
 
