@@ -37,7 +37,7 @@ int QueryOpaqueSocketOption(
 
             const int error = WSAGetLastError();
             if (error != WSAEFAULT && error != WSAENOBUFS &&
-                error != WSAEINVAL) {
+                error != WSAEINVAL && error != ERROR_INSUFFICIENT_BUFFER) {
                 return error;
             }
             if (bytesReturned <= output.size() ||
