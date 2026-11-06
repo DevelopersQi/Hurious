@@ -1,4 +1,19 @@
 TRANSLATION = {
+    "Detected System Network": {
+        "source": ["Furious.Qt.SystemNetworkInfo"],
+        "ZH": "检测到的系统网络",
+        "isReviewed": "True"
+    },
+    "Not detected": {
+        "source": ["Furious.Qt.SystemNetworkInfo"],
+        "ZH": "未检测到",
+        "isReviewed": "True"
+    },
+    "Adapter: {name}    IPv4: {address}    Default gateway: {gateway}": {
+        "source": ["Furious.Qt.SystemNetworkInfo"],
+        "ZH": "网卡：{name}    IPv4 地址：{address}    默认网关：{gateway}",
+        "isReviewed": "True"
+    },
     "Automatically Detect Primary Adapter Network Settings": {
         "source": ["Furious.Window.TunSettingsDialog"],
         "ZH": "自动检测主网卡网络参数",
