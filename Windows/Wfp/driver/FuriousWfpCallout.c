@@ -388,6 +388,18 @@ static VOID NTAPI FuriousClassify(
             classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
             return;
         }
+        // Do not capture loopback traffic from unrelated applications.
+        // Localhost services are commonly used for IPC and developer tooling;
+        // redirecting these connections would break them or create proxy loops.
+        if ((RtlUlongByteSwap(remote->sin_addr.S_un.S_addr) & 0xFF000000u) ==
+            0x7F000000u) {
+            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+            FwpsReleaseClassifyHandle0(classifyHandle);
+            ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+            return;
+        }
         redirectContext->OriginalPortNetworkOrder = remote->sin_port;
         RtlCopyMemory(redirectContext->OriginalAddress,
                       &remote->sin_addr, sizeof(remote->sin_addr));
@@ -407,6 +419,20 @@ static VOID NTAPI FuriousClassify(
             classifyOut->actionType = FWP_ACTION_CONTINUE;
             classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
             return;
+        }
+        // Preserve IPv6 loopback connections for local IPC and services.
+        {
+            IN6_ADDR loopbackAddress = { 0 };
+            loopbackAddress.u.Byte[15] = 1;
+            if (RtlCompareMemory(&remote->sin6_addr, &loopbackAddress,
+                                 sizeof(loopbackAddress)) == sizeof(loopbackAddress)) {
+                FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+                FwpsReleaseClassifyHandle0(classifyHandle);
+                ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+                classifyOut->actionType = FWP_ACTION_CONTINUE;
+                classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+                return;
+            }
         }
         redirectContext->OriginalPortNetworkOrder = remote->sin6_port;
         RtlCopyMemory(redirectContext->OriginalAddress,
