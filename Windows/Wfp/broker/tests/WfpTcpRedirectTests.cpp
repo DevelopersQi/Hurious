@@ -78,9 +78,12 @@ void TestRejectsInvalidOrUdpContext() {
 
 } // namespace
 
+void TestBrokerServerLifecycle();
+
 int main() {
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
+    TestBrokerServerLifecycle();
     return 0;
 }
