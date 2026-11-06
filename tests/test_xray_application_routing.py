@@ -35,7 +35,7 @@ class XrayApplicationRoutingRulesTest(TestCase):
                 {
                     'id': 'browser',
                     'name': 'Browser',
-                    'process': r'C:\\Apps\\Browser\\browser.exe',
+                    'process': r'C:\Apps\Browser\browser.exe',
                     'outboundTag': 'direct',
                     'priority': 20,
                 },
