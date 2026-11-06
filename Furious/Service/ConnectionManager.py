@@ -1159,7 +1159,15 @@ class ConnectionManager(Mixins.CleanupOnExit):
             return False, False
 
         registry = getPluginRegistry()
-        tunBackend = str(AppSettings.get('TUNBackend') or 'auto').strip().casefold()
+
+        try:
+            tunBackend = AppSettings.get('TUNBackend')
+        except AttributeError:
+            # Keep isolated/service-only callers compatible before controller
+            # settings have been registered by application composition.
+            tunBackend = 'auto'
+
+        tunBackend = str(tunBackend or 'auto').strip().casefold()
         pluginTUN = (
             registry.prepareTUN(config)
             if tunBackend == 'auto'
