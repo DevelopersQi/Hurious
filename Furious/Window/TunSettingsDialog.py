@@ -25,7 +25,6 @@ from Furious.Repository import *
 from Furious.Qt import *
 from Furious.Qt.Signals import connectWeakly
 from Furious.Qt import gettext as _
-from Furious.Frozenlib.SystemNetwork import getPrimaryAdapterInfo
 from Furious.Widget.SystemNetworkInfo import SystemNetworkInfoWidget
 
 from PySide6 import QtCore
