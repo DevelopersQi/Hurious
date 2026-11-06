@@ -1265,6 +1265,9 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         layout.addWidget(AppQLabel(
             _('Rules are evaluated from top to bottom. The first matching app rule wins.')
         ))
+        layout.addWidget(AppQLabel(
+            _('Available only on Windows with Xray-core Native TUN. Hysteria2 and Tun2socks need a separate traffic-classification driver and are not enabled yet.')
+        ))
         layout.addLayout(top)
         layout.addWidget(self.table, 1)
         layout.addLayout(bottom)
