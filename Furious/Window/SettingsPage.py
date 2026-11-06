@@ -539,6 +539,19 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
         ),
     )
 
+    # Keep these literal gettext calls visible to the translation catalogue
+    # generator; the option grid itself translates labels dynamically.
+    _TranslatableOptions = (
+        _('Auto (Recommended)'),
+        _('Use native TUN when supported; otherwise use Tun2socks.'),
+        _('Tun2socks'),
+        _('Compatibility mode using the Tun2socks adapter.'),
+        _('Xray-core Native TUN'),
+        _('Use Xray-core built-in TUN.'),
+        _('Hysteria 2 Native TUN'),
+        _('Use Hysteria 2 built-in TUN.'),
+    )
+
     def __init__(self, title='', description='', parent=None):
         """Build a two-column selector with an unmistakable selected state."""
         super().__init__(parent)
