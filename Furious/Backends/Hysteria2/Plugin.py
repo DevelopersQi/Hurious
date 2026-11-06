@@ -192,6 +192,40 @@ class Hysteria2CoreRuntimeFactory(CoreRuntimeFactory):
 
         return True
 
+    def prepareTUNForBackend(self, config, backend: str) -> bool:
+        """Honor explicit Hysteria 2 TUN selection without overwriting user data."""
+        backend = str(backend or 'auto').strip().casefold()
+
+        if backend == 'auto':
+            return self.prepareTUN(config)
+
+        if backend != 'hysteria2':
+            return super().prepareTUNForBackend(config, backend)
+
+        if hasHysteria2TUNConfig(config):
+            return True
+
+        if PLATFORM == 'Linux' and not SystemRuntime.isAdmin():
+            raise TUNPreparationError(
+                'Hysteria 2 native TUN requires Linux superuser privileges'
+            )
+
+        settings = getHysteria2TUNSettings()
+        serverAddresses = resolveHysteria2ServerAddresses(config)
+        route = settings.get('route', {})
+        hasManualExclusions = bool(route.get('ipv4Exclude') or route.get('ipv6Exclude'))
+
+        if not serverAddresses and not hasManualExclusions:
+            raise TUNPreparationError(
+                'Hysteria 2 native TUN cannot start because '
+                'the server address could not be resolved and no manual route '
+                'exclusion is configured'
+            )
+
+        config['tun'] = buildHysteria2TUNConfig(settings, serverAddresses)
+
+        return True
+
     def usesApplicationTun2socks(self, config) -> bool:
         """Use host tun2socks only when the runtime has no native TUN block."""
         return not hasHysteria2TUNConfig(config)
