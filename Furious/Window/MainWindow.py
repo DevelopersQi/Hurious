@@ -90,6 +90,7 @@ class MainWindow(AppQMainWindow):
             parent=self.navigationView,
         )
         self.logPage = AppLogPage()
+        self._routingEditor = None
         self.settingsPage = SettingsPage(
             tunSettingsDialogFactory=self.homePage.getGuiTUNSettings,
             proxyBypassDialog=self.homePage.customizeProxyBypassDialog,
@@ -98,6 +99,7 @@ class MainWindow(AppQMainWindow):
             openAboutPage=self.homePage.openAboutPage,
             restartAsAdmin=self.homePage.restartAsAdmin,
             openApplicationFolder=self.homePage.openApplicationFolder,
+            openRoutingEditor=self.openRoutingEditor,
             parent=self.navigationView,
         )
 
@@ -158,6 +160,23 @@ class MainWindow(AppQMainWindow):
         self.trafficStatsManager = self.homePage.trafficStatsManager
 
         self.retranslate()
+
+    def openRoutingEditor(self):
+        """Open the reusable Xray custom-routing profile editor."""
+        if self._routingEditor is None:
+            # Import only when requested so startup does not eagerly load the
+            # advanced Xray editor for users who never configure custom routes.
+            from Furious.Backends.Xray.RoutingWindow import XrayRoutingWindow
+
+            self._routingEditor = XrayRoutingWindow(parent=self)
+
+        if self._routingEditor.isMinimized():
+            self._routingEditor.showNormal()
+        else:
+            self._routingEditor.show()
+
+        self._routingEditor.raise_()
+        self._routingEditor.activateWindow()
 
     def showPage(self, pageId: str):
         """Navigate to a registered application page."""
@@ -313,7 +332,9 @@ class MainWindow(AppQMainWindow):
             self.setWindowTitle(_(APPLICATION_NAME))
 
     def cleanup(self):
-        """Persist application-level window state."""
+        """Persist application-level and routing-editor window state."""
+        if self._routingEditor is not None:
+            self._routingEditor.cleanup()
         # Tray startup can construct MainWindow without ever presenting it. In
         # that case saveGeometry() describes Qt's native pre-show placeholder,
         # not a user decision, so preserve the last persisted window state.
