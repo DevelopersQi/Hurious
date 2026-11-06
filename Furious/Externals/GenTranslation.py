@@ -1,4 +1,9 @@
 TRANSLATION = {
+    "MTU": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "MTU（最大传输单元）",
+        "isReviewed": "True"
+    },
     "Interface Name": {
         "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
         "ZH": "网卡名称",
