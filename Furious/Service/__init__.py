@@ -85,6 +85,7 @@ from .TrafficStatsManager import (
     formatTrafficUsage,
 )
 from .UpdateManager import UpdateManager
+from .WfpRuntimeSnapshot import WfpRuntimeSnapshot
 
 __all__ = [
     'ConnectionManager',
@@ -134,6 +135,7 @@ __all__ = [
     'TrafficStatsSample',
     'TrafficStatsManager',
     'UpdateManager',
+    'WfpRuntimeSnapshot',
     'formatTrafficSpeed',
     'formatTrafficUsage',
     'formatLogEntry',
