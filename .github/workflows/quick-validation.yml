@@ -26,6 +26,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-wfp-service-build:
+    name: Windows WFP service core compile
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure WFP service core
+        run: cmake -S Windows/Wfp/service -B build/wfp-service -A x64
+
+      - name: Compile WFP service core
+        run: cmake --build build/wfp-service --config Release
+
   quick-checks:
     name: Python syntax and TUN runtime regression checks
     runs-on: ubuntu-latest
