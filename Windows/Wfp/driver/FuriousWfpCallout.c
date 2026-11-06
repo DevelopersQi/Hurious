@@ -14,7 +14,7 @@
 #include "../include/WfpDriverProtocol.h"
 #include "../include/WfpRedirectProtocol.h"
 
-C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 40);
+C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 76);
 C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64);
 
 DEFINE_GUID(
@@ -67,6 +67,7 @@ static BOOLEAN FuriousValidateEndpointConfig(
         value->ProxyProcessId == 0 ||
         value->PolicyGeneration == 0 ||
         value->Reserved0 != 0 ||
+        value->ExcludedProcessCount > FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS ||
         (value->Flags & ~FURIOUS_WFP_REDIRECT_KNOWN_FLAGS) != 0) {
         return FALSE;
     }
@@ -85,6 +86,25 @@ static BOOLEAN FuriousValidateEndpointConfig(
         (!tcp && (value->TcpPortV4 != 0 || value->TcpPortV6 != 0)) ||
         (!udp && (value->UdpPortV4 != 0 || value->UdpPortV6 != 0))) {
         return FALSE;
+    }
+    {
+        ULONG index;
+        for (index = 0; index < FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS; ++index) {
+            ULONG processId = value->ExcludedProcessIds[index];
+            ULONG previous;
+            if (index < value->ExcludedProcessCount) {
+                if (processId == 0 || processId == value->ProxyProcessId) {
+                    return FALSE;
+                }
+                for (previous = 0; previous < index; ++previous) {
+                    if (value->ExcludedProcessIds[previous] == processId) {
+                        return FALSE;
+                    }
+                }
+            } else if (processId != 0) {
+                return FALSE;
+            }
+        }
     }
     return TRUE;
 }
@@ -290,6 +310,15 @@ static VOID NTAPI FuriousClassify(
     if (inMetaValues->processId == endpoint.ProxyProcessId) {
         classifyOut->actionType = FWP_ACTION_CONTINUE;
         return;
+    }
+    {
+        ULONG index;
+        for (index = 0; index < endpoint.ExcludedProcessCount; ++index) {
+            if (inMetaValues->processId == endpoint.ExcludedProcessIds[index]) {
+                classifyOut->actionType = FWP_ACTION_CONTINUE;
+                return;
+            }
+        }
     }
 
     isV4 = inFixedValues->layerId == FWPS_LAYER_ALE_CONNECT_REDIRECT_V4;
