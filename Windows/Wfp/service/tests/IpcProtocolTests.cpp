@@ -32,6 +32,8 @@ int main() {
     CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
     driverStatus.Flags = FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED;
     CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Flags |= FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED;
+    CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
     using furious::wfp::ipc::ValidateRequest;
     using furious::wfp::ipc::ValidationResult;
 
