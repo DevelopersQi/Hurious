@@ -23,7 +23,7 @@ from Furious.Frozenlib import *
 from Furious.Qt import *
 from Furious.Qt.Signals import connectWeakly
 from Furious.Qt import gettext as _
-from Furious.Widget.SystemNetworkInfo import SystemNetworkInfoWidget
+from Furious.Qt.SystemNetworkInfo import SystemNetworkInfoWidget
 
 from PySide6 import QtCore
 from PySide6.QtGui import *
