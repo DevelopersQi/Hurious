@@ -54,11 +54,6 @@ TRANSLATION = {
         "ZH": "TUN 未启用",
         "isReviewed": "True"
     },
-    "The selected TUN backend is not supported by this core. Select Auto or a compatible backend.": {
-        "source": ["Furious.Plugins.API", "Furious.Plugins.Registry"],
-        "ZH": "当前核心不支持所选的 TUN 后端。请选择“自动”或与当前核心兼容的后端。",
-        "isReviewed": "True"
-    },
     "Delete": {
         "source": [
             "Furious.Backends.Xray.AssetWindow",
