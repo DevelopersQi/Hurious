@@ -39,6 +39,20 @@ __all__ = ['Hysteria2TunSettingsDialog']
 
 logger = logging.getLogger(__name__)
 
+# Keep indirect editor title strings visible to the translation catalogue generator.
+_TUN_SETTINGS_TRANSLATIONS = (
+    _('Interface Name'),
+    _('MTU'),
+    _('Timeout'),
+    _('IPv4 TUN Address'),
+    _('IPv6 TUN Address'),
+    _('IPv4 Routes'),
+    _('IPv6 Routes'),
+    _('IPv4 Excluded Routes'),
+    _('IPv6 Excluded Routes'),
+)
+
+
 
 def _singleColumnFormLayout(containers):
     """Lay out native TUN fields vertically with expandable input controls."""
