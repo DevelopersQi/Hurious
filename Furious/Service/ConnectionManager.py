@@ -122,9 +122,6 @@ class _ConnectionStartAttempt:
         self.leases.clear()
         self.manager._advanceWfpRuntimeGeneration()
 
-        if self.manager._wfpIpcController is not None:
-            self.manager._wfpIpcController.queryStatus()
-
         self.committed = True
 
 
@@ -1118,15 +1115,17 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._activeStartOperation = None
         self._activeTUNBackend = None
         self._wfpRuntimeGeneration = 0
-        self._wfpIpcController = (
-            WfpIpcController(parent=self) if sys.platform == 'win32' else None
-        )
+        self._wfpIpcController = None
 
-        if self._wfpIpcController is not None:
-            self._wfpIpcController.requestFinished.connect(
-                self._onWfpIpcRequestFinished
-            )
-
+    def _getWfpIpcController(self):
+        """Create the background IPC worker only when Windows WFP is needed."""
+        if sys.platform != 'win32':
+            return None
+        if self._wfpIpcController is None:
+            controller = WfpIpcController(parent=self)
+            controller.requestFinished.connect(self._onWfpIpcRequestFinished)
+            self._wfpIpcController = controller
+        return self._wfpIpcController
     def _onWfpIpcRequestFinished(self, requestId, command, result, error):
         """Log asynchronous WFP control-plane results without affecting proxy state."""
         if error:
@@ -1143,8 +1142,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
     def _startWfpBroker(self, configuration):
         """Start the service-hosted TCP broker for a ready proxy runtime."""
-        controller = self._wfpIpcController
-        if controller is None:
+        if sys.platform != 'win32':
             return None
         endpointGetter = getattr(configuration, 'socksProxy', None)
         if not callable(endpointGetter):
@@ -1156,6 +1154,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
             return None
         try:
             host, port = parseHostPort(endpoint)
+            controller = self._getWfpIpcController()
+            controller.queryStatus()
             return controller.startBroker(host, int(port))
         except Exception as error:
             logger.warning(f'WFP TCP broker start could not be queued: {error}')
