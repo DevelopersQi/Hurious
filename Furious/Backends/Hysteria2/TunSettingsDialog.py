@@ -307,7 +307,7 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
         super().__init__(*args, **kwargs)
 
         self.setTabText(_('Customize Hysteria2 TUN Settings'))
-        self.setFixedSize(int(650 * GOLDEN_RATIO), 650)
+        self.setFixedSize(int(650 * GOLDEN_RATIO), 770)
 
         self._settings = getHysteria2TUNSettings()
 
