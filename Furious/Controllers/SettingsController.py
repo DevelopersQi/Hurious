@@ -36,6 +36,7 @@ __all__ = [
     'LOG_AUTO_CLEAR_SETTING',
     'PROXY_ENDPOINT_INFO_SETTING',
     'SYSTEM_PROXY_MODE_OPTIONS',
+    'TUN_BACKEND_OPTIONS',
     'SettingsController',
 ]
 
@@ -44,12 +45,23 @@ APPLICATION_THEME_SETTING = 'ApplicationTheme'
 _LEGACY_DARK_MODE_SETTING = 'DarkMode'
 LOG_AUTO_SCROLL_DOWN_SETTING = 'LogAutoScrollDown'
 LOG_AUTO_CLEAR_SETTING = 'LogAutoClear'
+TUN_BACKEND_OPTIONS = (
+    ('Automatic (Recommended)', 'auto'),
+    ('Tun2socks', 'tun2socks'),
+    ('Xray-core Native TUN', 'xray'),
+    ('Hysteria 2 Native TUN', 'hysteria2'),
+)
 SYSTEM_PROXY_MODE_OPTIONS = (
     ('Automatically Configure System Proxy', AppBuiltinProxyMode.Auto.value),
     ('Do Not Change System Proxy', AppBuiltinProxyMode.NoChanges.value),
 )
 
 registerAppSettings('VPNMode', isBinary=True)
+registerAppSettings(
+    'TUNBackend',
+    validRange=[value for _label, value in TUN_BACKEND_OPTIONS],
+    default='auto',
+)
 registerAppSettings(
     APPLICATION_THEME_SETTING,
     validRange=[theme.value for theme in ApplicationTheme],
@@ -145,6 +157,7 @@ class SettingsController(QtCore.QObject):
     """Apply application settings independently from their presentation."""
 
     tunModeChanged = QtCore.Signal(bool)
+    tunBackendChanged = QtCore.Signal(str)
     systemProxyModeChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
@@ -168,6 +181,18 @@ class SettingsController(QtCore.QObject):
             return not SystemRuntime.flatpakID()
 
         return SystemRuntime.isAdmin()
+
+    def setTUNBackend(self, backend: str):
+        """Persist the preferred TUN implementation for the next connection."""
+        validBackends = tuple(value for _label, value in TUN_BACKEND_OPTIONS)
+        backend = str(backend or '').strip().casefold()
+
+        if backend not in validBackends or AppSettings.get('TUNBackend') == backend:
+            return
+
+        AppSettings.set('TUNBackend', backend)
+        self.tunBackendChanged.emit(backend)
+        showMBoxNewChangesNextTime()
 
     def setTUNMode(self, enabled: bool):
         """Persist the global TUN mode and notify active workflows."""
