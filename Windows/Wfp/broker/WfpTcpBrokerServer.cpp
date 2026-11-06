@@ -375,6 +375,36 @@ bool TcpBrokerServer::IsRunning() const noexcept {
     return !stopping_.load();
 }
 
+bool TcpBrokerServer::IsConfiguredFor(
+    const sockaddr* address,
+    int addressLength) const noexcept {
+    if (stopping_.load() || address == nullptr) {
+        return false;
+    }
+    if (address->sa_family != socksAddress_.ss_family) {
+        return false;
+    }
+    if (address->sa_family == AF_INET &&
+        addressLength >= sizeof(sockaddr_in) &&
+        socksAddressLength_ >= sizeof(sockaddr_in)) {
+        const auto* requested = reinterpret_cast<const sockaddr_in*>(address);
+        const auto* current = reinterpret_cast<const sockaddr_in*>(&socksAddress_);
+        return requested->sin_port == current->sin_port &&
+            requested->sin_addr.s_addr == current->sin_addr.s_addr;
+    }
+    if (address->sa_family == AF_INET6 &&
+        addressLength >= sizeof(sockaddr_in6) &&
+        socksAddressLength_ >= sizeof(sockaddr_in6)) {
+        const auto* requested = reinterpret_cast<const sockaddr_in6*>(address);
+        const auto* current = reinterpret_cast<const sockaddr_in6*>(&socksAddress_);
+        return requested->sin6_port == current->sin6_port &&
+            requested->sin6_scope_id == current->sin6_scope_id &&
+            std::memcmp(&requested->sin6_addr, &current->sin6_addr,
+                sizeof(IN6_ADDR)) == 0;
+    }
+    return false;
+}
+
 std::uint32_t TcpBrokerServer::ProcessId() const noexcept {
     return GetCurrentProcessId();
 }

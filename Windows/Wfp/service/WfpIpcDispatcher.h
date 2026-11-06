@@ -124,7 +124,6 @@ inline DWORD StartBroker(const void* payload, size_t payloadSize) noexcept {
     std::memcpy(&request, payload, sizeof(request));
     if (request.Size != sizeof(request) || request.AbiVersion != FURIOUS_WFP_BROKER_ABI_VERSION || request.Reserved != 0 || request.SocksPort == 0 || (request.Flags & ~FURIOUS_WFP_BROKER_KNOWN_FLAGS) != 0 || request.Flags == 0) return ERROR_INVALID_PARAMETER;
     auto& broker = GetTcpBrokerServer();
-    if (broker.IsRunning()) return ERROR_ALREADY_INITIALIZED;
     sockaddr_storage address = {};
     int addressLength = 0;
     if (request.SocksAddressFamily == FURIOUS_WFP_BROKER_FAMILY_IPV4) {
@@ -135,6 +134,23 @@ inline DWORD StartBroker(const void* payload, size_t payloadSize) noexcept {
         auto* ipv6 = reinterpret_cast<sockaddr_in6*>(&address); ipv6->sin6_family = AF_INET6; ipv6->sin6_port = htons(request.SocksPort);
         std::memcpy(&ipv6->sin6_addr, request.SocksAddress, 16); addressLength = sizeof(sockaddr_in6);
     } else return ERROR_INVALID_PARAMETER;
+    if (broker.IsRunning() && !broker.IsConfiguredFor(
+            reinterpret_cast<const sockaddr*>(&address), addressLength)) {
+        FURIOUS_WFP_DRIVER_STATUS driverStatus = {};
+        const DWORD queryStatus = furious::wfp::driver::QueryStatus(&driverStatus);
+        if (queryStatus == ERROR_SUCCESS &&
+            (driverStatus.Flags & FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED) != 0) {
+            const DWORD clearStatus = furious::wfp::driver::ClearEndpointConfig();
+            if (clearStatus != ERROR_SUCCESS) return clearStatus;
+        } else if (queryStatus != ERROR_SUCCESS &&
+                   queryStatus != ERROR_FILE_NOT_FOUND &&
+                   queryStatus != ERROR_PATH_NOT_FOUND) {
+            return queryStatus;
+        }
+        broker.Stop();
+    } else if (broker.IsRunning()) {
+        return ERROR_SUCCESS;
+    }
     const bool listenV4 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV4) != 0;
     const bool listenV6 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV6) != 0;
     return broker.Start(reinterpret_cast<const sockaddr*>(&address), addressLength, listenV4, listenV6) ? ERROR_SUCCESS : ERROR_GEN_FAILURE;

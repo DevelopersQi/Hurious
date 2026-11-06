@@ -38,6 +38,7 @@ public:
     void Stop() noexcept;
 
     bool IsRunning() const noexcept;
+    bool IsConfiguredFor(const sockaddr* socksAddress, int socksAddressLength) const noexcept;
     std::uint32_t ProcessId() const noexcept;
     TcpBrokerListenerPorts ListenerPorts() const noexcept;
 
