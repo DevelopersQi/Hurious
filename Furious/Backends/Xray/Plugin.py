@@ -332,6 +332,15 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
         else:
             routingObject = {}
 
+        # Application process rules are evaluated before domain/IP rules so an
+        # explicit per-app choice wins regardless of the selected global profile.
+        appRules = applicationRoutingRulesObject()
+        if appRules:
+            if not isinstance(routingObject, dict):
+                routingObject = {}
+            routingObject = dict(routingObject)
+            routingObject['rules'] = appRules + list(routingObject.get('rules', []))
+
         if log:
             logger.info(f'core {XrayCore.name()} configured')
             logger.info(f'routing is {routing}')
