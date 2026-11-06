@@ -100,7 +100,7 @@ static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
     const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
     VOID* layerData,
-    VOID* classifyContext,
+    const VOID* classifyContext,
     const FWPS_FILTER1* filter,
     UINT64 flowContext,
     FWPS_CLASSIFY_OUT0* classifyOut)
