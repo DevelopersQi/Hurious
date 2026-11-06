@@ -241,6 +241,35 @@ class XrayNativeTUNTest(unittest.TestCase):
 
         manager.cleanup()
 
+    def testConnectionManagerPassesExplicitBackendToRegistry(self):
+        """Route a persisted backend preference into the plugin preparation path."""
+        original = self.configuration(nativeTUN=False)
+        registry = mock.Mock()
+        registry.prepareTUN.return_value = True
+        manager = _RecordingConnectionManager()
+
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.SystemRuntime.isTUNMode',
+                return_value=True,
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.AppSettings.get',
+                return_value='xray',
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.getPluginRegistry',
+                return_value=registry,
+            ),
+        ):
+            self.assertTrue(manager.start(original, 'Global'))
+
+        registry.prepareTUN.assert_called_once()
+        self.assertEqual(registry.prepareTUN.call_args.args[1], 'xray')
+        registry.usesApplicationTun2socks.assert_not_called()
+
+        manager.cleanup()
+
     def testManagedTUNPreparationFailureDoesNotFallBackToTun2socks(self):
         """Fail an unavailable managed TUN instead of changing networking mode."""
         original = self.configuration(nativeTUN=True)
