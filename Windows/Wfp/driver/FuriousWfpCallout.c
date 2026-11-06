@@ -1,8 +1,9 @@
 #include <ntddk.h>
-#include <ndis.h>
 
+// FWPS depends on NDIS 6 buffer-list declarations in ndis.h.
+#define NDIS_SUPPORT_NDIS6 1
 #pragma warning(push)
-#pragma warning(disable:4201) // WDK WFP headers use anonymous structs/unions.
+#pragma warning(disable:4201) // WDK NDIS/WFP headers use anonymous structs/unions.
 #include <fwpsk.h>
 #pragma warning(pop)
 #include <initguid.h>
