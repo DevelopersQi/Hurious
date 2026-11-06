@@ -864,6 +864,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         openAboutPage,
         restartAsAdmin,
         openApplicationFolder,
+        openRoutingEditor=None,
         parent=None,
     ):
         """Build settings sections around existing actions and dialogs."""
@@ -879,6 +880,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             self._openAboutPage,
             self._restartAsAdmin,
             self._openApplicationFolder,
+            self._openRoutingEditor,
         ) = (
             tunSettingsDialogFactory,
             proxyBypassDialog,
@@ -887,6 +889,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             openAboutPage,
             restartAsAdmin,
             openApplicationFolder,
+            openRoutingEditor,
         )
 
         self.pageTitleLabel = AppQLabel(_('Settings'))
@@ -1074,6 +1077,20 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         # Keep backend overrides with advanced connection settings; everyday
         # TUN use only requires the single VPN Mode switch in General.
         self.connectionSection.addCard(self.tunBackendCard)
+        self.customRoutingCard = None
+        if callable(self._openRoutingEditor):
+            self.customRoutingCard = _ActionSettingsCard(
+                'signpost.svg',
+                self._openRoutingEditor,
+                _('Custom Routing Rules'),
+                _(
+                    'Create routing profiles and configure domain, IP, port, '
+                    'protocol, and process rules. Select a profile in the routing '
+                    'selector to apply it.'
+                ),
+                _('Configure'),
+            )
+            self.connectionSection.addCard(self.customRoutingCard)
         self.connectionSection.addCard(self.systemProxyCard)
         self.connectionSection.addCard(self.proxyBypassCard)
         self.connectionSection.addCard(self.networkTestCard)
