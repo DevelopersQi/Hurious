@@ -28,18 +28,27 @@ application-rule snapshot. Compilation sorts rules by ascending numeric priority
 and rejects multiple textual paths that resolve to the same application ID.
 CLEAR_POLICY clears both snapshots while preserving the monotonic generation.
 
-The compiled rules are **not yet installed as WFP filters**. The driver remains
-a pass-through ALE callout and is not loaded by the service. No traffic is
-blocked or redirected. Do not treat policy acceptance or App ID compilation as
+The compiled rules are **not yet installed as application-specific WFP filters**
+and are not consumed by the kernel classify path. The service starts the callout
+driver and installs the base IPv4/IPv6 redirect filters, but clears endpoint
+configuration at startup; without a live endpoint, the classify callback passes
+traffic through. Do not treat policy acceptance or App ID compilation as
 application routing being active.
+
+The driver endpoint ABI is version 2 and supports up to eight auxiliary process
+IDs in addition to the local redirect-target PID. The kernel validates and
+excludes those IDs when supplied. The service does not yet discover or refresh
+Xray/Hysteria2 process IDs across backend start/stop/restart, so this facility is
+not yet wired to the backend lifecycle.
 
 Before enabling traffic filters or redirect:
 - resolve each executable path to a canonical WFP application ID;
 - verify provider, sublayer and callout ownership before reusing objects;
 - package a correctly signed driver beside the service executable and validate
   SCM start/stop behavior under the actual service account;
-- connect live backend endpoint discovery to SET_ENDPOINT_CONFIG and clear it
-  whenever the backend exits or changes;
+- connect live backend endpoint discovery and restart-safe Broker/core process
+  exclusion refresh to SET_ENDPOINT_CONFIG; clear it whenever the backend exits
+  or changes;
 - implement the proxy-side WSAIoctl redirect-context/redirect-record relay path;
 - implement TCP and UDP separately, with IPv4 and IPv6 parity;
 - reconcile stale filters after crashes and ensure safe rollback;
