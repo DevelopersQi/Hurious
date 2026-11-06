@@ -27,8 +27,8 @@ inline ValidationResult ValidatePolicy(const void* data,size_t bytes) noexcept {
   if(r.Size!=sizeof(FURIOUS_WFP_APPLICATION_RULE))return ValidationResult::InvalidRuleSize;
   if(r.Enabled>1)return ValidationResult::InvalidEnabledFlag;
   if(r.Action!=FuriousWfpActionProxy&&r.Action!=FuriousWfpActionDirect)return ValidationResult::InvalidAction;
-  if(r.ImagePathChars<3||r.ImagePathChars>=FURIOUS_WFP_MAX_IMAGE_PATH_CHARS||r.ImagePath[r.ImagePathChars]!=L'\\0')return ValidationResult::InvalidPathLength;
-  for(uint32_t c=0;c<r.ImagePathChars;++c){const wchar_t ch=r.ImagePath[c];if(ch==L'\\0'||ch<0x20||ch==L'*'||ch==L'?')return ValidationResult::PathContainsInvalidCharacter;}
+  if(r.ImagePathChars<3||r.ImagePathChars>=FURIOUS_WFP_MAX_IMAGE_PATH_CHARS||r.ImagePath[r.ImagePathChars]!=L'\0')return ValidationResult::InvalidPathLength;
+  for(uint32_t c=0;c<r.ImagePathChars;++c){const wchar_t ch=r.ImagePath[c];if(ch==L'\0'||ch<0x20||ch==L'*'||ch==L'?')return ValidationResult::PathContainsInvalidCharacter;}
   if(!IsAbsoluteWindowsPath(r.ImagePath,r.ImagePathChars))return ValidationResult::PathNotAbsolute;
   for(uint32_t j=0;j<i;++j){FURIOUS_WFP_APPLICATION_RULE previous={};std::memcpy(&previous,raw+sizeof(h)+static_cast<size_t>(j)*sizeof(previous),sizeof(previous));if(previous.Priority==r.Priority)return ValidationResult::DuplicatePriority;if(EqualPathInsensitive(previous.ImagePath,r.ImagePath))return ValidationResult::DuplicateImagePath;}
  }
