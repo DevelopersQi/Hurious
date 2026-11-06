@@ -11,6 +11,9 @@ long-running broker service.
 - Re-apply the opaque redirect-record chain to a new socket before connect.
 - Negotiate a no-auth SOCKS5 session and issue a binary IPv4/IPv6 CONNECT.
 - Relay TCP data in both directions with half-close support and an idle timeout.
+- Bind IPv4 and IPv6 loopback listeners on dynamically assigned ports.
+- Bound queued and active sessions, with worker threads and coordinated shutdown.
+- Restrict the local SOCKS upstream to loopback addresses and bound handshake waits.
 
 The code deliberately never opens a direct socket to the original destination.
 The only upstream connection it creates is to the configured local SOCKS5
@@ -18,10 +21,11 @@ inbound, so traffic continues through the selected Xray/Hysteria2 backend.
 
 ## Important integration boundary
 
-These primitives are not yet a complete broker service. A subsequent layer
-must own IPv4/IPv6 listeners, bounded concurrent sessions, graceful shutdown,
-backend inbound discovery, and publication of the real broker PID and listener
-ports to the WFP service. Until that layer exists and passes Windows tests,
+The listener service is implemented as a native library component, but it is
+not yet wired into ConnectionManager or backend inbound discovery. The next
+integration layer must supply the selected backend's actual SOCKS inbound,
+start and stop this server with the proxy runtime, and publish the real broker
+PID and listener ports to the WFP service. Until that layer exists and passes Windows tests,
 the SET_ENDPOINT_CONFIG command must remain disabled.
 
 The redirect-record blob is opaque and is copied without interpretation. The
