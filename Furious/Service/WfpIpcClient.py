@@ -124,7 +124,9 @@ def parse_response(data, command, request_id):
     return WfpIpcResponse(response_command, response_id, status, state, broker_pid, tcp_port_v4, tcp_port_v6)
 
 
-def pack_broker_start_request(socks_host, socks_port, *, listen_ipv4=True, listen_ipv6=True):
+def pack_broker_start_request(
+    socks_host, socks_port, *, listen_ipv4=True, listen_ipv6=True
+):
     """Encode a loopback SOCKS inbound and requested broker listener families."""
     host = str(socks_host).strip()
     if host.startswith("[") and host.endswith("]"):
@@ -144,7 +146,9 @@ def pack_broker_start_request(socks_host, socks_port, *, listen_ipv4=True, liste
         address_bytes += bytes(12)
     else:
         family = 6
-    return _BROKER_START.pack(_BROKER_START.size, 1, family, flags, port, 0, address_bytes)
+    return _BROKER_START.pack(
+        _BROKER_START.size, 1, family, flags, port, 0, address_bytes
+    )
 
 def pack_endpoint_config(
     *,
@@ -363,7 +367,10 @@ class WfpIpcClient:
         return self.request(COMMAND_CLEAR_ENDPOINT_CONFIG)
 
     def startBroker(self, socks_host, socks_port, listen_ipv4=True, listen_ipv6=True):
-        payload = pack_broker_start_request(socks_host, socks_port, listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6)
+        payload = pack_broker_start_request(
+            socks_host, socks_port,
+            listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6,
+        )
         return self.request(COMMAND_START_BROKER, payload)
 
     def stopBroker(self):

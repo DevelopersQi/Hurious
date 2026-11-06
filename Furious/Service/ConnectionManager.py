@@ -1160,6 +1160,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         except Exception as error:
             logger.warning(f'WFP TCP broker start could not be queued: {error}')
             return None
+
     def _advanceWfpRuntimeGeneration(self):
         """Advance the identity of the committed runtime ownership snapshot."""
         self._wfpRuntimeGeneration = (

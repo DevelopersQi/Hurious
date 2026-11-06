@@ -43,13 +43,15 @@ DWORD CleanupWfp(
     furious::wfp::DriverLifecycle& driver,
     bool filtersInstalled,
     bool providerReady) {
-    furious::wfp::ipc::StopBroker();
-
+    DWORD endpointStatus = ERROR_SUCCESS;
     if (driver.IsPresent()) {
-        const DWORD clearStatus = furious::wfp::driver::ClearEndpointConfig();
-        if (clearStatus != ERROR_SUCCESS) {
-            return clearStatus;
-        }
+        endpointStatus = furious::wfp::driver::ClearEndpointConfig();
+    }
+
+    // Disable redirection before stopping the listener that receives it.
+    furious::wfp::ipc::StopBroker();
+    if (endpointStatus != ERROR_SUCCESS) {
+        return endpointStatus;
     }
 
     if (filtersInstalled) {
