@@ -154,10 +154,15 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
         return None
 
     def prepareTUN(self, config) -> bool:
-        """Preserve user TUN or replace it with Furious-managed native TUN."""
-        # Auto uses the native Xray TUN on desktop platforms.  Linux keeps
-        # the established Tun2socks fallback; users can explicitly select
-        # Xray-core Native TUN in the global TUN Backend selector.
+        """Apply the legacy Auto preference without overriding custom TUN."""
+        # The per-core switch is no longer exposed in the UI, but its stored
+        # value remains the Auto default for backward compatibility. Explicit
+        # global backend selections are handled separately below.
+        if not isXrayTUNEnabled():
+            return hasXrayTUNInbound(config)
+
+        # Linux retains the established Tun2socks Auto behavior. Users can
+        # explicitly select Xray-core Native TUN in the global selector.
         if PLATFORM == 'Linux':
             return hasXrayTUNInbound(config)
 
