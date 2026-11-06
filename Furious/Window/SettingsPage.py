@@ -619,9 +619,9 @@ class _TUNBackendSettingsCard(QFrame):
         selectedBackend = (
             backend if isinstance(backend, str) else AppSettings.get('TUNBackend')
         )
+        if selectedBackend not in self.optionButtons:
+            selectedBackend = 'auto'
         radio = self.optionButtons.get(selectedBackend)
-        if radio is None:
-            radio = self.optionButtons.get('auto')
         if radio is not None:
             blocker = QtCore.QSignalBlocker(self.buttonGroup)
             radio.setChecked(True)
