@@ -28,7 +28,7 @@ import logging
 import re
 import subprocess
 
-__all__ = ['getPrimaryAdapterInfo']
+__all__ = ['getPrimaryAdapterInfo', 'resolvePrimaryAdapterInterfaceName']
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +195,17 @@ def _macInterfaceIP(output: str) -> str:
             return match.group(1)
 
     return ''
+
+
+
+def resolvePrimaryAdapterInterfaceName(preferred: str = '') -> str:
+    """Return the configured physical interface or detect the default-route interface."""
+    preferred = preferred.strip()
+
+    if preferred:
+        return preferred
+
+    return getPrimaryAdapterInfo().get('name', '')
 
 
 def getPrimaryAdapterInfo() -> dict[str, str]:
