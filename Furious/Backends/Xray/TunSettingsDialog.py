@@ -156,7 +156,12 @@ class GuiXrayTUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
 
     def __init__(self, **kwargs):
         """Initialize the interface settings group."""
-        super().__init__(_('Interface'), **kwargs)
+        self._titleKey = 'Interface'
+        super().__init__(_(self._titleKey), **kwargs)
+
+    def retranslate(self):
+        """Refresh the group title using its untranslated source key."""
+        self.setTitle(_(self._titleKey))
 
     def setupPageLayout(self):
         """Use the same responsive single-column layout for native TUN fields."""
@@ -166,23 +171,22 @@ class GuiXrayTUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
         """Return interface-setting editors in display order."""
         return [
             GuiXrayTUNItemText(
-                title=_('Interface Name'),
+                title='Interface Name',
                 key='name',
             ),
             GuiXrayTUNItemText(
-                title=_('Interface Description'),
+                title='Interface Description',
                 key='desc',
-                maximumWidth=360,
             ),
             GuiXrayTUNItemNumber(
-                title=_('MTU'),
+                title='MTU',
                 key='mtu',
                 default=1500,
                 minimum=1,
                 maximum=65535,
             ),
             GuiXrayTUNItemNumber(
-                title=_('User Level'),
+                title='User Level',
                 key='userLevel',
                 default=0,
                 minimum=0,
@@ -232,7 +236,8 @@ class GuiXrayTUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
 
     def __init__(self, **kwargs):
         """Initialize the network settings group."""
-        super().__init__(_('Network'), **kwargs)
+        self._titleKey = 'Network'
+        super().__init__(_(self._titleKey), **kwargs)
 
     def setupPageLayout(self):
         """Use the same responsive single-column layout for native TUN fields."""
@@ -242,19 +247,19 @@ class GuiXrayTUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
         """Return network-setting editors in display order."""
         return [
             GuiXrayTUNItemList(
-                title=_('Gateway (separated by commas)'),
+                title='Gateway (separated by commas)',
                 key='gateway',
             ),
             GuiXrayTUNItemList(
-                title=_('DNS (separated by commas)'),
+                title='DNS (separated by commas)',
                 key='dns',
             ),
             GuiXrayTUNItemList(
-                title=_('AutoSystemRoutingTable (separated by commas)'),
+                title='AutoSystemRoutingTable (separated by commas)',
                 key='autoSystemRoutingTable',
             ),
             GuiXrayTUNItemText(
-                title=_('Automatic Outbound Interface'),
+                title='Automatic Outbound Interface',
                 key='autoOutboundsInterface',
             ),
         ]
