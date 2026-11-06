@@ -564,6 +564,18 @@ jobs:
           # Native extension imports fail here if a wheel has the wrong machine type.
           print('All native bindings imported successfully')
 
+          # Exercise the built-in ctypes fallback through Furious's production
+          # wrapper, including listener startup and bounded shutdown.
+          from Furious.Frozenlib.Win32Session import Win32Session
+
+          if not Win32Session.set(lambda: None):
+              raise SystemExit('Windows session callback registration failed')
+          if not Win32Session.run():
+              raise SystemExit('Windows session listener startup failed')
+          if not Win32Session.off():
+              raise SystemExit('Windows session listener shutdown failed')
+          print('Built-in Windows session notifications started and stopped')
+
           # Some Windows PySide6 distributions intentionally omit Qt WebEngine.
           # The application must still import and use its non-WebEngine map fallback.
           from Furious.Widget.EndpointInfoWidget import EndpointInfoWidget
