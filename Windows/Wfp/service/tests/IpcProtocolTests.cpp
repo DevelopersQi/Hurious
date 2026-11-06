@@ -1,6 +1,7 @@
 #include "../../include/WfpControlProtocol.h"
 #include "../WfpIpcDispatcher.h"
-#include "../WfpPolicyValidator.h"\n#include "../WfpPolicyCompiler.h"
+#include "../WfpPolicyValidator.h"
+#include "../WfpPolicyCompiler.h"
 
 #include <array>
 #include <cstdint>
