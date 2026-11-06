@@ -345,7 +345,10 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
             if not isinstance(routingObject, dict):
                 routingObject = {}
             routingObject = dict(routingObject)
-            routingObject['rules'] = appRules + list(routingObject.get('rules', []))
+            existingRules = routingObject.get('rules', [])
+            if not isinstance(existingRules, list):
+                existingRules = []
+            routingObject['rules'] = appRules + existingRules
 
         if log:
             logger.info(f'core {XrayCore.name()} configured')
