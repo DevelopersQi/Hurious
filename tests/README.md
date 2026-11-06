@@ -55,6 +55,7 @@ strategy in an individual test.
 | Bounded service work, update validation, plugin UI, and worker lifetime | `test_service_runtime.py` |
 | Frozenlib state helpers and mocked platform-operation boundaries | `test_frozenlib.py` |\n| Windows logoff/shutdown message handling, callback delivery, and native listener cleanup | `test_win32session_native.py` (Windows-only; synthetic messages, no real shutdown) |
 | Windows/Linux/macOS default-route and primary-adapter parsing | `test_system_network_detection.py` (platform output parsing; no host routes are modified) |
+| Official Wintun archive checksum, architecture extraction, and redistribution license | `test_wintun_deployment.py` (mocked download; no network access) |
 | Settings sandbox, navigation overlay behavior, public exports, and scale/theme isolation | `test_isolation_and_navigation.py`, `test_public_api.py`, `test_layout_matrix.py` |
 | Shared Fluent visual states, zero table padding and intact rounded list corners, rounded menu/combo popup transparency and interaction, and native line-edit clear-button alignment and theme changes | `test_stylesheet_states.py` |
 | Theme cross-fade activation, interruption, multi-window cleanup, and animation policy | `test_theme_transition.py` |
