@@ -1167,14 +1167,21 @@ class ConnectionManager(Mixins.CleanupOnExit):
         )
 
         if pluginTUN:
+            factory = registry.factoryForConfig(config)
+            factoryId = getattr(factory, 'factoryId', 'unknown')
+            logger.info(
+                f'native TUN backend selected: {factoryId}; '
+                f'preference: {tunBackend}'
+            )
+
             return True, False
 
         useAppTun2socks = registry.usesApplicationTun2socks(config)
 
         if useAppTun2socks:
             logger.info(
-                f'application-managed tun2socks selected. Remote '
-                f'address: {config.remoteAddress()!r}'
+                f'application-managed Tun2socks selected; preference: {tunBackend}. '
+                f'Remote address: {config.remoteAddress()!r}'
             )
         else:
             logger.info(
