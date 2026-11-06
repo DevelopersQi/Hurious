@@ -1,5 +1,7 @@
 #pragma once
 #include "../include/ApplicationRoutingPolicy.h"
+#include <windows.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -10,8 +12,13 @@ inline bool IsAbsoluteWindowsPath(const wchar_t* p, uint32_t n) noexcept {
  const bool drive=((p[0]>=L'A'&&p[0]<=L'Z')||(p[0]>=L'a'&&p[0]<=L'z'))&&p[1]==L':'&&(p[2]==L'\\'||p[2]==L'/');
  return drive || (n>=5 && p[0]==L'\\' && p[1]==L'\\');
 }
-inline bool EqualPathInsensitive(const wchar_t* a,const wchar_t* b) noexcept {
- for(;*a&&*b;++a,++b){wchar_t x=*a,y=*b;if(x>=L'A'&&x<=L'Z')x+=L'a'-L'A';if(y>=L'A'&&y<=L'Z')y+=L'a'-L'A';if(x!=y)return false;} return *a==*b;
+inline bool EqualPathInsensitive(const wchar_t* a, const wchar_t* b) noexcept {
+    if (a == nullptr || b == nullptr) {
+        return a == b;
+    }
+    // Windows paths use ordinal, case-insensitive comparison. ASCII-only
+    // folding misses case-equivalent Unicode characters in localized paths.
+    return CompareStringOrdinal(a, -1, b, -1, TRUE) == CSTR_EQUAL;
 }
 inline ValidationResult ValidatePolicy(const void* data,size_t bytes) noexcept {
  if(!data)return ValidationResult::NullPolicy;

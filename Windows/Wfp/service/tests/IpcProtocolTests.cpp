@@ -64,6 +64,12 @@ int main() {
 
     using furious::wfp::policy::ValidatePolicy;
     using PolicyValidationResult = furious::wfp::policy::ValidationResult;
+    CHECK(furious::wfp::policy::EqualPathInsensitive(
+        L"C:\\Program Files\\Furious\\代理.exe",
+        L"c:\\program files\\furious\\代理.exe"));
+    CHECK(!furious::wfp::policy::EqualPathInsensitive(
+        L"C:\\Program Files\\Furious\\代理.exe",
+        L"C:\\Program Files\\Furious\\other.exe"));
     FURIOUS_WFP_POLICY_HEADER policyHeader = {};
     policyHeader.Size = sizeof(policyHeader);
     policyHeader.AbiVersion = FURIOUS_WFP_POLICY_ABI_VERSION;
