@@ -1,4 +1,6 @@
 #include <ntddk.h>
+#include <ws2def.h>
+#include <ws2ipdef.h>
 
 // FWPS depends on NDIS 6 buffer-list declarations in ndis.h.
 #define NDIS_SUPPORT_NDIS6 1
@@ -204,6 +206,8 @@ static NTSTATUS NTAPI FuriousDeviceControl(
     return status;
 }
 
+#define FURIOUS_WFP_REDIRECT_POOL_TAG 'cWrF'
+
 static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
     const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
@@ -213,17 +217,169 @@ static VOID NTAPI FuriousClassify(
     UINT64 flowContext,
     FWPS_CLASSIFY_OUT0* classifyOut)
 {
-    UNREFERENCED_PARAMETER(inFixedValues);
-    UNREFERENCED_PARAMETER(inMetaValues);
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG endpoint;
+    FURIOUS_WFP_REDIRECT_CONTEXT* redirectContext = NULL;
+    FWPS_CONNECTION_REDIRECT_STATE redirectState;
+    FWPS_CONNECT_REQUEST0* connectRequest = NULL;
+    UINT8 protocol;
+    UINT16 targetPort;
+    UINT16 addressFamily;
+    UINT64 classifyHandle = 0;
+    NTSTATUS status;
+    KIRQL oldIrql;
+    BOOLEAN isV4;
+
     UNREFERENCED_PARAMETER(layerData);
-    UNREFERENCED_PARAMETER(classifyContext);
-    UNREFERENCED_PARAMETER(filter);
     UNREFERENCED_PARAMETER(flowContext);
 
-    if (classifyOut != NULL &&
-        (classifyOut->rights & FWPS_RIGHT_ACTION_WRITE) != 0) {
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+    if (classifyOut == NULL ||
+        (classifyOut->rights & FWPS_RIGHT_ACTION_WRITE) == 0 ||
+        inFixedValues == NULL || inMetaValues == NULL || filter == NULL ||
+        classifyContext == NULL || gRedirectHandle == NULL) {
+        return;
     }
+
+    if (!FWPS_IS_METADATA_FIELD_PRESENT(
+            inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID) ||
+        !FWPS_IS_METADATA_FIELD_PRESENT(
+            inMetaValues, FWPS_METADATA_FIELD_REDIRECT_RECORDS)) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+    if (!gEndpointConfigValid) {
+        KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+    RtlCopyMemory(&endpoint, &gEndpointConfig, sizeof(endpoint));
+    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+
+    if (inMetaValues->processId == endpoint.ProxyProcessId) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    isV4 = inFixedValues->layerId == FWPS_LAYER_ALE_CONNECT_REDIRECT_V4;
+    if (!isV4 && inFixedValues->layerId != FWPS_LAYER_ALE_CONNECT_REDIRECT_V6) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    if (isV4) {
+        protocol = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_CONNECT_REDIRECT_V4_IP_PROTOCOL].value.uint8;
+        addressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    } else {
+        protocol = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_CONNECT_REDIRECT_V6_IP_PROTOCOL].value.uint8;
+        addressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    }
+
+    if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_TCP) {
+        if ((endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) == 0) {
+            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            return;
+        }
+        targetPort = isV4 ? endpoint.TcpPortV4 : endpoint.TcpPortV6;
+    } else if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
+        if ((endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) == 0) {
+            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            return;
+        }
+        targetPort = isV4 ? endpoint.UdpPortV4 : endpoint.UdpPortV6;
+    } else {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    if (targetPort == 0 ||
+        (isV4 && (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV4) == 0) ||
+        (!isV4 && (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV6) == 0)) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    redirectState = FwpsQueryConnectionRedirectState0(
+        inMetaValues->redirectRecords, gRedirectHandle, NULL);
+    if (redirectState != FWPS_CONNECTION_NOT_REDIRECTED) {
+        // Never recursively redirect our own connections or replace another
+        // inspector's redirect decision in this first implementation.
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    redirectContext = (FURIOUS_WFP_REDIRECT_CONTEXT*)ExAllocatePoolWithTag(
+        NonPagedPoolNx, sizeof(*redirectContext), FURIOUS_WFP_REDIRECT_POOL_TAG);
+    if (redirectContext == NULL) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+    RtlZeroMemory(redirectContext, sizeof(*redirectContext));
+    redirectContext->Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    redirectContext->Size = sizeof(*redirectContext);
+    redirectContext->AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    redirectContext->AddressFamily = addressFamily;
+    redirectContext->Protocol = protocol;
+    redirectContext->OriginalProcessId = (FURIOUS_WFP_U32)inMetaValues->processId;
+    redirectContext->PolicyGeneration = endpoint.PolicyGeneration;
+
+    status = FwpsAcquireClassifyHandle0((VOID*)classifyContext, 0, &classifyHandle);
+    if (!NT_SUCCESS(status)) {
+        ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    status = FwpsAcquireWritableLayerDataPointer0(
+        classifyHandle, filter->filterId, 0, (PVOID*)&connectRequest, classifyOut);
+    if (!NT_SUCCESS(status) || connectRequest == NULL ||
+        connectRequest->remoteAddressAndPort == NULL) {
+        FwpsReleaseClassifyHandle0(classifyHandle);
+        ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+        return;
+    }
+
+    if (isV4) {
+        SOCKADDR_IN* remote = (SOCKADDR_IN*)connectRequest->remoteAddressAndPort;
+        if (remote->sin_family != AF_INET || remote->sin_port == 0) {
+            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+            FwpsReleaseClassifyHandle0(classifyHandle);
+            ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            return;
+        }
+        redirectContext->OriginalPortNetworkOrder = remote->sin_port;
+        RtlCopyMemory(redirectContext->OriginalAddress,
+                      &remote->sin_addr, sizeof(remote->sin_addr));
+        remote->sin_addr.S_un.S_addr = RtlUlongByteSwap(0x7F000001u);
+        remote->sin_port = RtlUshortByteSwap(targetPort);
+    } else {
+        SOCKADDR_IN6* remote = (SOCKADDR_IN6*)connectRequest->remoteAddressAndPort;
+        if (remote->sin6_family != AF_INET6 || remote->sin6_port == 0) {
+            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+            FwpsReleaseClassifyHandle0(classifyHandle);
+            ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            return;
+        }
+        redirectContext->OriginalPortNetworkOrder = remote->sin6_port;
+        RtlCopyMemory(redirectContext->OriginalAddress,
+                      &remote->sin6_addr, sizeof(remote->sin6_addr));
+        RtlZeroMemory(&remote->sin6_addr, sizeof(remote->sin6_addr));
+        remote->sin6_addr.u.Byte[15] = 1;
+        remote->sin6_port = RtlUshortByteSwap(targetPort);
+    }
+
+    connectRequest->localRedirectTargetPID = endpoint.ProxyProcessId;
+    connectRequest->localRedirectHandle = gRedirectHandle;
+    connectRequest->localRedirectContext = redirectContext;
+    connectRequest->localRedirectContextSize = sizeof(*redirectContext);
+
+    FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+    FwpsReleaseClassifyHandle0(classifyHandle);
+    classifyOut->actionType = FWP_ACTION_PERMIT;
 }
 
 static NTSTATUS NTAPI FuriousNotify(
