@@ -89,7 +89,7 @@ DWORD VerifyDriverImagePath(SC_HANDLE service, const std::wstring& expectedPath)
     }
     if (config->dwServiceType != SERVICE_KERNEL_DRIVER ||
         config->lpBinaryPathName == nullptr) {
-        return ERROR_INVALID_SERVICE_TYPE;
+        return ERROR_INVALID_PARAMETER;
     }
 
     std::wstring configured(config->lpBinaryPathName);
