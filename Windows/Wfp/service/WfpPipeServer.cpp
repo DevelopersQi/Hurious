@@ -88,8 +88,10 @@ bool ReadRequest(HANDLE pipe, HANDLE stopEvent, void* buffer,
 
 bool WriteResponse(HANDLE pipe, const FURIOUS_WFP_IPC_RESPONSE& response) noexcept {
     DWORD written = 0;
-    return WriteFile(pipe, &response, sizeof(response), &written, nullptr) != FALSE &&
-        written == sizeof(response);
+    if (!WriteFile(pipe, &response, sizeof(response), &written, nullptr)) {
+        return false;
+    }
+    return written == sizeof(response);
 }
 
 DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
@@ -181,7 +183,6 @@ DWORD PipeServer::Run(HANDLE stopEvent) noexcept {
             }
         }
 
-        FlushFileBuffers(pipe);
         DisconnectNamedPipe(pipe);
         CloseHandle(pipe);
     }
@@ -191,11 +192,21 @@ DWORD PipeServer::Run(HANDLE stopEvent) noexcept {
 void PipeServer::Stop() noexcept {
     stopping_.store(true);
     // Connecting once releases a worker blocked in ConnectNamedPipe.
-    HANDLE wake = CreateFileW(
-        kPipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (wake != INVALID_HANDLE_VALUE) {
-        CloseHandle(wake);
+    // The worker may be between its stop check and CreateNamedPipe.
+    // Retry briefly so that a just-created listening instance is also released.
+    for (unsigned attempt = 0; attempt < 40; ++attempt) {
+        HANDLE wake = CreateFileW(
+            kPipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (wake != INVALID_HANDLE_VALUE) {
+            CloseHandle(wake);
+            return;
+        }
+        const DWORD error = GetLastError();
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PIPE_BUSY) {
+            return;
+        }
+        Sleep(25);
     }
 }
 
