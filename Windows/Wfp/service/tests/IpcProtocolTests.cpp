@@ -59,6 +59,9 @@ int main() {
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS, nullptr, 0) == ERROR_SUCCESS);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY, nullptr, 0) == ERROR_INVALID_DATA);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(CopyPolicySnapshot(policySnapshot, &storedGeneration) == ERROR_SUCCESS);
+    CHECK(policySnapshot.empty());
+    CHECK(storedGeneration == 1);
     CHECK(DispatchCommand(0xFFFFFFFFu, nullptr, 0) == ERROR_INVALID_FUNCTION);
 
     using furious::wfp::policy::ValidatePolicy;
@@ -83,6 +86,11 @@ int main() {
     CHECK(ValidatePolicy(policyBytes.data(), policyBytes.size()) == PolicyValidationResult::Valid);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
                           policyBytes.data(), policyBytes.size()) == ERROR_SUCCESS);
+    std::vector<uint8_t> policySnapshot;
+    uint64_t storedGeneration = 0;
+    CHECK(CopyPolicySnapshot(policySnapshot, &storedGeneration) == ERROR_SUCCESS);
+    CHECK(policySnapshot.size() == policyBytes.size());
+    CHECK(storedGeneration == 1);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
                           policyBytes.data(), policyBytes.size()) == ERROR_REVISION_MISMATCH);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY,
