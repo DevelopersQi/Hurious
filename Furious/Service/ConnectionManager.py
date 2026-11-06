@@ -45,6 +45,7 @@ from Furious.Plugins import (
 from Furious.Qt.Signals import connectWeakly, singleShotWeakly
 from Furious.Service.DnsResolver import DnsResolver
 from Furious.Core.Tun2socks import Tun2socks
+from Furious.Frozenlib.SystemNetwork import resolvePrimaryAdapterInterfaceName
 from Furious.Service.RuntimeLease import RuntimeEventRouter, RuntimeLease
 
 from typing import Callable, Tuple, Union
@@ -646,11 +647,15 @@ class ConnectionStartOperation(QtCore.QObject):
         tcpSendBufferSize = userTcpSendBufferSize()
         tcpReceiveBufferSize = userTcpReceiveBufferSize()
         tcpAutoTuning = userTcpAutoTuning() == 'True'
-        interfaceArg = (
-            APPLICATION_TUN2SOCKS_NETWORK_INTERFACE_NAME
-            if PLATFORM != 'Linux'
-            else self._interface
-        )
+        if PLATFORM == 'Linux':
+            interfaceArg = self._interface
+        elif PLATFORM == 'Darwin':
+            interfaceArg = (
+                resolvePrimaryAdapterInterfaceName(userPrimaryAdapterInterfaceName())
+                or APPLICATION_TUN2SOCKS_NETWORK_INTERFACE_NAME
+            )
+        else:
+            interfaceArg = APPLICATION_TUN2SOCKS_NETWORK_INTERFACE_NAME
 
         router = RuntimeEventRouter()
         tun = Tun2socks(
