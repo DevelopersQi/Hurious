@@ -322,6 +322,12 @@ SOCKET OpenSocks5Tunnel(
         return INVALID_SOCKET;
     }
 
+    DWORD handshakeTimeout = 10000;
+    setsockopt(upstream, SOL_SOCKET, SO_RCVTIMEO,
+        reinterpret_cast<const char*>(&handshakeTimeout), sizeof(handshakeTimeout));
+    setsockopt(upstream, SOL_SOCKET, SO_SNDTIMEO,
+        reinterpret_cast<const char*>(&handshakeTimeout), sizeof(handshakeTimeout));
+
     int error = ApplyRedirectRecords(upstream, redirected.redirectRecords);
     if (error == 0 && connect(upstream, socksAddress, socksAddressLength) == SOCKET_ERROR) {
         error = WSAGetLastError();
