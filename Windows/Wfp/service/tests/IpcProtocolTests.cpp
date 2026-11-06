@@ -87,7 +87,7 @@ int main() {
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::TooManyRules);
     badPolicy = policyBytes;
     FURIOUS_WFP_APPLICATION_RULE badRule = policyRule;
-    badRule.ImagePath[0] = L'r';
+    badRule.ImagePath[1] = L'!';
     std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::PathNotAbsolute);
     badPolicy = policyBytes;
