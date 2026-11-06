@@ -1,4 +1,19 @@
 TRANSLATION = {
+    "Custom Routing Rules": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "自定义路由规则",
+        "isReviewed": "True"
+    },
+    "Create routing profiles and configure domain, IP, port, protocol, and process rules. Select a profile in the routing selector to apply it.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "创建路由配置，设置域名、IP、端口、协议和进程规则。创建后，在路由选择器中选择配置即可应用。",
+        "isReviewed": "True"
+    },
+    "Configure": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "配置",
+        "isReviewed": "True"
+    },
     "Detected System Network": {
         "source": ["Furious.Qt.SystemNetworkInfo"],
         "ZH": "检测到的系统网络",
