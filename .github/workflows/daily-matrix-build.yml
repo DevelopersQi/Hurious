@@ -587,18 +587,18 @@ jobs:
       - name: Test automatic system network detection
         if: runner.os == 'Windows'
         run: |
-          python -m py_compile \\
-            Deploy.py \\
-            Furious/Frozenlib/SystemNetwork.py \\
-            Furious/Qt/SystemNetworkInfo.py \\
-            Furious/Window/TunSettingsDialog.py \\
-            Furious/Backends/Xray/TunSettingsDialog.py \\
-            Furious/Backends/Hysteria2/TunSettingsDialog.py \\
-            tests/test_system_network_detection.py \\
+          python -m py_compile \
+            Deploy.py \
+            Furious/Frozenlib/SystemNetwork.py \
+            Furious/Qt/SystemNetworkInfo.py \
+            Furious/Window/TunSettingsDialog.py \
+            Furious/Backends/Xray/TunSettingsDialog.py \
+            Furious/Backends/Hysteria2/TunSettingsDialog.py \
+            tests/test_system_network_detection.py \
             tests/test_wintun_deployment.py
-          python -m unittest \\
-            tests.test_system_network_detection \\
-            tests.test_wintun_deployment \\
+          python -m unittest \
+            tests.test_system_network_detection \
+            tests.test_wintun_deployment \
             -v
       - name: Verify Linux application imports without WebEngine
         if: runner.os == 'Linux'
