@@ -2,6 +2,8 @@
 
 #include <fwpmu.h>
 
+#include <cstring>
+
 namespace {
 
 // Stable identifiers owned by Furious. Do not change after deployment;
@@ -71,7 +73,19 @@ DWORD Engine::EnsureProviderAndSublayer() {
 
     status = FwpmProviderAdd0(handle_, &provider, nullptr);
     if (status == FWP_E_ALREADY_EXISTS) {
-        status = ERROR_SUCCESS;
+        FWPM_PROVIDER0* existingProvider = nullptr;
+        status = FwpmProviderGetByKey0(handle_, &kProviderKey, &existingProvider);
+        if (status == ERROR_SUCCESS) {
+            // A matching GUID is not sufficient: refuse to adopt an object
+            // that does not have the persistence contract expected by Furious.
+            if (existingProvider == nullptr ||
+                (existingProvider->flags & FWPM_PROVIDER_FLAG_PERSISTENT) == 0) {
+                status = ERROR_INVALID_DATA;
+            }
+            if (existingProvider != nullptr) {
+                FwpmFreeMemory0(reinterpret_cast<void**>(&existingProvider));
+            }
+        }
     }
 
     if (status == ERROR_SUCCESS) {
@@ -81,11 +95,27 @@ DWORD Engine::EnsureProviderAndSublayer() {
         sublayer.displayData.description =
             const_cast<wchar_t*>(L"Furious-owned application routing filters");
         sublayer.providerKey = const_cast<GUID*>(&kProviderKey);
+        sublayer.flags = FWPM_SUBLAYER_FLAG_PERSISTENT;
         sublayer.weight = 0x7FFF;
 
         status = FwpmSubLayerAdd0(handle_, &sublayer, nullptr);
         if (status == FWP_E_ALREADY_EXISTS) {
-            status = ERROR_SUCCESS;
+            FWPM_SUBLAYER0* existingSublayer = nullptr;
+            status = FwpmSubLayerGetByKey0(handle_, &kSublayerKey, &existingSublayer);
+            if (status == ERROR_SUCCESS) {
+                const bool providerMatches = existingSublayer != nullptr &&
+                    existingSublayer->providerKey != nullptr &&
+                    std::memcmp(existingSublayer->providerKey, &kProviderKey,
+                                sizeof(kProviderKey)) == 0;
+                const bool persistent = existingSublayer != nullptr &&
+                    (existingSublayer->flags & FWPM_SUBLAYER_FLAG_PERSISTENT) != 0;
+                if (!providerMatches || !persistent) {
+                    status = ERROR_INVALID_DATA;
+                }
+                if (existingSublayer != nullptr) {
+                    FwpmFreeMemory0(reinterpret_cast<void**>(&existingSublayer));
+                }
+            }
         }
     }
 

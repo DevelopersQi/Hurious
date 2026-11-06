@@ -95,10 +95,6 @@ DWORD WriteResponse(HANDLE pipe, const FURIOUS_WFP_IPC_RESPONSE& response) noexc
 }
 
 DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
-    if (!IsAuthorizedClient(pipe)) {
-        return ERROR_ACCESS_DENIED;
-    }
-
     std::array<BYTE, FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE> requestBytes = {};
     DWORD requestSize = 0;
     if (!ReadRequest(pipe, stopEvent, requestBytes.data(),
@@ -110,6 +106,12 @@ DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
         requestBytes.data(), requestSize);
     if (validation != furious::wfp::ipc::ValidationResult::Valid) {
         return ERROR_INVALID_DATA;
+    }
+
+    // Impersonation is meaningful only after the client has sent a message.
+    // Authenticate the sender of this exact request before dispatching it.
+    if (!IsAuthorizedClient(pipe)) {
+        return ERROR_ACCESS_DENIED;
     }
 
     FURIOUS_WFP_IPC_HEADER request = {};
@@ -152,7 +154,7 @@ DWORD PipeServer::Run(HANDLE stopEvent) noexcept {
 
         HANDLE pipe = CreateNamedPipeW(
             kPipeName,
-            PIPE_ACCESS_DUPLEX,
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT |
                 PIPE_REJECT_REMOTE_CLIENTS,
             1,
