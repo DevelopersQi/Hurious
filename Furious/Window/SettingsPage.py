@@ -778,8 +778,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 'native backend when supported and otherwise uses Tun2socks.'
             ),
         )
-        self.tunBackendCard.comboBox.setEnabled(self._tunModeAvailable)
-        self.tunBackendCard.titleLabel.setEnabled(self._tunModeAvailable)
+        self.tunBackendCard.setAvailable(self._tunModeAvailable)
 
         AppSettingsController().tunModeChanged.connect(
             self.tunModeCard.checkBox.syncCheckedAnimated
