@@ -1090,8 +1090,8 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 _('Custom Routing Rules'),
                 _(
                     'Create Xray routing profiles and configure domain, IP, port, protocol, '
-                    'and process rules. This feature currently supports Xray-core. '
-                    'Select a profile in the routing selector to apply it.'
+                    'and process rules. Windows Xray native TUN also supports application rules. '
+                    'Open the editor and choose Application Rules to configure per-app proxy/direct policy.'
                 ),
                 _('Configure'),
             )
