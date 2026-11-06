@@ -221,11 +221,15 @@ def getPrimaryAdapterInfo() -> dict[str, str]:
             result['gateway'] = gateway
             result['name'] = interface
             result['ip'] = _linuxInterfaceIP(
-                _run(['ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global'])
+                _run(
+                    ['ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global']
+                )
             )
 
         elif PLATFORM == 'Darwin':
-            gateway, interface = _macDefaultRoute(_run(['route', '-n', 'get', 'default']))
+            gateway, interface = _macDefaultRoute(
+                _run(['route', '-n', 'get', 'default'])
+            )
 
             if not interface:
                 return result
