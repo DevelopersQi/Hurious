@@ -43,6 +43,43 @@ jobs:
       - name: Run WFP IPC protocol tests
         run: ctest --test-dir build/wfp-service -C Release --output-on-failure
 
+  windows-wfp-driver-build:
+    name: Windows x64 WFP kernel driver build
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore pinned Windows SDK and WDK packages
+        run: nuget restore packages.config -PackagesDirectory packages
+
+      - name: Build WFP callout driver for Windows 10 x64
+        run: |
+          msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.26100.0
+
+      - name: Verify driver binary was produced
+        shell: pwsh
+        run: |
+          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse | Select-Object -First 1
+          if ($null -eq $driver) { throw "FuriousWfpCallout.sys was not produced." }
+          Write-Host "Built driver: $($driver.FullName)"
+          Get-FileHash $driver.FullName -Algorithm SHA256
+
+      - name: Upload unsigned driver build
+        uses: actions/upload-artifact@v7
+        with:
+          name: furious-wfp-driver-windows10-x64-unsigned
+          path: Windows/Wfp/driver/**/FuriousWfpCallout.sys
+          if-no-files-found: error
+          retention-days: 7
+
   quick-checks:
     name: Python syntax and TUN runtime regression checks
     runs-on: ubuntu-latest

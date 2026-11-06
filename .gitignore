@@ -197,3 +197,6 @@ rpmbuild/
 uv.lock
 
 .codegraph/
+
+# Restored Windows SDK / WDK NuGet packages
+packages/
