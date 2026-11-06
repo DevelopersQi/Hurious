@@ -23,6 +23,7 @@ from Furious.Frozenlib import *
 from Furious.Qt import *
 from Furious.Qt.Signals import connectWeakly
 from Furious.Qt import gettext as _
+from Furious.Widget.SystemNetworkInfo import SystemNetworkInfoWidget
 
 from PySide6 import QtCore
 from PySide6.QtGui import *
@@ -278,6 +279,9 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
         self.setFixedSize(int(650 * GOLDEN_RATIO), 650)
 
         self._settings = getHysteria2TUNSettings()
+
+        self.networkInfoWidget = SystemNetworkInfoWidget(self)
+        self.layout().insertRow(0, self.networkInfoWidget)
 
         self.factoryToInput(self._settings)
 
