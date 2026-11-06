@@ -1,3 +1,5 @@
+#include "WfpDriverClient.h"
+#include "WfpDriverLifecycle.h"
 #include "WfpEngine.h"
 #include "WfpPipeServer.h"
 
@@ -26,13 +28,38 @@ void PublishStatus(DWORD state, DWORD win32ExitCode, DWORD waitHint) {
 
 DWORD WINAPI ControlHandler(DWORD control, DWORD, LPVOID, LPVOID) {
     if (control == SERVICE_CONTROL_STOP || control == SERVICE_CONTROL_SHUTDOWN) {
-        PublishStatus(SERVICE_STOP_PENDING, NO_ERROR, 10000);
+        PublishStatus(SERVICE_STOP_PENDING, NO_ERROR, 20000);
         if (gStopEvent != nullptr) {
             SetEvent(gStopEvent);
         }
         return NO_ERROR;
     }
     return ERROR_CALL_NOT_IMPLEMENTED;
+}
+
+DWORD CleanupWfp(
+    furious::wfp::Engine& engine,
+    furious::wfp::DriverLifecycle& driver,
+    bool filtersInstalled,
+    bool providerReady) {
+    if (filtersInstalled) {
+        const DWORD filterStatus = engine.RemoveRedirectFilters();
+        if (filterStatus != ERROR_SUCCESS) {
+            return filterStatus;
+        }
+    }
+
+    const DWORD driverStatus = driver.StopIfStartedByThisService();
+    if (driverStatus != ERROR_SUCCESS) {
+        return driverStatus;
+    }
+
+    // A driver that was already running before this service started is not
+    // ours to unload. Keep its provider registration intact in that case.
+    if (providerReady && !driver.IsPresent()) {
+        return engine.RemoveProviderAndSublayer();
+    }
+    return ERROR_SUCCESS;
 }
 
 void WINAPI ServiceMain(DWORD, LPWSTR*) {
@@ -42,7 +69,7 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
         return;
     }
 
-    PublishStatus(SERVICE_START_PENDING, NO_ERROR, 15000);
+    PublishStatus(SERVICE_START_PENDING, NO_ERROR, 30000);
     gStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (gStopEvent == nullptr) {
         PublishStatus(SERVICE_STOPPED, GetLastError(), 0);
@@ -50,9 +77,29 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
     }
 
     furious::wfp::Engine engine;
+    furious::wfp::DriverLifecycle driver;
+    bool providerReady = false;
+    bool filtersInstalled = false;
+
     DWORD status = engine.Open();
     if (status == ERROR_SUCCESS) {
         status = engine.EnsureProviderAndSublayer();
+        providerReady = status == ERROR_SUCCESS;
+    }
+    if (status == ERROR_SUCCESS) {
+        status = driver.StartAdjacentDriver();
+    }
+    if (status == ERROR_SUCCESS) {
+        FURIOUS_WFP_DRIVER_STATUS driverStatus = {};
+        status = furious::wfp::driver::QueryStatus(&driverStatus);
+        if (status == ERROR_SUCCESS &&
+            (driverStatus.Flags & FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED) == 0) {
+            status = ERROR_INVALID_STATE;
+        }
+    }
+    if (status == ERROR_SUCCESS) {
+        status = engine.InstallRedirectFilters();
+        filtersInstalled = status == ERROR_SUCCESS;
     }
 
     furious::wfp::PipeServer pipeServer;
@@ -72,11 +119,13 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
     }
 
     if (status != ERROR_SUCCESS) {
-        engine.RemoveProviderAndSublayer();
+        const DWORD cleanupStatus = CleanupWfp(
+            engine, driver, filtersInstalled, providerReady);
         engine.Close();
         CloseHandle(gStopEvent);
         gStopEvent = nullptr;
-        PublishStatus(SERVICE_STOPPED, status, 0);
+        PublishStatus(SERVICE_STOPPED,
+            cleanupStatus != ERROR_SUCCESS ? cleanupStatus : status, 0);
         return;
     }
 
@@ -88,11 +137,13 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
         pipeThread.join();
     }
 
-    const DWORD cleanupStatus = engine.RemoveProviderAndSublayer();
+    const DWORD cleanupStatus = CleanupWfp(
+        engine, driver, filtersInstalled, providerReady);
     engine.Close();
     CloseHandle(gStopEvent);
     gStopEvent = nullptr;
-    const DWORD finalStatus = cleanupStatus != ERROR_SUCCESS ? cleanupStatus : pipeStatus;
+    const DWORD finalStatus = cleanupStatus != ERROR_SUCCESS
+        ? cleanupStatus : pipeStatus;
     PublishStatus(SERVICE_STOPPED, finalStatus, 0);
 }
 
