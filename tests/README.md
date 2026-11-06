@@ -67,7 +67,7 @@ strategy in an individual test.
 | Repeated harmless subprocess, pipe, thread, handle, and RSS trends | `test_process_stress.py` |
 | Opt-in release-confidence counts (100 app children, 100 external cores, 100k metrics, 40k logs, 20k navigation, 5k plugins, 1k dialogs, 1k real QR tabs) | `test_very_heavy.py` |
 
-The lifecycle tests classify `AppQTransientDialog`, protocol/plugin editors,
+The Windows session integration test loads the dependency-free ctypes listener in an isolated test module, sends synthetic `WM_QUERYENDSESSION` and `WM_ENDSESSION` messages to its own hidden window, and verifies callback delivery plus bounded listener shutdown. It never initiates an actual Windows logoff or shutdown.\n\nThe lifecycle tests classify `AppQTransientDialog`, protocol/plugin editors,
 routing dialogs, subscription editors, message boxes, QR windows, and TUN
 settings dialogs as transient. `TextEditorWindow` is intentionally reusable: it
 must survive normal close/show cycles without multiplying actions, and is then
