@@ -124,7 +124,11 @@ DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
     response.Header.TotalSize = sizeof(response);
     response.Header.Command = request.Command;
     response.Header.RequestId = request.RequestId;
-    response.Win32Status = furious::wfp::ipc::DispatchCommand(request.Command);
+    const void* payload = requestSize > sizeof(request)
+        ? requestBytes.data() + sizeof(request) : nullptr;
+    const size_t payloadSize = requestSize - sizeof(request);
+    response.Win32Status = furious::wfp::ipc::DispatchCommand(
+        request.Command, payload, payloadSize);
     response.ServiceState = SERVICE_RUNNING;
 
     return WriteResponse(pipe, response);

@@ -54,10 +54,10 @@ int main() {
     CHECK(ValidateRequest(oversized.data(), oversized.size()) == ValidationResult::MessageTooLarge);
 
     using furious::wfp::ipc::DispatchCommand;
-    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS) == ERROR_SUCCESS);
-    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY) == ERROR_NOT_SUPPORTED);
-    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY) == ERROR_NOT_SUPPORTED);
-    CHECK(DispatchCommand(0xFFFFFFFFu) == ERROR_INVALID_FUNCTION);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY, nullptr, 0) == ERROR_INVALID_DATA);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(0xFFFFFFFFu, nullptr, 0) == ERROR_INVALID_FUNCTION);
 
     using furious::wfp::policy::ValidatePolicy;
     using PolicyValidationResult = furious::wfp::policy::ValidationResult;
@@ -79,7 +79,18 @@ int main() {
     std::memcpy(policyBytes.data(), &policyHeader, sizeof(policyHeader));
     std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
     CHECK(ValidatePolicy(policyBytes.data(), policyBytes.size()) == PolicyValidationResult::Valid);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
+                          policyBytes.data(), policyBytes.size()) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
+                          policyBytes.data(), policyBytes.size()) == ERROR_REVISION_MISMATCH);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY,
+                          nullptr, 0) == ERROR_SUCCESS);
     CHECK(ValidatePolicy(nullptr, policyBytes.size()) == PolicyValidationResult::NullPolicy);
+    auto zeroGeneration = policyBytes;
+    policyHeader.PolicyGeneration = 0;
+    std::memcpy(zeroGeneration.data(), &policyHeader, sizeof(policyHeader));
+    CHECK(ValidatePolicy(zeroGeneration.data(), zeroGeneration.size()) ==
+          PolicyValidationResult::InvalidPolicyGeneration);
     auto badPolicy = policyBytes;
     policyHeader.RuleCount = FURIOUS_WFP_MAX_RULES + 1;
     std::memcpy(badPolicy.data(), &policyHeader, sizeof(policyHeader));

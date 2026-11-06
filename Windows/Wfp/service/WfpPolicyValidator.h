@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 namespace furious::wfp::policy {
-enum class ValidationResult { Valid, NullPolicy, HeaderTooSmall, InvalidTotalSize, UnsupportedAbi, TooManyRules, InvalidBackend, InvalidRuleSize, InvalidEnabledFlag, InvalidAction, InvalidPathLength, PathNotAbsolute, PathContainsInvalidCharacter, DuplicatePriority, DuplicateImagePath };
+enum class ValidationResult { Valid, NullPolicy, HeaderTooSmall, InvalidTotalSize, UnsupportedAbi, InvalidPolicyGeneration, TooManyRules, InvalidBackend, InvalidRuleSize, InvalidEnabledFlag, InvalidAction, InvalidPathLength, PathNotAbsolute, PathContainsInvalidCharacter, DuplicatePriority, DuplicateImagePath };
 inline bool IsAbsoluteWindowsPath(const wchar_t* p, uint32_t n) noexcept {
  if (!p || n < 3) return false;
  const bool drive=((p[0]>=L'A'&&p[0]<=L'Z')||(p[0]>=L'a'&&p[0]<=L'z'))&&p[1]==L':'&&(p[2]==L'\\'||p[2]==L'/');
@@ -19,6 +19,7 @@ inline ValidationResult ValidatePolicy(const void* data,size_t bytes) noexcept {
  FURIOUS_WFP_POLICY_HEADER h={};const auto* raw=static_cast<const uint8_t*>(data);auto* dst=reinterpret_cast<uint8_t*>(&h);
  for(size_t i=0;i<sizeof(h);++i)dst[i]=raw[i];
  if(h.Size!=sizeof(h)||h.AbiVersion!=FURIOUS_WFP_POLICY_ABI_VERSION)return ValidationResult::UnsupportedAbi;
+ if(h.PolicyGeneration==0)return ValidationResult::InvalidPolicyGeneration;
  if(h.RuleCount>FURIOUS_WFP_MAX_RULES)return ValidationResult::TooManyRules;
  if(h.Backend>FuriousWfpBackendTun2socks)return ValidationResult::InvalidBackend;
  const size_t expected=sizeof(h)+static_cast<size_t>(h.RuleCount)*sizeof(FURIOUS_WFP_APPLICATION_RULE);
