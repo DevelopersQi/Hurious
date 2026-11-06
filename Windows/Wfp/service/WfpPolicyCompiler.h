@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <fwpmu.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -89,6 +90,22 @@ inline DWORD CompilePolicy(const void* data, size_t bytes,
         }
     } catch (...) {
         return ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    // Smaller numeric priorities are evaluated first. Sort once during
+    // compilation so every consumer receives a deterministic policy plan.
+    std::sort(candidate.begin(), candidate.end(),
+        [](const CompiledApplicationRule& left, const CompiledApplicationRule& right) {
+            return left.Priority < right.Priority;
+        });
+
+    // Different textual paths can resolve to the same WFP App ID (for example,
+    // short-name aliases). Reject that ambiguity instead of installing two
+    // competing rules for the same application identity.
+    for (size_t index = 1; index < candidate.size(); ++index) {
+        if (candidate[index - 1].AppId == candidate[index].AppId) {
+            return ERROR_DUP_NAME;
+        }
     }
 
     output.swap(candidate);

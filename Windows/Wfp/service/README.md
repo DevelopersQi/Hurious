@@ -22,10 +22,16 @@ increase monotonically; clearing does not reset the generation counter.
 
 ## Current implementation boundary
 
-Policy data is now accepted and stored by the service, but it is **not yet
-compiled into WFP application-ID filters**, and no traffic is blocked or
-redirected. The driver remains a pass-through ALE callout and is not loaded by
-the service. Do not treat policy acceptance as application routing being active.
+The service now resolves enabled executable paths to WFP application IDs during
+SET_POLICY and atomically stores both the validated payload and compiled
+application-rule snapshot. Compilation sorts rules by ascending numeric priority
+and rejects multiple textual paths that resolve to the same application ID.
+CLEAR_POLICY clears both snapshots while preserving the monotonic generation.
+
+The compiled rules are **not yet installed as WFP filters**. The driver remains
+a pass-through ALE callout and is not loaded by the service. No traffic is
+blocked or redirected. Do not treat policy acceptance or App ID compilation as
+application routing being active.
 
 Before enabling traffic filters or redirect:
 - resolve each executable path to a canonical WFP application ID;
