@@ -91,6 +91,7 @@ int main() {
     std::memcpy(zeroGeneration.data(), &policyHeader, sizeof(policyHeader));
     CHECK(ValidatePolicy(zeroGeneration.data(), zeroGeneration.size()) ==
           PolicyValidationResult::InvalidPolicyGeneration);
+    policyHeader.PolicyGeneration = 1;
     auto badPolicy = policyBytes;
     policyHeader.RuleCount = FURIOUS_WFP_MAX_RULES + 1;
     std::memcpy(badPolicy.data(), &policyHeader, sizeof(policyHeader));
