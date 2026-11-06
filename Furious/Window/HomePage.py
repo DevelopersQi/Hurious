@@ -1109,8 +1109,13 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
                 mbox = AppQMessageBox(icon=AppQMessageBox.Icon.Information)
                 mbox.setWindowTitle(_(APPLICATION_NAME))
                 mbox.setText(_('I am the supreme authority 👑'))
+                mbox.setInformativeText(
+                    _('The application is already running with administrator '
+                      'privileges. No restart is needed.')
+                )
 
-                # Show the MessageBox asynchronously
+                # Show the MessageBox asynchronously without blocking the UI.
+                mbox.setStandardButtons(AppQMessageBox.StandardButton.Ok)
                 mbox.open()
 
                 logger.info('ignored request to restart as admin as already is')
