@@ -348,7 +348,11 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
             existingRules = routingObject.get('rules', [])
             if not isinstance(existingRules, list):
                 existingRules = []
-            routingObject['rules'] = appRules + existingRules
+            routingObject['rules'] = (
+                [xrayCoreBypassRoutingRule()]
+                + appRules
+                + existingRules
+            )
 
         if log:
             logger.info(f'core {XrayCore.name()} configured')
