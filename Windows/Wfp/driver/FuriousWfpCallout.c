@@ -269,10 +269,11 @@ static VOID NTAPI FuriousClassify(
         return;
     }
 
+    // PROCESS_ID is required to enforce the broker self-exclusion. A redirect
+    // record handle is optional on the first connection; requiring it here
+    // would silently bypass every connection that has not been redirected yet.
     if (!FWPS_IS_METADATA_FIELD_PRESENT(
-            inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID) ||
-        !FWPS_IS_METADATA_FIELD_PRESENT(
-            inMetaValues, FWPS_METADATA_FIELD_REDIRECT_RECORD_HANDLE)) {
+            inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID)) {
         classifyOut->actionType = FWP_ACTION_CONTINUE;
         return;
     }
@@ -331,8 +332,15 @@ static VOID NTAPI FuriousClassify(
         return;
     }
 
-    redirectState = FwpsQueryConnectionRedirectState0(
-        inMetaValues->redirectRecords, gRedirectHandle, NULL);
+    if (FWPS_IS_METADATA_FIELD_PRESENT(
+            inMetaValues, FWPS_METADATA_FIELD_REDIRECT_RECORD_HANDLE)) {
+        redirectState = FwpsQueryConnectionRedirectState0(
+            inMetaValues->redirectRecords, gRedirectHandle, NULL);
+    } else {
+        // No redirect record means this is an initial, not-yet-proxied
+        // connection. There is no prior redirect state to query.
+        redirectState = FWPS_CONNECTION_NOT_REDIRECTED;
+    }
     if (redirectState != FWPS_CONNECTION_NOT_REDIRECTED) {
         // Never recursively redirect our own connections or replace another
         // inspector's redirect decision in this first implementation.
