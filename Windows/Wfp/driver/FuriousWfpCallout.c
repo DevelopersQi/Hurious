@@ -65,14 +65,24 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
     if (gCalloutRegistered) {
-        NTSTATUS status = FwpsCalloutUnregisterById0(gCalloutId);
-        if (!NT_SUCCESS(status)) {
-            // No filters are installed in this bootstrap driver, so an
-            // unregister failure indicates an unexpected WFP state.
+        NTSTATUS status;
+        LARGE_INTEGER retryDelay;
+
+        retryDelay.QuadPart = -1000000; // 100 ms at 100 ns units.
+        for (;;) {
+            status = FwpsCalloutUnregisterById0(gCalloutId);
+            if (status == STATUS_SUCCESS ||
+                status == STATUS_FWP_CALLOUT_NOT_FOUND) {
+                break;
+            }
+
+            // WFP requires successful unregistration before the driver image
+            // can be unloaded. This bootstrap callout has no flow contexts.
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                "FuriousWfpCallout: unregister failed: 0x%08X\\n", status);
-            return;
+                "FuriousWfpCallout: unregister retry, status=0x%08X\\n", status);
+            KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
         }
+
         gCalloutRegistered = FALSE;
         gCalloutId = 0;
     }
