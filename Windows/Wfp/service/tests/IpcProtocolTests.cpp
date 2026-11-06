@@ -1,9 +1,8 @@
-#include "../..//include/WfpControlProtocol.h"
+#include "../../include/WfpControlProtocol.h"
 
 #include <array>
 #include <cassert>
 #include <cstdint>
-#include <cstring>
 
 int main() {
     using furious::wfp::ipc::ValidateRequest;

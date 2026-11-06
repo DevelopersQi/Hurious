@@ -4,6 +4,7 @@
 // Transport security (named-pipe ACL + client token authorization) is mandatory;
 // validating this structure alone does not authenticate a caller.
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define FURIOUS_WFP_IPC_MAGIC 0x46575043u /* "FWPC" */
@@ -61,9 +62,6 @@ inline ValidationResult ValidateRequest(const void* message, size_t messageSize)
 
     FURIOUS_WFP_IPC_HEADER header = {};
     const auto* bytes = static_cast<const uint8_t*>(message);
-    const auto* source = reinterpret_cast<const volatile uint8_t*>(&header);
-    (void)source;
-    // Copy byte-by-byte to avoid unaligned access to packed input buffers.
     auto* destination = reinterpret_cast<uint8_t*>(&header);
     for (size_t i = 0; i < sizeof(header); ++i) {
         destination[i] = bytes[i];

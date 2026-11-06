@@ -27,18 +27,21 @@ concurrency:
 
 jobs:
   windows-wfp-service-build:
-    name: Windows WFP service core compile
+    name: Windows WFP service and protocol tests
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Configure WFP service core
+      - name: Configure WFP service
         run: cmake -S Windows/Wfp/service -B build/wfp-service -A x64
 
-      - name: Compile WFP service core
+      - name: Build WFP service and tests
         run: cmake --build build/wfp-service --config Release
+
+      - name: Run WFP IPC protocol tests
+        run: ctest --test-dir build/wfp-service -C Release --output-on-failure
 
   quick-checks:
     name: Python syntax and TUN runtime regression checks
