@@ -123,5 +123,37 @@ int main() {
     badRule.Action = 99;
     std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::InvalidAction);
+
+    wchar_t currentExecutable[FURIOUS_WFP_MAX_IMAGE_PATH_CHARS] = {};
+    const DWORD executableChars = GetModuleFileNameW(
+        nullptr, currentExecutable, static_cast<DWORD>(_countof(currentExecutable)));
+    CHECK(executableChars > 0 && executableChars < _countof(currentExecutable));
+    policyRule.ImagePathChars = executableChars;
+    std::memset(policyRule.ImagePath, 0, sizeof(policyRule.ImagePath));
+    std::memcpy(policyRule.ImagePath, currentExecutable,
+                (static_cast<size_t>(executableChars) + 1) * sizeof(wchar_t));
+    policyHeader.PolicyGeneration = 2;
+    std::memcpy(policyBytes.data(), &policyHeader, sizeof(policyHeader));
+    std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
+
+    std::vector<furious::wfp::policy::CompiledApplicationRule> compiledRules;
+    CHECK(furious::wfp::policy::CompilePolicy(
+              policyBytes.data(), policyBytes.size(), compiledRules) == ERROR_SUCCESS);
+    CHECK(compiledRules.size() == 1);
+    CHECK(compiledRules[0].Priority == policyRule.Priority);
+    CHECK(compiledRules[0].Action == FuriousWfpActionProxy);
+    CHECK(compiledRules[0].Backend == FuriousWfpBackendXray);
+    CHECK(!compiledRules[0].AppId.empty());
+
+    const auto previousCompiledSize = compiledRules.size();
+    const wchar_t missingPath[] = L"Z:\\furious-missing.exe";
+    std::memset(policyRule.ImagePath, 0, sizeof(policyRule.ImagePath));
+    std::memcpy(policyRule.ImagePath, missingPath, sizeof(missingPath));
+    policyRule.ImagePathChars = static_cast<uint32_t>(
+        (sizeof(missingPath) / sizeof(missingPath[0])) - 1);
+    std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
+    CHECK(furious::wfp::policy::CompilePolicy(
+              policyBytes.data(), policyBytes.size(), compiledRules) != ERROR_SUCCESS);
+    CHECK(compiledRules.size() == previousCompiledSize);
     return 0;
 }

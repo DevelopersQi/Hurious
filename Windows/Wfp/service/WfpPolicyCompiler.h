@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../include/ApplicationRoutingPolicy.h"\n#include "WfpPolicyValidator.h"
+#include "../include/ApplicationRoutingPolicy.h"
+#include "WfpPolicyValidator.h"
 
 #include <windows.h>
 #include <fwpmu.h>
@@ -23,7 +24,7 @@ struct CompiledApplicationRule final {
 
 inline DWORD ResolveApplicationId(const wchar_t* imagePath,
                                   std::vector<uint8_t>& output) noexcept {
-    if (imagePath == nullptr || imagePath[0] == L'\\0') {
+    if (imagePath == nullptr || imagePath[0] == L'\0') {
         return ERROR_INVALID_PARAMETER;
     }
 
@@ -51,8 +52,6 @@ inline DWORD ResolveApplicationId(const wchar_t* imagePath,
     return ERROR_SUCCESS;
 }
 
-// Compiles the complete policy before publishing it. Disabled rules are
-// omitted; an invalid or missing executable leaves output untouched.
 inline DWORD CompilePolicy(const void* data, size_t bytes,
                            std::vector<CompiledApplicationRule>& output) noexcept {
     if (ValidatePolicy(data, bytes) != ValidationResult::Valid) {
@@ -88,10 +87,8 @@ inline DWORD CompilePolicy(const void* data, size_t bytes,
             }
             candidate.emplace_back(std::move(compiled));
         }
-    } catch (const std::bad_alloc&) {
-        return ERROR_NOT_ENOUGH_MEMORY;
     } catch (...) {
-        return ERROR_INVALID_DATA;
+        return ERROR_NOT_ENOUGH_MEMORY;
     }
 
     output.swap(candidate);
