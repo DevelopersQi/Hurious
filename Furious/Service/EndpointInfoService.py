@@ -59,7 +59,7 @@ PROXY_ENDPOINT_INFO_SETTING = 'ProxyEndpointInformationEnabled'
 registerAppSettings(
     PROXY_ENDPOINT_INFO_SETTING,
     isBinary=True,
-    default=AppBinarySettings.OFF,
+    default=AppBinarySettings.ON_,
 )
 
 
