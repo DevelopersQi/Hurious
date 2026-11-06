@@ -583,13 +583,11 @@ class _TUNBackendSettingsCard(QFrame):
             optionLayout.addWidget(helpLabel)
             optionsLayout.addWidget(optionWidget, index // 2, index % 2)
 
-        self.statusLabel = AppQLabel(
-            _('Applies the next time you connect with TUN enabled.'),
-            parent=self,
-        )
+        self.statusLabel = AppQLabel('', parent=self)
         self.statusLabel.setObjectName('SettingsCardDescription')
         self.statusLabel.setWordWrap(True)
-
+        self._connectionController = AppConnectionController()
+        self._connectionController.stateChanged.connect(self.syncRuntimeStatus)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(8)
@@ -601,6 +599,7 @@ class _TUNBackendSettingsCard(QFrame):
         self.buttonGroup.buttonToggled.connect(self._buttonToggled)
         self.buttonGroup.idClicked.connect(self._selectionChanged)
         self.sync()
+        self.syncRuntimeStatus()
 
     def _buttonToggled(self, button, checked):
         """Highlight the selected option card using the active theme palette."""
@@ -631,6 +630,28 @@ class _TUNBackendSettingsCard(QFrame):
                     optionButton,
                     optionBackend == selectedBackend,
                 )
+
+    @QtCore.Slot(object)
+    def syncRuntimeStatus(self, *_args):
+        """Show the backend that actually owns TUN for the live connection."""
+        controller = self._connectionController
+        if controller.isConnecting():
+            message = _('Actual TUN backend: connecting…')
+        elif not controller.isConnected():
+            message = _('Actual TUN backend: not connected')
+        else:
+            backend = controller.activeTUNBackend
+            labels = {
+                'xray': _('Xray-core Native TUN'),
+                'hysteria2': _('Hysteria 2 Native TUN'),
+                'tun2socks': _('Tun2socks'),
+                'native': _('Native TUN'),
+            }
+            message = _('Actual TUN backend: {backend}').format(
+                backend=labels.get(backend, _('TUN is not active'))
+            )
+
+        self.statusLabel.setText(message)
 
     def setIconFileName(self, iconFileName):
         """Keep the settings-section icon suppression protocol compatible."""
