@@ -1007,6 +1007,7 @@ class PluginRegistry:
 
     def prepareTUN(self, config, backend: str = 'auto') -> bool:
         """Prepare the selected native TUN implementation for one core config."""
+        backend = str(backend or 'auto').strip().casefold()
         factory = self.factoryForConfig(config)
 
         if factory is None:
