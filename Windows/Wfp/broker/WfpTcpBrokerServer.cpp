@@ -122,6 +122,12 @@ bool TcpBrokerServer::Start(
     if (expectedLength == 0 || socksAddressLength < expectedLength) {
         return false;
     }
+    const std::uint16_t socksPort = socksAddress->sa_family == AF_INET
+        ? ntohs(reinterpret_cast<const sockaddr_in*>(socksAddress)->sin_port)
+        : ntohs(reinterpret_cast<const sockaddr_in6*>(socksAddress)->sin6_port);
+    if (socksPort == 0) {
+        return false;
+    }
 
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
@@ -352,7 +358,7 @@ bool TcpBrokerServer::IsRunning() const noexcept {
     return !stopping_.load();
 }
 
-DWORD TcpBrokerServer::ProcessId() const noexcept {
+std::uint32_t TcpBrokerServer::ProcessId() const noexcept {
     return GetCurrentProcessId();
 }
 
