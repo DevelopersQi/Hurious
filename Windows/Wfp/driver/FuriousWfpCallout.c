@@ -100,6 +100,7 @@ static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
     const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
     VOID* layerData,
+    VOID* classifyContext,
     const FWPS_FILTER1* filter,
     UINT64 flowContext,
     FWPS_CLASSIFY_OUT0* classifyOut)
@@ -107,6 +108,7 @@ static VOID NTAPI FuriousClassify(
     UNREFERENCED_PARAMETER(inFixedValues);
     UNREFERENCED_PARAMETER(inMetaValues);
     UNREFERENCED_PARAMETER(layerData);
+    UNREFERENCED_PARAMETER(classifyContext);
     UNREFERENCED_PARAMETER(filter);
     UNREFERENCED_PARAMETER(flowContext);
 
