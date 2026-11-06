@@ -601,6 +601,10 @@ class _TUNBackendSettingsCard(QFrame):
             radio.setChecked(True)
             del blocker
 
+    def setIconFileName(self, iconFileName):
+        """Keep the settings-section icon suppression protocol compatible."""
+        self.iconFileName = iconFileName or ''
+
     def setAvailable(self, available):
         """Enable or disable backend choices with global TUN availability."""
         self._available = bool(available)
