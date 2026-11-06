@@ -1005,15 +1005,20 @@ class PluginRegistry:
 
         return tuple(actions)
 
-    def prepareTUN(self, config) -> bool:
-        """Ask a configuration's factory to prepare native TUN support."""
+    def prepareTUN(self, config, backend: str = 'auto') -> bool:
+        """Prepare the selected native TUN implementation for one core config."""
         factory = self.factoryForConfig(config)
 
         if factory is None:
+            if backend != 'auto':
+                raise TUNPreparationError(
+                    f'TUN backend {backend!r} cannot be used with this core configuration'
+                )
+
             return False
 
         try:
-            handled = factory.prepareTUN(_connectionOf(config))
+            handled = factory.prepareTUNForBackend(_connectionOf(config), backend)
 
             if not isinstance(handled, bool):
                 raise TypeError('core runtime TUN preparation result must be a boolean')
