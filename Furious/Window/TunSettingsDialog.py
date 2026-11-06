@@ -226,11 +226,17 @@ class GuiTUNSettingsGroupBoxBasic(GuiEditorWidgetQGroupBox):
 
             if len(widgets) == 2:
                 label, inputWidget = widgets
-                inputWidget.setMinimumWidth(0)
-                inputWidget.setSizePolicy(
-                    QSizePolicy.Policy.Expanding,
-                    QSizePolicy.Policy.Fixed,
-                )
+                if isinstance(inputWidget, QLineEdit):
+                    inputWidget.setMinimumWidth(0)
+                    inputWidget.setSizePolicy(
+                        QSizePolicy.Policy.Expanding,
+                        QSizePolicy.Policy.Fixed,
+                    )
+                else:
+                    inputWidget.setSizePolicy(
+                        QSizePolicy.Policy.Fixed,
+                        QSizePolicy.Policy.Fixed,
+                    )
                 layout.addRow(label, inputWidget)
             elif len(widgets) == 1:
                 layout.addRow(widgets[0])
@@ -282,6 +288,39 @@ class GuiTUNSettingsGroupBoxMemory(GuiEditorWidgetQGroupBox):
     def __init__(self, **kwargs):
         """Initialize the GuiTUNSettingsGroupBoxMemory."""
         super().__init__(_('Memory Optimization'), **kwargs)
+
+    def setupPageLayout(self):
+        """Use the same wrapped single-column layout as basic TUN settings."""
+        layout = QFormLayout()
+        layout.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        layout.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(10)
+
+        for container in self._containers:
+            widgets = container.widgets()
+
+            if len(widgets) == 2:
+                label, inputWidget = widgets
+                if isinstance(inputWidget, QLineEdit):
+                    inputWidget.setMinimumWidth(0)
+                    inputWidget.setSizePolicy(
+                        QSizePolicy.Policy.Expanding,
+                        QSizePolicy.Policy.Fixed,
+                    )
+                else:
+                    inputWidget.setSizePolicy(
+                        QSizePolicy.Policy.Fixed,
+                        QSizePolicy.Policy.Fixed,
+                    )
+                layout.addRow(label, inputWidget)
+            elif len(widgets) == 1:
+                layout.addRow(widgets[0])
+
+        return layout
 
     def containerSequence(self):
         """Return the editor item containers in display order."""
