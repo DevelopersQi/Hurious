@@ -84,6 +84,17 @@ class TUNSettingsUITest(unittest.TestCase):
         xray = read_source('Furious/Backends/Xray/TunSettingsDialog.py')
         self.assertNotIn('maximumWidth=360', xray)
 
+    def test_tun_backend_card_retranslates_from_original_keys(self):
+        source = read_source('Furious/Window/SettingsPage.py')
+        self.assertIn('self._titleKey = title', source)
+        self.assertIn('self._descriptionKey = description', source)
+        self.assertIn('self.titleLabel.setText(_(self._titleKey))', source)
+        self.assertIn(
+            'self.descriptionLabel.setText(_(self._descriptionKey))',
+            source,
+        )
+        self.assertIn("            'TUN Backend',", source)
+
     def test_tun2socks_basic_form_wraps_labels_and_expands_inputs(self):
         source = read_source('Furious/Window/TunSettingsDialog.py')
         self.assertIn('QFormLayout.RowWrapPolicy.WrapAllRows', source)
