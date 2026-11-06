@@ -107,6 +107,29 @@ class MultiprocessingRuntime(CoreRuntime):
         return self._process
 
     @property
+    def processId(self):
+        """Return the live child PID, or None after exit or failed startup.
+
+        The value is an observation, not a durable process identity: callers
+        must refresh it after every start/stop transition and must never retain
+        it as a long-lived exclusion once this runtime has exited.
+        """
+        process = self._process
+
+        if process is None:
+            return None
+
+        try:
+            if not process.is_alive():
+                return None
+
+            processId = process.pid
+        except (AssertionError, OSError, ValueError):
+            return None
+
+        return processId if isinstance(processId, int) and processId > 0 else None
+
+    @property
     def lastExit(self):
         """Return the terminal event observed for the latest execution."""
         return self._lastExit

@@ -303,6 +303,30 @@ class RuntimeLifecycleTest(TestCase):
 
         runtime.dispose()
 
+    def testMultiprocessingRuntimeExposesOnlyLiveChildPid(self):
+        """Expose a child PID only while the owned process is still alive."""
+        process = mock.Mock()
+        process.pid = 4321
+        process.is_alive.return_value = True
+
+        with mock.patch(
+            'Furious.Core.MultiprocessingRuntime.multiprocessing.Process',
+            return_value=process,
+        ):
+            runtime = _ProcessRuntime()
+            runtime.start()
+
+            self.assertEqual(runtime.processId, 4321)
+
+            process.is_alive.return_value = False
+            process.exitcode = 0
+            runtime._pollProcess()
+
+            self.assertIsNone(runtime.processId)
+            self.assertIsNone(runtime.process)
+
+        runtime.dispose()
+
     def testMultiprocessingSpawnFailureRaisesStructuredError(self):
         """Represent expected acquisition failure without mutable side state."""
         process = mock.Mock()
