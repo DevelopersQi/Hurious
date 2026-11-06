@@ -6,6 +6,13 @@
 
 namespace furious::wfp::driver {
 
+inline bool IsValidStatus(const FURIOUS_WFP_DRIVER_STATUS& status) noexcept {
+    return status.Size == sizeof(FURIOUS_WFP_DRIVER_STATUS) &&
+        status.Version == FURIOUS_WFP_DRIVER_ABI_VERSION &&
+        status.Reserved == 0 &&
+        (status.Flags & ~FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED) == 0;
+}
+
 inline DWORD QueryStatus(FURIOUS_WFP_DRIVER_STATUS* output) noexcept {
     if (output == nullptr) {
         return ERROR_INVALID_PARAMETER;
@@ -39,10 +46,7 @@ inline DWORD QueryStatus(FURIOUS_WFP_DRIVER_STATUS* output) noexcept {
     if (!ok) {
         return error;
     }
-    if (bytesReturned != sizeof(status) ||
-        status.Size != sizeof(status) ||
-        status.Version != FURIOUS_WFP_DRIVER_ABI_VERSION ||
-        (status.Flags & ~FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED) != 0) {
+    if (bytesReturned != sizeof(status) || !IsValidStatus(status)) {
         return ERROR_REVISION_MISMATCH;
     }
 

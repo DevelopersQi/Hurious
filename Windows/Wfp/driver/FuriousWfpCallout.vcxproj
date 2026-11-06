@@ -26,7 +26,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError>
-      <PreprocessorDefinitions>FURIOUS_WFP_KERNEL_MODE=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link><AdditionalDependencies>Fwpkclnt.lib;Wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <DriverSign><SignMode>TestSign</SignMode><FileDigestAlgorithm>SHA256</FileDigestAlgorithm></DriverSign>

@@ -1,5 +1,6 @@
 #include "../../include/WfpControlProtocol.h"
 #include "../WfpIpcDispatcher.h"
+#include "../WfpDriverClient.h"
 #include "../WfpPolicyValidator.h"
 #include "../WfpPolicyCompiler.h"
 
@@ -17,6 +18,19 @@
 } while (0)
 
 int main() {
+    static_assert(sizeof(FURIOUS_WFP_DRIVER_STATUS) == 16,
+                  "Driver status ABI must remain 16 bytes");
+    FURIOUS_WFP_DRIVER_STATUS driverStatus = {};
+    driverStatus.Size = sizeof(driverStatus);
+    driverStatus.Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
+    CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Reserved = 1;
+    CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Reserved = 0;
+    driverStatus.Flags = 0x80000000u;
+    CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Flags = FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED;
+    CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
     using furious::wfp::ipc::ValidateRequest;
     using furious::wfp::ipc::ValidationResult;
 
