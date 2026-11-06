@@ -449,7 +449,12 @@ class SettingsPageOrganizationTest(unittest.TestCase):
         self.assertEqual(page.generalSection.cards, expectedGeneralCards)
         self.assertEqual(page.applicationSection.cards, expectedApplicationCards)
         self.assertIn(page.tunModeCard, page.connectionSection.cards)
-        self.assertEqual(page.categoryTabs.count(), 7)
+        self.assertEqual(page.categoryList.count(), 7)
+        self.assertEqual(page.categoryStack.count(), 7)
+        self.assertEqual(page.categoryList.currentRow(), 0)
+        page.categoryList.setCurrentRow(1)
+        self.assertEqual(page.categoryStack.currentIndex(), 1)
+        page.categoryList.setCurrentRow(0)
         self.assertEqual(
             [
                 page.generalSection.layout.itemAt(index + 1).widget()
