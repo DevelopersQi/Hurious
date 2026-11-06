@@ -2,6 +2,7 @@
 #include "../include/ApplicationRoutingPolicy.h"
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 namespace furious::wfp::policy {
 enum class ValidationResult { Valid, NullPolicy, HeaderTooSmall, InvalidTotalSize, UnsupportedAbi, TooManyRules, InvalidBackend, InvalidRuleSize, InvalidEnabledFlag, InvalidAction, InvalidPathLength, PathNotAbsolute, PathContainsInvalidCharacter, DuplicatePriority, DuplicateImagePath };
 inline bool IsAbsoluteWindowsPath(const wchar_t* p, uint32_t n) noexcept {
@@ -22,15 +23,14 @@ inline ValidationResult ValidatePolicy(const void* data,size_t bytes) noexcept {
  if(h.Backend>FuriousWfpBackendTun2socks)return ValidationResult::InvalidBackend;
  const size_t expected=sizeof(h)+static_cast<size_t>(h.RuleCount)*sizeof(FURIOUS_WFP_APPLICATION_RULE);
  if(expected<sizeof(h)||expected!=bytes)return ValidationResult::InvalidTotalSize;
- const auto* rules=reinterpret_cast<const FURIOUS_WFP_APPLICATION_RULE*>(raw+sizeof(h));
- for(uint32_t i=0;i<h.RuleCount;++i){const auto& r=rules[i];
+ for(uint32_t i=0;i<h.RuleCount;++i){FURIOUS_WFP_APPLICATION_RULE r={};std::memcpy(&r,raw+sizeof(h)+static_cast<size_t>(i)*sizeof(r),sizeof(r));
   if(r.Size!=sizeof(FURIOUS_WFP_APPLICATION_RULE))return ValidationResult::InvalidRuleSize;
   if(r.Enabled>1)return ValidationResult::InvalidEnabledFlag;
   if(r.Action!=FuriousWfpActionProxy&&r.Action!=FuriousWfpActionDirect)return ValidationResult::InvalidAction;
   if(r.ImagePathChars<3||r.ImagePathChars>=FURIOUS_WFP_MAX_IMAGE_PATH_CHARS||r.ImagePath[r.ImagePathChars]!=L'\\0')return ValidationResult::InvalidPathLength;
   for(uint32_t c=0;c<r.ImagePathChars;++c){const wchar_t ch=r.ImagePath[c];if(ch==L'\\0'||ch<0x20||ch==L'*'||ch==L'?')return ValidationResult::PathContainsInvalidCharacter;}
   if(!IsAbsoluteWindowsPath(r.ImagePath,r.ImagePathChars))return ValidationResult::PathNotAbsolute;
-  for(uint32_t j=0;j<i;++j){if(rules[j].Priority==r.Priority)return ValidationResult::DuplicatePriority;if(EqualPathInsensitive(rules[j].ImagePath,r.ImagePath))return ValidationResult::DuplicateImagePath;}
+  for(uint32_t j=0;j<i;++j){FURIOUS_WFP_APPLICATION_RULE previous={};std::memcpy(&previous,raw+sizeof(h)+static_cast<size_t>(j)*sizeof(previous),sizeof(previous));if(previous.Priority==r.Priority)return ValidationResult::DuplicatePriority;if(EqualPathInsensitive(previous.ImagePath,r.ImagePath))return ValidationResult::DuplicateImagePath;}
  }
  return ValidationResult::Valid;
 }

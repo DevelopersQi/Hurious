@@ -60,7 +60,7 @@ int main() {
     CHECK(DispatchCommand(0xFFFFFFFFu) == ERROR_INVALID_FUNCTION);
 
     using furious::wfp::policy::ValidatePolicy;
-    using furious::wfp::policy::ValidationResult as PolicyValidationResult;
+    using PolicyValidationResult = furious::wfp::policy::ValidationResult;
     FURIOUS_WFP_POLICY_HEADER policyHeader = {};
     policyHeader.Size = sizeof(policyHeader);
     policyHeader.AbiVersion = FURIOUS_WFP_POLICY_ABI_VERSION;
@@ -81,15 +81,19 @@ int main() {
     CHECK(ValidatePolicy(policyBytes.data(), policyBytes.size()) == PolicyValidationResult::Valid);
     CHECK(ValidatePolicy(nullptr, policyBytes.size()) == PolicyValidationResult::NullPolicy);
     auto badPolicy = policyBytes;
-    reinterpret_cast<FURIOUS_WFP_POLICY_HEADER*>(badPolicy.data())->RuleCount = FURIOUS_WFP_MAX_RULES + 1;
+    policyHeader.RuleCount = FURIOUS_WFP_MAX_RULES + 1;
+    std::memcpy(badPolicy.data(), &policyHeader, sizeof(policyHeader));
+    policyHeader.RuleCount = 1;
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::TooManyRules);
     badPolicy = policyBytes;
-    auto* badRule = reinterpret_cast<FURIOUS_WFP_APPLICATION_RULE*>(badPolicy.data() + sizeof(policyHeader));
-    badRule->ImagePath[0] = L'r';
+    FURIOUS_WFP_APPLICATION_RULE badRule = policyRule;
+    badRule.ImagePath[0] = L'r';
+    std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::PathNotAbsolute);
     badPolicy = policyBytes;
-    badRule = reinterpret_cast<FURIOUS_WFP_APPLICATION_RULE*>(badPolicy.data() + sizeof(policyHeader));
-    badRule->Action = 99;
+    badRule = policyRule;
+    badRule.Action = 99;
+    std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::InvalidAction);
     return 0;
 }
