@@ -18,6 +18,7 @@
 """Verify typed runtime lifecycle, ownership transfer, and Qt-thread handoff."""
 
 from Furious.Core import MultiprocessingRuntime, ProcessLaunchSpec
+from Furious.Core.Tun2socks import Tun2socks
 from Furious.Interface import (
     CoreRuntime,
     RuntimeExitReason,
@@ -218,6 +219,18 @@ class RuntimeLifecycleTest(TestCase):
         self.assertEqual(owner.events, [])
         self.assertEqual(runtime.stopCount, 1)
         self.assertIs(runtime.state, RuntimeState.Disposed)
+
+    def testTun2socksUsesSharedExitCodeContract(self):
+        """Keep inherited exit interpretation valid for every TUN child exit."""
+        self.assertIs(Tun2socks.ExitCode, CoreRuntime.ExitCode)
+
+        runtime = mock.Mock()
+        runtime.ExitCode = Tun2socks.ExitCode
+
+        event = CoreRuntime.interpretExit(runtime, 61)
+
+        self.assertIs(event.reason, RuntimeExitReason.Unexpected)
+        self.assertEqual(event.code, 61)
 
     def testMultiprocessingRuntimePublishesOneInterpretedExit(self):
         """Detect, reap, and publish one raw child transition internally."""
