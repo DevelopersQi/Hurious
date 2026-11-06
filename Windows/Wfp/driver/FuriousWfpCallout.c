@@ -1,5 +1,10 @@
 #include <ntddk.h>
+#include <ndis.h>
+
+#pragma warning(push)
+#pragma warning(disable:4201) // WDK WFP headers use anonymous structs/unions.
 #include <fwpsk.h>
+#pragma warning(pop)
 #include <initguid.h>
 
 // Bootstrap milestone: register a pass-through ALE callout only.

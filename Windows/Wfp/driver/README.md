@@ -4,6 +4,8 @@
 `FWPM_LAYER_ALE_AUTH_CONNECT_V4`. It intentionally does not install a WFP filter,
 block traffic, redirect sockets, or communicate with a user-mode process.
 
+The source includes the kernel and NDIS headers before FWPS headers, matching the WDK WFP callout sample header dependencies. The project does not redefine compiler-reserved kernel macros.
+
 The classify callback returns `FWP_ACTION_CONTINUE`, preserving normal Windows
 filter evaluation. This is a driver binary build target, not a complete installable
 driver package. The project currently has no INF/CAT, production signing,
