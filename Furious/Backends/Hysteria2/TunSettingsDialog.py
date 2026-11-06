@@ -181,7 +181,12 @@ class GuiHysteria2TUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
 
     def __init__(self, **kwargs):
         """Initialize the interface settings group."""
-        super().__init__(_('Interface'), **kwargs)
+        self._titleKey = 'Interface'
+        super().__init__(_(self._titleKey), **kwargs)
+
+    def retranslate(self):
+        """Refresh the group title using its untranslated source key."""
+        self.setTitle(_(self._titleKey))
 
     def setupPageLayout(self):
         """Use the same responsive single-column layout for native TUN fields."""
@@ -191,12 +196,12 @@ class GuiHysteria2TUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
         """Return interface-setting editors in display order."""
         return [
             GuiHysteria2TUNItemText(
-                title=_('Interface Name'),
+                title='Interface Name',
                 path=('name',),
             ),
-            GuiHysteria2TUNItemMTU(title=_('MTU')),
+            GuiHysteria2TUNItemMTU(title='MTU'),
             GuiHysteria2TUNItemText(
-                title=_('Timeout'),
+                title='Timeout',
                 path=('timeout',),
             ),
         ]
@@ -207,7 +212,8 @@ class GuiHysteria2TUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
 
     def __init__(self, **kwargs):
         """Initialize the network settings group."""
-        super().__init__(_('Network'), **kwargs)
+        self._titleKey = 'Network'
+        super().__init__(_(self._titleKey), **kwargs)
 
     def setupPageLayout(self):
         """Use the same responsive single-column layout as other TUN pages."""
@@ -217,32 +223,31 @@ class GuiHysteria2TUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
         """Return address and route editors in display order."""
         return [
             GuiHysteria2TUNItemText(
-                title=_('IPv4 TUN Address'),
+                title='IPv4 TUN Address',
                 path=('address', 'ipv4'),
-                translatable=False,
             ),
             GuiHysteria2TUNItemText(
-                title=_('IPv6 TUN Address'),
+                title='IPv6 TUN Address',
                 path=('address', 'ipv6'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title=_('IPv4 Routes'),
+                title='IPv4 Routes',
                 path=('route', 'ipv4'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title=_('IPv6 Routes'),
+                title='IPv6 Routes',
                 path=('route', 'ipv6'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title=_('IPv4 Excluded Routes'),
+                title='IPv4 Excluded Routes',
                 path=('route', 'ipv4Exclude'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title=_('IPv6 Excluded Routes'),
+                title='IPv6 Excluded Routes',
                 path=('route', 'ipv6Exclude'),
                 translatable=False,
             ),
