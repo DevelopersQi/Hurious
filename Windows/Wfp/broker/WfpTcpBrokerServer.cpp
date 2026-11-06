@@ -1,0 +1,337 @@
+#include "WfpTcpBrokerServer.h"
+
+#include <windows.h>
+
+#include <algorithm>
+#include <array>
+#include <cstring>
+
+namespace furious::wfp::broker {
+namespace {
+
+void CloseSocket(SOCKET& socket) noexcept {
+    if (socket != INVALID_SOCKET) {
+        closesocket(socket);
+        socket = INVALID_SOCKET;
+    }
+}
+
+} // namespace
+
+TcpBrokerServer::~TcpBrokerServer() {
+    Stop();
+}
+
+bool TcpBrokerServer::CreateListener(
+    int family,
+    SOCKET& listener,
+    std::uint16_t& port) noexcept {
+    listener = socket(family, SOCK_STREAM, IPPROTO_TCP);
+    if (listener == INVALID_SOCKET) {
+        return false;
+    }
+
+    BOOL exclusive = TRUE;
+    setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+        reinterpret_cast<const char*>(&exclusive), sizeof(exclusive));
+
+    if (family == AF_INET) {
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = 0;
+        if (bind(listener, reinterpret_cast<const sockaddr*>(&address),
+                sizeof(address)) == SOCKET_ERROR) {
+            CloseSocket(listener);
+            return false;
+        }
+
+        int length = sizeof(address);
+        if (getsockname(listener, reinterpret_cast<sockaddr*>(&address),
+                &length) == SOCKET_ERROR) {
+            CloseSocket(listener);
+            return false;
+        }
+        port = ntohs(address.sin_port);
+    } else if (family == AF_INET6) {
+        DWORD onlyV6 = 1;
+        setsockopt(listener, IPPROTO_IPV6, IPV6_V6ONLY,
+            reinterpret_cast<const char*>(&onlyV6), sizeof(onlyV6));
+
+        sockaddr_in6 address{};
+        address.sin6_family = AF_INET6;
+        address.sin6_addr = in6addr_loopback;
+        address.sin6_port = 0;
+        if (bind(listener, reinterpret_cast<const sockaddr*>(&address),
+                sizeof(address)) == SOCKET_ERROR) {
+            CloseSocket(listener);
+            return false;
+        }
+
+        int length = sizeof(address);
+        if (getsockname(listener, reinterpret_cast<sockaddr*>(&address),
+                &length) == SOCKET_ERROR) {
+            CloseSocket(listener);
+            return false;
+        }
+        port = ntohs(address.sin6_port);
+    } else {
+        CloseSocket(listener);
+        return false;
+    }
+
+    if (listen(listener, SOMAXCONN) == SOCKET_ERROR) {
+        CloseSocket(listener);
+        port = 0;
+        return false;
+    }
+    return true;
+}
+
+bool TcpBrokerServer::Start(
+    const sockaddr* socksAddress,
+    int socksAddressLength,
+    bool enableIpv4,
+    bool enableIpv6,
+    size_t workerCount,
+    size_t maximumSessions) noexcept {
+    if (!stopping_.load() || socksAddress == nullptr ||
+        (!enableIpv4 && !enableIpv6) ||
+        workerCount == 0 || maximumSessions == 0) {
+        return false;
+    }
+
+    const int expectedLength = socksAddress->sa_family == AF_INET
+        ? sizeof(sockaddr_in)
+        : socksAddress->sa_family == AF_INET6
+            ? sizeof(sockaddr_in6) : 0;
+    if (expectedLength == 0 || socksAddressLength < expectedLength) {
+        return false;
+    }
+
+    WSADATA data{};
+    if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+        return false;
+    }
+    winsockStarted_ = true;
+
+    std::memset(&socksAddress_, 0, sizeof(socksAddress_));
+    std::memcpy(&socksAddress_, socksAddress,
+        static_cast<size_t>(expectedLength));
+    socksAddressLength_ = expectedLength;
+    maximumSessions_ = maximumSessions;
+    ports_ = TcpBrokerListenerPorts{};
+
+    bool ready = true;
+    if (enableIpv4) {
+        ready = CreateListener(AF_INET, ipv4Listener_, ports_.ipv4);
+    }
+    if (ready && enableIpv6) {
+        ready = CreateListener(AF_INET6, ipv6Listener_, ports_.ipv6);
+    }
+    if (!ready) {
+        Stop();
+        return false;
+    }
+
+    stopping_.store(false);
+    try {
+        workers_.reserve(workerCount);
+        for (size_t index = 0; index < workerCount; ++index) {
+            workers_.emplace_back(&TcpBrokerServer::WorkerLoop, this);
+        }
+        acceptThread_ = std::thread(&TcpBrokerServer::AcceptLoop, this);
+    } catch (...) {
+        Stop();
+        return false;
+    }
+    return true;
+}
+
+void TcpBrokerServer::AcceptLoop() noexcept {
+    while (!stopping_.load()) {
+        fd_set readable;
+        FD_ZERO(&readable);
+        if (ipv4Listener_ != INVALID_SOCKET) {
+            FD_SET(ipv4Listener_, &readable);
+        }
+        if (ipv6Listener_ != INVALID_SOCKET) {
+            FD_SET(ipv6Listener_, &readable);
+        }
+        timeval timeout{1, 0};
+        const int ready = select(0, &readable, nullptr, nullptr, &timeout);
+        if (ready == SOCKET_ERROR) {
+            if (stopping_.load()) {
+                break;
+            }
+            continue;
+        }
+        if (ready == 0) {
+            continue;
+        }
+
+        const SOCKET listeners[] = {ipv4Listener_, ipv6Listener_};
+        for (SOCKET listener : listeners) {
+            if (listener == INVALID_SOCKET || !FD_ISSET(listener, &readable)) {
+                continue;
+            }
+
+            for (;;) {
+                SOCKET client = accept(listener, nullptr, nullptr);
+                if (client == INVALID_SOCKET) {
+                    break;
+                }
+
+                bool queued = false;
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex_);
+                    if (!stopping_.load() &&
+                        sessionsInFlight_.load() < maximumSessions_) {
+                        pendingClients_.push_back(client);
+                        sessionsInFlight_.fetch_add(1);
+                        queued = true;
+                    }
+                }
+                if (queued) {
+                    queueChanged_.notify_one();
+                } else {
+                    closesocket(client);
+                }
+
+                // Listener sockets are blocking. One accepted connection per
+                // readiness notification avoids spinning on accept().
+                break;
+            }
+        }
+    }
+}
+
+void TcpBrokerServer::WorkerLoop() noexcept {
+    for (;;) {
+        SOCKET client = INVALID_SOCKET;
+        {
+            std::unique_lock<std::mutex> lock(queueMutex_);
+            queueChanged_.wait(lock, [this]() {
+                return stopping_.load() || !pendingClients_.empty();
+            });
+            if (stopping_.load() && pendingClients_.empty()) {
+                return;
+            }
+            client = pendingClients_.front();
+            pendingClients_.pop_front();
+        }
+
+        ProcessClient(client);
+        sessionsInFlight_.fetch_sub(1);
+    }
+}
+
+void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
+    {
+        std::lock_guard<std::mutex> lock(activeMutex_);
+        if (stopping_.load()) {
+            closesocket(client);
+            return;
+        }
+        activeSockets_.insert(client);
+    }
+
+    RedirectedTcpConnection redirected;
+    int error = QueryRedirectedTcpConnection(client, redirected);
+    SOCKET upstream = INVALID_SOCKET;
+
+    if (error == 0) {
+        upstream = OpenSocks5Tunnel(
+            reinterpret_cast<const sockaddr*>(&socksAddress_),
+            socksAddressLength_,
+            redirected,
+            &error);
+    }
+
+    if (upstream != INVALID_SOCKET) {
+        bool keep = false;
+        {
+            std::lock_guard<std::mutex> lock(activeMutex_);
+            if (!stopping_.load()) {
+                activeSockets_.insert(upstream);
+                keep = true;
+            }
+        }
+        if (keep) {
+            RelayBidirectional(client, upstream);
+        } else {
+            shutdown(upstream, SD_BOTH);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(activeMutex_);
+        activeSockets_.erase(client);
+        if (upstream != INVALID_SOCKET) {
+            activeSockets_.erase(upstream);
+        }
+    }
+    if (upstream != INVALID_SOCKET) {
+        closesocket(upstream);
+    }
+    closesocket(client);
+}
+
+void TcpBrokerServer::Stop() noexcept {
+    if (stopping_.exchange(true) && !winsockStarted_) {
+        return;
+    }
+
+    CloseSocket(ipv4Listener_);
+    CloseSocket(ipv6Listener_);
+
+    if (acceptThread_.joinable()) {
+        acceptThread_.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(queueMutex_);
+        for (SOCKET client : pendingClients_) {
+            closesocket(client);
+            sessionsInFlight_.fetch_sub(1);
+        }
+        pendingClients_.clear();
+    }
+    queueChanged_.notify_all();
+
+    {
+        std::lock_guard<std::mutex> lock(activeMutex_);
+        for (SOCKET socket : activeSockets_) {
+            shutdown(socket, SD_BOTH);
+        }
+    }
+
+    for (auto& worker : workers_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    workers_.clear();
+
+    ports_ = TcpBrokerListenerPorts{};
+    socksAddressLength_ = 0;
+    sessionsInFlight_.store(0);
+    if (winsockStarted_) {
+        WSACleanup();
+        winsockStarted_ = false;
+    }
+}
+
+bool TcpBrokerServer::IsRunning() const noexcept {
+    return !stopping_.load();
+}
+
+DWORD TcpBrokerServer::ProcessId() const noexcept {
+    return GetCurrentProcessId();
+}
+
+TcpBrokerListenerPorts TcpBrokerServer::ListenerPorts() const noexcept {
+    return ports_;
+}
+
+} // namespace furious::wfp::broker
