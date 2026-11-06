@@ -49,7 +49,7 @@ strategy in an individual test.
 | External process launch, output, shutdown, threads, TUN metadata | `test_external_core.py` |
 | Backend structured-editor observational load and unknown-value preservation | `test_backend_editor_contract.py` |
 | Xray asset checksum validation and atomic replacement | `test_xray_asset_download.py` |
-| Xray/Hysteria2 native-TUN ownership and proxy-only stripping | `test_native_tun_semantics.py` |
+| Xray/Hysteria2 native-TUN ownership, explicit backend selection, Tun2socks exclusivity, connection-manager dispatch, and proxy-only stripping | `test_native_tun_semantics.py` |
 | Rolling metrics, stable buckets, lazy rendering, and hover | `test_metrics_behavior.py` |
 | Proxy-only endpoint discovery, caching, and presentation | `test_endpoint_info.py` |
 | Bounded service work, update validation, plugin UI, and worker lifetime | `test_service_runtime.py` |
