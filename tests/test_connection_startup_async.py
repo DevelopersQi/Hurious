@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from Furious.Interface import CoreRuntime, RuntimeState
+from Furious.Interface import CoreRuntime, RuntimeExit, RuntimeState
 from Furious.Plugins import PreparedRuntime, CoreRuntimeStartup
 from Furious.Qt.Signals import singleShotWeakly
 from Furious.Service.ConnectionManager import (
