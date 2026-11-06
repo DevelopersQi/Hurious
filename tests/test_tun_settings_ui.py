@@ -122,6 +122,13 @@ class TUNSettingsUITest(unittest.TestCase):
                 self.assertIn(key, catalogue)
                 self.assertTrue(catalogue[key].get('ZH'))
 
+    def test_system_network_widget_retranslates_its_visible_strings(self):
+        source = read_source('Furious/Qt/SystemNetworkInfo.py')
+        self.assertIn('class SystemNetworkInfoWidget(AppQGroupBox):', source)
+        self.assertIn('def retranslate(self):', source)
+        self.assertIn('self.refreshButton.setText(_(self._refreshKey))', source)
+        self.assertIn('self._updateInfoLabel()', source)
+
     def test_detected_system_network_strings_are_registered(self):
         catalogue = translation_catalogue()
         for key in (
