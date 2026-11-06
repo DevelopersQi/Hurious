@@ -3,9 +3,13 @@
 import unittest
 
 from Furious.Frozenlib import SystemNetwork
+from Furious.Qt.SystemNetworkInfo import SystemNetworkInfoWidget
 
 
 class SystemNetworkParsingTests(unittest.TestCase):
+    def test_shared_network_info_widget_is_importable(self):
+        self.assertTrue(callable(SystemNetworkInfoWidget))
+
     def test_windows_default_route_uses_lowest_metric(self):
         output = """
 Network Destination        Netmask          Gateway       Interface  Metric
