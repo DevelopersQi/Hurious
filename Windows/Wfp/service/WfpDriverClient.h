@@ -10,7 +10,7 @@ inline bool IsValidStatus(const FURIOUS_WFP_DRIVER_STATUS& status) noexcept {
     return status.Size == sizeof(FURIOUS_WFP_DRIVER_STATUS) &&
         status.Version == FURIOUS_WFP_DRIVER_ABI_VERSION &&
         status.Reserved == 0 &&
-        (status.Flags & ~FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED) == 0;
+        (status.Flags & ~(FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED |\n                             FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED)) == 0;
 }
 
 inline DWORD QueryStatus(FURIOUS_WFP_DRIVER_STATUS* output) noexcept {
