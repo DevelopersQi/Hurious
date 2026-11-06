@@ -91,7 +91,7 @@ class TestHarnessIsolationTest(unittest.TestCase):
 
 
 class NavigationBehaviorTest(unittest.TestCase):
-    """Protect overlay geometry, outside-click dismissal, and page persistence."""
+    """Protect reserved navigation geometry, outside-click dismissal, and page persistence."""
 
     @classmethod
     def setUpClass(cls):
@@ -132,8 +132,8 @@ class NavigationBehaviorTest(unittest.TestCase):
 
         collectAtBoundary()
 
-    def testExpandedPanelOverlaysWithoutMovingContent(self):
-        """Expand only the panel geometry while the page stack remains fixed."""
+    def testExpandedPanelReservesSpaceAndMovesContent(self):
+        """Expand the rail reservation so the page stack cannot sit underneath it."""
         collapsedGeometry = QtCore.QRect(self.navigation.pageStack.geometry())
         collapsedWindowSize = QtCore.QSize(self.navigation.size())
 
@@ -146,12 +146,22 @@ class NavigationBehaviorTest(unittest.TestCase):
             self.navigation.navigationPanel.width(),
             self.navigation.ExpandedWidth,
         )
-        self.assertEqual(self.navigation.pageStack.geometry(), collapsedGeometry)
         self.assertEqual(
             self.navigation.navigationRail.width(),
-            self.navigation.CollapsedWidth,
+            self.navigation.ExpandedWidth,
         )
+        self.assertEqual(
+            self.navigation.pageStack.x(),
+            collapsedGeometry.x() + self.navigation.ExpandedWidth - self.navigation.CollapsedWidth,
+        )
+        self.assertLess(self.navigation.pageStack.width(), collapsedGeometry.width())
         self.assertEqual(self.navigation.size(), collapsedWindowSize)
+
+        self.navigation.setExpanded(False, animated=False)
+        processQtEvents()
+
+        self.assertEqual(self.navigation.navigationRail.width(), self.navigation.CollapsedWidth)
+        self.assertEqual(self.navigation.pageStack.geometry(), collapsedGeometry)
 
     def testOutsideClickCollapsesAndStillReachesTarget(self):
         """Dismiss the temporary overlay without consuming the original click."""
