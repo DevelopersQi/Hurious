@@ -1176,11 +1176,22 @@ class ConnectionManager(Mixins.CleanupOnExit):
             tunBackend = 'auto'
 
         tunBackend = str(tunBackend or 'auto').strip().casefold()
-        pluginTUN = (
-            registry.prepareTUN(config)
-            if tunBackend == 'auto'
-            else registry.prepareTUN(config, tunBackend)
-        )
+
+        # Auto mode follows the active core instead of legacy per-core TUN
+        # switches: Xray and Hysteria 2 always use their matching native TUN.
+        factory = registry.factoryForConfig(config)
+        factoryId = str(getattr(factory, 'factoryId', '')).casefold()
+        automaticBackend = {
+            'official.xray': 'xray',
+            'official.hysteria2': 'hysteria2',
+        }.get(factoryId)
+
+        if tunBackend == 'auto' and automaticBackend:
+            pluginTUN = registry.prepareTUN(config, automaticBackend)
+        elif tunBackend == 'auto':
+            pluginTUN = registry.prepareTUN(config)
+        else:
+            pluginTUN = registry.prepareTUN(config, tunBackend)
 
         if pluginTUN:
             factory = registry.factoryForConfig(config)
