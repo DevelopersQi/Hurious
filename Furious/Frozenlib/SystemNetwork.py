@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from Furious.Frozenlib.Constants import *
 from Furious.Frozenlib.Utility import runExternalCommand
+from Furious.Frozenlib.SystemRuntime import SystemRuntime
 
 import ipaddress
 import logging
@@ -51,6 +52,14 @@ def _run(command: list[str]) -> str:
     encoding = 'mbcs' if PLATFORM == 'Windows' else 'utf-8'
 
     return result.stdout.decode(encoding, 'replace')
+
+
+def _linuxCommand(arguments: list[str]) -> list[str]:
+    """Run network inspection against the host from inside Flatpak."""
+    if SystemRuntime.flatpakID():
+        return ['flatpak-spawn', '--host'] + arguments
+
+    return arguments
 
 
 def _validIPv4(value: str) -> bool:
@@ -212,7 +221,7 @@ def getPrimaryAdapterInfo() -> dict[str, str]:
 
         elif PLATFORM == 'Linux':
             gateway, interface = _linuxDefaultRoute(
-                _run(['ip', '-4', 'route', 'show', 'default'])
+                _run(_linuxCommand(['ip', '-4', 'route', 'show', 'default']))
             )
 
             if not interface:
@@ -222,7 +231,9 @@ def getPrimaryAdapterInfo() -> dict[str, str]:
             result['name'] = interface
             result['ip'] = _linuxInterfaceIP(
                 _run(
-                    ['ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global']
+                    _linuxCommand(
+                        ['ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global']
+                    )
                 )
             )
 
