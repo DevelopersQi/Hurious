@@ -41,6 +41,20 @@ class _Win32Session:
         self._daemonThread = None
         self._daemonLock = threading.RLock()
 
+    @staticmethod
+    def _loadModule():
+        """Load the optional native Windows session integration."""
+        try:
+            import win32session
+        except ImportError:
+            logger.warning(
+                'win32session native extension is unavailable; '
+                'Windows session shutdown notification is disabled'
+            )
+            return None
+
+        return win32session
+
     def _runListener(self, listenerCallback):
         """Run native session monitoring and release this exact thread on exit."""
         thread = threading.current_thread()
@@ -60,7 +74,10 @@ class _Win32Session:
     def set(callback: Callable[[], None]) -> bool:
         """Set data managed by the win32 session."""
         if PLATFORM == 'Windows':
-            import win32session
+            win32session = _Win32Session._loadModule()
+
+            if win32session is None:
+                return False
 
             win32session.set(callback)
 
@@ -71,7 +88,10 @@ class _Win32Session:
     def off(self) -> bool:
         """Disable the win32 session."""
         if PLATFORM == 'Windows':
-            import win32session
+            win32session = self._loadModule()
+
+            if win32session is None:
+                return False
 
             if win32session.off():
                 with self._daemonLock:
@@ -107,7 +127,10 @@ class _Win32Session:
     def run(self) -> bool:
         """Run the win32 session task."""
         if PLATFORM == 'Windows':
-            import win32session
+            win32session = self._loadModule()
+
+            if win32session is None:
+                return False
 
             with self._daemonLock:
                 if (
