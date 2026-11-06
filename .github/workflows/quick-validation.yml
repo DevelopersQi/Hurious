@@ -1,0 +1,49 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors
+#
+# This file is part of Furious and is distributed under the GNU General Public
+# License, version 3 or (at your option) any later version.
+
+name: Quick validation
+
+on:
+  push:
+    branches:
+      - integrate/native-bindings-forks
+      - fix/windows-startup-smoke-test
+      - fix/windows-native-session-notifications
+      - feat/auto-detect-tun-network
+  pull_request:
+    branches:
+      - integrate/native-bindings-forks
+      - feat/auto-detect-tun-network
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quick-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick-checks:
+    name: Python syntax and TUN UI regression checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Compile Python sources
+        run: |
+          python -m compileall -q Deploy.py Furious tests
+          echo "Python syntax validation passed"
+
+      - name: Run dependency-free TUN UI and translation regression tests
+        run: |
+          python -m unittest tests.test_tun_settings_ui -v
