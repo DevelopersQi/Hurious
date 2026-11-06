@@ -117,6 +117,13 @@ class ConnectionController(QtCore.QObject):
         return self._state
 
     @property
+    def activeTUNBackend(self):
+        """Return the actual TUN backend only for an established connection."""
+        if not self.isConnected():
+            return None
+        return self._coreManager.activeTUNBackend
+
+    @property
     def activeProfile(self):
         """Return the profile owned by the current connection lifecycle."""
         return self._activeProfile
@@ -194,6 +201,7 @@ class ConnectionController(QtCore.QObject):
         """Restore disconnected state after all runtime resources stop."""
         self._startOperation = None
         self._pendingHttpProxy = ''
+        self._coreManager._activeTUNBackend = None
 
         self.progressFinished.emit(True)
         self._setActiveProfile(None)
