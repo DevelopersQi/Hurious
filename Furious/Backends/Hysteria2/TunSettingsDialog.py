@@ -229,46 +229,24 @@ class GuiHysteria2TUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
             GuiHysteria2TUNItemText(
                 title='IPv6 TUN Address',
                 path=('address', 'ipv6'),
-                translatable=False,
             ),
             GuiHysteria2TUNItemList(
                 title='IPv4 Routes',
                 path=('route', 'ipv4'),
-                translatable=False,
             ),
             GuiHysteria2TUNItemList(
                 title='IPv6 Routes',
                 path=('route', 'ipv6'),
-                translatable=False,
             ),
             GuiHysteria2TUNItemList(
                 title='IPv4 Excluded Routes',
                 path=('route', 'ipv4Exclude'),
-                translatable=False,
             ),
             GuiHysteria2TUNItemList(
                 title='IPv6 Excluded Routes',
                 path=('route', 'ipv6Exclude'),
-                translatable=False,
             ),
         ]
-
-    def setupPageLayout(self):
-        """Arrange related IPv4 and IPv6 settings in paired rows."""
-        layout = QGridLayout()
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(3, 1)
-
-        for index, container in enumerate(self._containers):
-            row, field = divmod(index, 2)
-            label, editor = container.widgets()
-            column = field * 2
-
-            layout.addWidget(label, row, column)
-            layout.addWidget(editor, row, column + 1)
-
-        return layout
-
 
 class Hysteria2TUNDocumentationURL(AppQLabel):
     """Link to the official Hysteria 2 TUN documentation."""
