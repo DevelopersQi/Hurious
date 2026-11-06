@@ -6,7 +6,6 @@
 
 #include <array>
 #include <cstring>
-#include <vector>
 
 namespace {
 
@@ -23,9 +22,10 @@ bool IsAuthorizedClient(HANDLE pipe) noexcept {
     if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token)) {
         DWORD required = 0;
         GetTokenInformation(token, TokenUser, nullptr, 0, &required);
-        if (required >= sizeof(TOKEN_USER)) {
-            std::vector<BYTE> storage(required);
-            if (GetTokenInformation(token, TokenUser, storage.data(), required, &required)) {
+        std::array<BYTE, 1024> storage = {};
+        if (required >= sizeof(TOKEN_USER) && required <= storage.size()) {
+            if (GetTokenInformation(token, TokenUser, storage.data(),
+                                    static_cast<DWORD>(storage.size()), &required)) {
                 const auto* user = reinterpret_cast<const TOKEN_USER*>(storage.data());
                 SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
                 PSID systemSid = nullptr;
@@ -86,12 +86,12 @@ bool ReadRequest(HANDLE pipe, HANDLE stopEvent, void* buffer,
     }
 }
 
-bool WriteResponse(HANDLE pipe, const FURIOUS_WFP_IPC_RESPONSE& response) noexcept {
+DWORD WriteResponse(HANDLE pipe, const FURIOUS_WFP_IPC_RESPONSE& response) noexcept {
     DWORD written = 0;
     if (!WriteFile(pipe, &response, sizeof(response), &written, nullptr)) {
-        return false;
+        return GetLastError();
     }
-    return written == sizeof(response);
+    return written == sizeof(response) ? ERROR_SUCCESS : ERROR_WRITE_FAULT;
 }
 
 DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
@@ -125,7 +125,7 @@ DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
     response.Win32Status = furious::wfp::ipc::DispatchCommand(request.Command);
     response.ServiceState = SERVICE_RUNNING;
 
-    return WriteResponse(pipe, response) ? ERROR_SUCCESS : GetLastError();
+    return WriteResponse(pipe, response);
 }
 
 } // namespace
