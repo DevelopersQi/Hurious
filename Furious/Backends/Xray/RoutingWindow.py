@@ -34,8 +34,15 @@ import copy
 import uuid
 import logging
 import functools
+import csv
+import os
+import subprocess
 
-from .Routing import cleanRoutingRule
+from .Routing import (
+    cleanRoutingRule,
+    getApplicationRoutingRules,
+    saveApplicationRoutingRules,
+)
 
 __all__ = [
     'XrayRoutingWindow',
@@ -43,6 +50,7 @@ __all__ = [
     'RoutingPreviewDialog',
     'RoutingRuleEditDialog',
     'RoutingRulesDialog',
+    'ApplicationRoutingDialog',
     # End export for testing
 ]
 
@@ -838,6 +846,7 @@ class RoutingRulesDialog(AppQTransientDialog):
         actionLayout.addWidget(self.addButton)
         actionLayout.addWidget(self.deleteButton)
         actionLayout.addStretch(1)
+        actionLayout.addWidget(self.applicationRulesButton)
         actionLayout.addWidget(self.closeWindowButton)
 
         layout = QVBoxLayout()
@@ -1195,6 +1204,219 @@ class UserRoutingTableView(Mixins.QTranslatable, AppQTableView):
         self.flushAll()
 
 
+
+class ApplicationRoutingDialog(AppQTransientDialog):
+    """Manage per-application proxy/direct rules for Windows Xray TUN."""
+
+    DEFAULT_DIALOG_SIZE = QtCore.QSize(820, 500)
+    ProtectedProcesses = {
+        'furious.exe', 'xray.exe', 'hysteria.exe', 'hysteria2.exe',
+        'tun2socks.exe',
+    }
+
+    def __init__(self, parent=None):
+        """Initialize a compact application-routing editor."""
+        super().__init__(parent)
+        self.setWindowTitle(_('Application Routing'))
+        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+
+        self.table = QTableWidget(0, 4, parent=self)
+        self.table.setHorizontalHeaderLabels([
+            _('Application'), _('Process / EXE Path'), _('Action'), _('Enabled')
+        ])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+
+        self.addRunningButton = AppQPushButton(_('Add Running App'))
+        self.addExecutableButton = AppQPushButton(_('Browse EXE...'))
+        self.removeButton = AppQPushButton(_('Remove'))
+        self.upButton = AppQPushButton(_('Move Up'))
+        self.downButton = AppQPushButton(_('Move Down'))
+        self.saveButton = AppQPushButton(_('Save'))
+        self.cancelButton = AppQPushButton(_('Cancel'))
+
+        self.addRunningButton.clicked.connect(self.addRunningApplication)
+        self.addExecutableButton.clicked.connect(self.addExecutable)
+        self.removeButton.clicked.connect(self.removeSelected)
+        self.upButton.clicked.connect(lambda: self.moveSelected(-1))
+        self.downButton.clicked.connect(lambda: self.moveSelected(1))
+        self.saveButton.clicked.connect(self.save)
+        self.cancelButton.clicked.connect(self.reject)
+
+        top = QHBoxLayout()
+        for button in (self.addRunningButton, self.addExecutableButton,
+                       self.removeButton, self.upButton, self.downButton):
+            top.addWidget(button)
+        top.addStretch(1)
+
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        bottom.addWidget(self.saveButton)
+        bottom.addWidget(self.cancelButton)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 18)
+        layout.setSpacing(12)
+        layout.addWidget(AppQLabel(
+            _('Rules are evaluated from top to bottom. The first matching app rule wins.')
+        ))
+        layout.addLayout(top)
+        layout.addWidget(self.table, 1)
+        layout.addLayout(bottom)
+
+        for rule in getApplicationRoutingRules():
+            self._appendRule(rule.get('name', rule['process']), rule['process'],
+                             rule.get('outboundTag', 'proxy'), rule.get('enabled', True))
+
+    def _appendRule(self, name, process, action='proxy', enabled=True):
+        """Append one application row to the table."""
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(str(name)))
+        self.table.setItem(row, 1, QTableWidgetItem(str(process)))
+
+        actionCombo = AppQComboBox(translatable=False)
+        actionCombo.addItem(_('Force Proxy'), 'proxy')
+        actionCombo.addItem(_('Force Direct'), 'direct')
+        actionCombo.setCurrentIndex(max(0, actionCombo.findData(action)))
+        self.table.setCellWidget(row, 2, actionCombo)
+
+        enabledCheck = QCheckBox()
+        enabledCheck.setChecked(bool(enabled))
+        enabledCheck.setToolTip(_('Enable or disable this application rule'))
+        self.table.setCellWidget(row, 3, enabledCheck)
+
+    def _runningProcesses(self):
+        """Read currently running Windows process names without extra packages."""
+        completed = subprocess.run(
+            ['tasklist', '/FO', 'CSV', '/NH'], capture_output=True,
+            text=True, encoding='mbcs', errors='replace', check=True,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+        processes = {}
+        for row in csv.reader(completed.stdout.splitlines()):
+            if len(row) < 2:
+                continue
+            name, pid = row[0].strip(), row[1].strip()
+            if name and name.casefold() not in self.ProtectedProcesses:
+                processes[(name.casefold(), pid)] = (name, pid)
+        return sorted(processes.values(), key=lambda item: (item[0].casefold(), item[1]))
+
+    def addRunningApplication(self):
+        """Choose a running process and create a proxy-by-default rule."""
+        try:
+            processes = self._runningProcesses()
+        except Exception as ex:
+            AppQMessageBox.warning(
+                self, _('Unable to Read Processes'),
+                _('Could not enumerate running applications: {error}').format(error=ex),
+            )
+            return
+
+        if not processes:
+            AppQMessageBox.information(
+                self, _('No Applications Found'),
+                _('No selectable running applications were found.'),
+            )
+            return
+
+        labels = [f'{name}  (PID {pid})' for name, pid in processes]
+        selected, accepted = QInputDialog.getItem(
+            self, _('Select Running Application'), _('Application'), labels, 0, False,
+        )
+        if not accepted:
+            return
+
+        name, _pid = processes[labels.index(selected)]
+        self._appendRule(name, name, 'proxy', True)
+
+    def addExecutable(self):
+        """Add an executable by browsing to its full path."""
+        path, _filter = QFileDialog.getOpenFileName(
+            self, _('Select Application Executable'), '',
+            _('Executable files (*.exe);;All files (*)'),
+        )
+        if not path:
+            return
+        name = os.path.basename(path)
+        if name.casefold() in self.ProtectedProcesses:
+            AppQMessageBox.warning(
+                self, _('Protected Process'),
+                _('Proxy core and Furious processes cannot be added to application rules.'),
+            )
+            return
+        self._appendRule(name, path.replace(chr(92), '/'), 'proxy', True)
+
+    def removeSelected(self):
+        """Remove the selected application rule."""
+        row = self.table.currentRow()
+        if row >= 0:
+            self.table.removeRow(row)
+
+    def moveSelected(self, offset):
+        """Move the selected rule to change its priority."""
+        row = self.table.currentRow()
+        target = row + offset
+        if row < 0 or not 0 <= target < self.table.rowCount():
+            return
+        values = self._rowValues(row)
+        self.table.removeRow(row)
+        self.table.insertRow(target)
+        self._setRow(target, values)
+        self.table.selectRow(target)
+
+    def _rowValues(self, row):
+        """Read one row as a plain tuple."""
+        return (
+            self.table.item(row, 0).text(),
+            self.table.item(row, 1).text(),
+            self.table.cellWidget(row, 2).currentData(),
+            self.table.cellWidget(row, 3).isChecked(),
+        )
+
+    def _setRow(self, row, values):
+        """Populate one row from a plain tuple."""
+        name, process, action, enabled = values
+        self.table.setItem(row, 0, QTableWidgetItem(name))
+        self.table.setItem(row, 1, QTableWidgetItem(process))
+        actionCombo = AppQComboBox(translatable=False)
+        actionCombo.addItem(_('Force Proxy'), 'proxy')
+        actionCombo.addItem(_('Force Direct'), 'direct')
+        actionCombo.setCurrentIndex(max(0, actionCombo.findData(action)))
+        self.table.setCellWidget(row, 2, actionCombo)
+        enabledCheck = QCheckBox()
+        enabledCheck.setChecked(enabled)
+        enabledCheck.setToolTip(_('Enable or disable this application rule'))
+        self.table.setCellWidget(row, 3, enabledCheck)
+
+    def save(self):
+        """Persist validated rules in visual priority order."""
+        rules = []
+        for row in range(self.table.rowCount()):
+            name, process, action, enabled = self._rowValues(row)
+            if process.rsplit('/', 1)[-1].casefold() in self.ProtectedProcesses:
+                AppQMessageBox.warning(
+                    self, _('Protected Process'),
+                    _('Proxy core and Furious processes cannot be added to application rules.'),
+                )
+                return
+            rules.append({
+                'id': f'app-{row + 1}', 'name': name, 'process': process,
+                'outboundTag': action, 'enabled': enabled, 'priority': (row + 1) * 10,
+            })
+        try:
+            saveApplicationRoutingRules(rules)
+        except (TypeError, ValueError) as ex:
+            AppQMessageBox.warning(self, _('Invalid Application Rule'), str(ex))
+            return
+        self.accept()
+
+
 class XrayRoutingWindow(AppQMainWindow):
     """Present the user routing window."""
 
@@ -1207,6 +1429,9 @@ class XrayRoutingWindow(AppQMainWindow):
         self.setWindowTitle(_('Edit Routing'))
 
         self.tableView = UserRoutingTableView(parent=self)
+
+        self.applicationRulesButton = AppQPushButton(_('Application Rules...'))
+        self.applicationRulesButton.clicked.connect(self.openApplicationRules)
 
         self.addButton, self.previewButton, self.renameButton, self.deleteButton = (
             AppQPushButton(
@@ -1259,6 +1484,12 @@ class XrayRoutingWindow(AppQMainWindow):
         layout.addWidget(self.tableView)
 
         self.setCentralWidget(centralWidget)
+
+    def openApplicationRules(self):
+        """Open the Windows Xray process-routing editor."""
+        if PLATFORM != 'Windows':
+            return
+        ApplicationRoutingDialog(parent=self).open()
 
     def prepareInitialGeometry(self):
         """Restore routing-window geometry and state before its first show."""
