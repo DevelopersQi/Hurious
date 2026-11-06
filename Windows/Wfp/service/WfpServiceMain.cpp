@@ -1,6 +1,9 @@
 #include "WfpEngine.h"
+#include "WfpPipeServer.h"
 
 #include <windows.h>
+
+#include <thread>
 
 namespace {
 
@@ -23,7 +26,7 @@ void PublishStatus(DWORD state, DWORD win32ExitCode, DWORD waitHint) {
 
 DWORD WINAPI ControlHandler(DWORD control, DWORD, LPVOID, LPVOID) {
     if (control == SERVICE_CONTROL_STOP || control == SERVICE_CONTROL_SHUTDOWN) {
-        PublishStatus(SERVICE_STOP_PENDING, NO_ERROR, 5000);
+        PublishStatus(SERVICE_STOP_PENDING, NO_ERROR, 10000);
         if (gStopEvent != nullptr) {
             SetEvent(gStopEvent);
         }
@@ -39,7 +42,7 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
         return;
     }
 
-    PublishStatus(SERVICE_START_PENDING, NO_ERROR, 10000);
+    PublishStatus(SERVICE_START_PENDING, NO_ERROR, 15000);
     gStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (gStopEvent == nullptr) {
         PublishStatus(SERVICE_STOPPED, GetLastError(), 0);
@@ -51,7 +54,26 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
     if (status == ERROR_SUCCESS) {
         status = engine.EnsureProviderAndSublayer();
     }
+
+    furious::wfp::PipeServer pipeServer;
+    std::thread pipeThread;
+    DWORD pipeStatus = ERROR_SUCCESS;
+    if (status == ERROR_SUCCESS) {
+        try {
+            pipeThread = std::thread([&pipeServer, &pipeStatus]() {
+                pipeStatus = pipeServer.Run(gStopEvent);
+                if (pipeStatus != ERROR_SUCCESS) {
+                    SetEvent(gStopEvent);
+                }
+            });
+        } catch (...) {
+            status = ERROR_NOT_ENOUGH_MEMORY;
+        }
+    }
+
     if (status != ERROR_SUCCESS) {
+        engine.RemoveProviderAndSublayer();
+        engine.Close();
         CloseHandle(gStopEvent);
         gStopEvent = nullptr;
         PublishStatus(SERVICE_STOPPED, status, 0);
@@ -61,11 +83,17 @@ void WINAPI ServiceMain(DWORD, LPWSTR*) {
     PublishStatus(SERVICE_RUNNING, NO_ERROR, 0);
     WaitForSingleObject(gStopEvent, INFINITE);
 
+    pipeServer.Stop();
+    if (pipeThread.joinable()) {
+        pipeThread.join();
+    }
+
     const DWORD cleanupStatus = engine.RemoveProviderAndSublayer();
     engine.Close();
     CloseHandle(gStopEvent);
     gStopEvent = nullptr;
-    PublishStatus(SERVICE_STOPPED, cleanupStatus, 0);
+    const DWORD finalStatus = cleanupStatus != ERROR_SUCCESS ? cleanupStatus : pipeStatus;
+    PublishStatus(SERVICE_STOPPED, finalStatus, 0);
 }
 
 } // namespace

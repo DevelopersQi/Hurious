@@ -1,4 +1,5 @@
 #include "../../include/WfpControlProtocol.h"
+#include "../WfpIpcDispatcher.h"
 
 #include <array>
 #include <cstdint>
@@ -6,7 +7,7 @@
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
-        std::fprintf(stderr, "Check failed at line %d: %s\n", __LINE__, #condition); \
+        std::fprintf(stderr, "Check failed at line %d: %s\\n", __LINE__, #condition); \
         return 1; \
     } \
 } while (0)
@@ -49,5 +50,11 @@ int main() {
 
     std::array<uint8_t, FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE + 1> oversized = {};
     CHECK(ValidateRequest(oversized.data(), oversized.size()) == ValidationResult::MessageTooLarge);
+
+    using furious::wfp::ipc::DispatchCommand;
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY) == ERROR_NOT_SUPPORTED);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY) == ERROR_NOT_SUPPORTED);
+    CHECK(DispatchCommand(0xFFFFFFFFu) == ERROR_INVALID_FUNCTION);
     return 0;
 }
