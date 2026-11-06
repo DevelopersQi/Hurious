@@ -4,7 +4,8 @@
 `ALE_CONNECT_REDIRECT`. The service management plane installs the matching
 WFP provider, sublayer, callout objects, and redirect filters transactionally.
 The driver classify path validates endpoint configuration, excludes the
-configured local redirect-target PID, checks WFP redirect state, and rewrites
+configured local redirect-target PID plus up to eight explicitly supplied
+auxiliary process IDs, checks WFP redirect state, and rewrites
 eligible IPv4/IPv6 TCP/UDP connect requests to loopback while preserving the
 original destination in the WFP-owned redirect context.
 
@@ -13,10 +14,13 @@ addresses in ::ffff:127/104. This is necessary because applications can reach
 the same local endpoint using either native IPv4 or an IPv4-mapped IPv6
 destination.
 
-The current PID exclusion is intentionally limited to the local redirect
-target (the future broker). It does not yet exclude Xray/Hysteria2 core
-processes, and application routing policies are compiled in user mode but are
-not yet enforced by the kernel classify path. Therefore this is not yet an
+The endpoint ABI v2 carries a bounded list of up to eight auxiliary process
+IDs in addition to the mandatory local redirect-target PID. The kernel validates
+that entries are nonzero, unique, do not duplicate the redirect-target PID, and
+that unused slots are zero. The service/backend lifecycle does not yet populate
+or refresh this list when Xray/Hysteria2 start, stop, or restart. Application
+routing policies are compiled in user mode but are not yet enforced by the
+kernel classify path. Therefore this is not yet an
 end-to-end transparent proxy.
 
 The source includes the kernel and NDIS headers before FWPS headers, matching
