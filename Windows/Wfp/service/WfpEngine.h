@@ -15,6 +15,8 @@ public:
 
     DWORD Open();
     DWORD EnsureProviderAndSublayer();
+    DWORD InstallRedirectFilters();
+    DWORD RemoveRedirectFilters();
     DWORD RemoveProviderAndSublayer();
     void Close() noexcept;
 
