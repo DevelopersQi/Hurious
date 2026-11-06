@@ -382,6 +382,7 @@ static VOID NTAPI FuriousClassify(
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
             classifyOut->actionType = FWP_ACTION_CONTINUE;
+            classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
             return;
         }
         redirectContext->OriginalPortNetworkOrder = remote->sin6_port;
