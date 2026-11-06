@@ -348,29 +348,35 @@ static VOID NTAPI FuriousClassify(
 
     status = FwpsAcquireWritableLayerDataPointer0(
         classifyHandle, filter->filterId, 0, (PVOID*)&connectRequest, classifyOut);
-    if (!NT_SUCCESS(status) || connectRequest == NULL ||
-        connectRequest->remoteAddressAndPort == NULL) {
+    if (!NT_SUCCESS(status) || connectRequest == NULL) {
         FwpsReleaseClassifyHandle0(classifyHandle);
         ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
         return;
     }
 
     if (isV4) {
-        SOCKADDR_IN* remote = (SOCKADDR_IN*)connectRequest->remoteAddressAndPort;
+        SOCKADDR_IN* remote = (SOCKADDR_IN*)&connectRequest->remoteAddressAndPort;
+        SOCKADDR_IN* local = (SOCKADDR_IN*)&connectRequest->localAddressAndPort;
         if (remote->sin_family != AF_INET || remote->sin_port == 0) {
             FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
             classifyOut->actionType = FWP_ACTION_CONTINUE;
+            classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
             return;
         }
         redirectContext->OriginalPortNetworkOrder = remote->sin_port;
         RtlCopyMemory(redirectContext->OriginalAddress,
                       &remote->sin_addr, sizeof(remote->sin_addr));
-        remote->sin_addr.S_un.S_addr = RtlUlongByteSwap(0x7F000001u);
+        if (local->sin_family == AF_INET && local->sin_addr.S_un.S_addr != 0) {
+            remote->sin_addr = local->sin_addr;
+        } else {
+            remote->sin_addr.S_un.S_addr = RtlUlongByteSwap(0x7F000001u);
+        }
         remote->sin_port = RtlUshortByteSwap(targetPort);
     } else {
-        SOCKADDR_IN6* remote = (SOCKADDR_IN6*)connectRequest->remoteAddressAndPort;
+        SOCKADDR_IN6* remote = (SOCKADDR_IN6*)&connectRequest->remoteAddressAndPort;
+        SOCKADDR_IN6* local = (SOCKADDR_IN6*)&connectRequest->localAddressAndPort;
         if (remote->sin6_family != AF_INET6 || remote->sin6_port == 0) {
             FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
@@ -381,8 +387,19 @@ static VOID NTAPI FuriousClassify(
         redirectContext->OriginalPortNetworkOrder = remote->sin6_port;
         RtlCopyMemory(redirectContext->OriginalAddress,
                       &remote->sin6_addr, sizeof(remote->sin6_addr));
-        RtlZeroMemory(&remote->sin6_addr, sizeof(remote->sin6_addr));
-        remote->sin6_addr.u.Byte[15] = 1;
+        if (local->sin6_family == AF_INET6) {
+            IN6_ADDR unspecifiedAddress = { 0 };
+            if (RtlCompareMemory(&local->sin6_addr, &unspecifiedAddress,
+                                 sizeof(unspecifiedAddress)) == sizeof(unspecifiedAddress)) {
+                RtlZeroMemory(&remote->sin6_addr, sizeof(remote->sin6_addr));
+                remote->sin6_addr.u.Byte[15] = 1;
+            } else {
+                remote->sin6_addr = local->sin6_addr;
+            }
+        } else {
+            RtlZeroMemory(&remote->sin6_addr, sizeof(remote->sin6_addr));
+            remote->sin6_addr.u.Byte[15] = 1;
+        }
         remote->sin6_port = RtlUshortByteSwap(targetPort);
     }
 
@@ -394,6 +411,7 @@ static VOID NTAPI FuriousClassify(
     FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
     FwpsReleaseClassifyHandle0(classifyHandle);
     classifyOut->actionType = FWP_ACTION_PERMIT;
+    classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
 }
 
 static NTSTATUS NTAPI FuriousNotify(
