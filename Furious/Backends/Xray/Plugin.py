@@ -88,8 +88,6 @@ class XrayActionProvider(ActionProvider):
 
     def createActions(self, parent=None, **kwargs):
         """Create Xray routing, TUN, and asset-management actions."""
-        isCoreActive = kwargs.pop('isCoreActive', lambda coreType: False)
-
         # These modules require a fully initialized Furious.Qt package.
         from Furious.Qt import (
             AppQAction,
