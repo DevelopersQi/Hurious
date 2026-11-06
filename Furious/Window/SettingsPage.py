@@ -534,6 +534,8 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
         self.iconFileName = 'diagram-3.svg'
         self._available = True
         self._optionFrames = {}
+        self._optionLabels = {}
+        self._optionHelpLabels = {}
 
         self.titleLabel = AppQLabel(title, parent=self)
         self.titleLabel.setObjectName('SettingsCardTitle')
@@ -573,8 +575,14 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
             self.buttonGroup.addButton(radio, index)
             self.optionButtons[backend] = radio
             self._optionFrames[backend] = optionWidget
+            self._optionLabels[backend] = label
 
-            helpLabel = AppQLabel(helpText, parent=optionWidget)
+            helpLabel = AppQLabel(
+                helpText,
+                translatable=False,
+                parent=optionWidget,
+            )
+            self._optionHelpLabels[backend] = helpLabel
             helpLabel.setObjectName('SettingsCardDescription')
             helpLabel.setWordWrap(True)
             helpLabel.setContentsMargins(22, 0, 0, 0)
@@ -598,7 +606,22 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
 
         self.buttonGroup.buttonToggled.connect(self._buttonToggled)
         self.buttonGroup.idClicked.connect(self._selectionChanged)
+        self.retranslate()
         self.sync()
+        self.syncRuntimeStatus()
+
+    def retranslate(self):
+        """Refresh option labels and runtime status for the active UI language."""
+        for backend, label in self._optionLabels.items():
+            self.optionButtons[backend].setText(_(label))
+            self._optionHelpLabels[backend].setText(
+                _(next(
+                    helpText
+                    for optionBackend, _optionLabel, helpText in self.Options
+                    if optionBackend == backend
+                ))
+            )
+
         self.syncRuntimeStatus()
 
     def _buttonToggled(self, button, checked):
