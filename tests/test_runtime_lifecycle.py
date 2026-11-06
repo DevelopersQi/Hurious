@@ -251,6 +251,7 @@ class RuntimeLifecycleTest(TestCase):
 
             self.assertIs(runtime.state, RuntimeState.Alive)
             self.assertTrue(runtime.isRunning())
+            runtime._output.putMessage('tun2socks: failed to create Wintun adapter')
 
             runtime._pollProcess()
             runtime._pollProcess()
@@ -258,6 +259,7 @@ class RuntimeLifecycleTest(TestCase):
         self.assertEqual(len(events), 1)
         self.assertIs(events[0][1].reason, RuntimeExitReason.InvalidConfiguration)
         self.assertEqual(events[0][1].code, 23)
+        self.assertIn('failed to create Wintun adapter', events[0][1].details)
         process.close.assert_called_once_with()
 
         runtime.dispose()
