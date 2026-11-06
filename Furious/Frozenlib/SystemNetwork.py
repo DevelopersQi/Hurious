@@ -178,10 +178,12 @@ def _macDefaultRoute(output: str) -> tuple[str, str]:
     gateway = re.search(r'^\s*gateway:\s*(\S+)', output, re.M)
     interface = re.search(r'^\s*interface:\s*(\S+)', output, re.M)
 
-    return (
-        gateway.group(1) if gateway else '',
-        interface.group(1) if interface else '',
-    )
+    gatewayAddress = gateway.group(1) if gateway else ''
+
+    if not _validIPv4(gatewayAddress):
+        gatewayAddress = ''
+
+    return gatewayAddress, interface.group(1) if interface else ''
 
 
 def _macInterfaceIP(output: str) -> str:
@@ -232,7 +234,9 @@ def getPrimaryAdapterInfo() -> dict[str, str]:
             result['ip'] = _linuxInterfaceIP(
                 _run(
                     _linuxCommand(
-                        ['ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global']
+                        [
+                            'ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global'
+                        ]
                     )
                 )
             )
