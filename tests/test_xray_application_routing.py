@@ -97,6 +97,15 @@ class XrayApplicationRoutingRulesTest(TestCase):
                     {'process': 'app.exe', 'outboundTag': 'block'},
                 ])
 
+
+    def test_proxy_core_processes_are_rejected(self):
+        get_patch, set_patch = self.settings()
+        with get_patch, set_patch:
+            with self.assertRaisesRegex(ValueError, 'valid EXE path'):
+                Routing.saveApplicationRoutingRules([
+                    {'process': r'C:\\Tools\\xray.exe', 'outboundTag': 'direct'},
+                ])
+
     def test_invalid_persisted_json_falls_back_to_empty_policy(self):
         self.saved = '{invalid'
         get_patch, _set_patch = self.settings()
