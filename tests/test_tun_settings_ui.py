@@ -112,12 +112,28 @@ class TUNSettingsUITest(unittest.TestCase):
             'AutoSystemRoutingTable (separated by commas)',
             'Xray gateway configures the virtual TUN interface, not the physical system gateway.',
             'Hysteria2 address.ipv4/ipv6 are virtual TUN addresses, not the physical adapter IP.',
+            'Detected System Network',
+            'Not detected',
+            'Adapter: {name}    IPv4: {address}    Default gateway: {gateway}',
         )
 
         for key in required:
             with self.subTest(key=key):
                 self.assertIn(key, catalogue)
                 self.assertTrue(catalogue[key].get('ZH'))
+
+    def test_detected_system_network_strings_are_registered(self):
+        catalogue = translation_catalogue()
+        for key in (
+            'Detected System Network',
+            'Not detected',
+            'Adapter: {name}    IPv4: {address}    Default gateway: {gateway}',
+        ):
+            with self.subTest(key=key):
+                self.assertIn(
+                    'Furious.Qt.SystemNetworkInfo',
+                    catalogue[key].get('source', []),
+                )
 
     def test_new_native_tun_labels_are_registered_for_both_backends(self):
         catalogue = translation_catalogue()
