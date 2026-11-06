@@ -25,6 +25,8 @@ from Furious.Repository import *
 from Furious.Qt import *
 from Furious.Qt.Signals import connectWeakly
 from Furious.Qt import gettext as _
+from Furious.Frozenlib.SystemNetwork import getPrimaryAdapterInfo
+from Furious.Widget.SystemNetworkInfo import SystemNetworkInfoWidget
 
 from PySide6 import QtCore
 from PySide6.QtGui import *
@@ -245,6 +247,7 @@ class GuiTUNSettingsGroupBoxBasic(GuiEditorWidgetQGroupBox):
             layout.addRow(rowLayout)
 
         layout.addRow(*self._containers[6].widgets())
+        layout.addRow(*self._containers[7].widgets())
 
         return layout
 
@@ -276,6 +279,11 @@ class GuiTUNSettingsGroupBoxBasic(GuiEditorWidgetQGroupBox):
                     'Disable Primary Adapter Interface DNS (Mitigating DNS leaks on Windows)'
                 ),
                 key='disablePrimaryAdapterInterfaceDNS',
+                default='True',
+            ),
+            GuiTUNSettingsItemSwitchXXX(
+                title=_('Automatically Detect Primary Adapter Network Settings'),
+                key='autoDetectPrimaryAdapter',
                 default='True',
             ),
             GuiTUNSettingsItemHelpPage(),
@@ -341,8 +349,35 @@ class TunSettingsDialog(GuiEditorWidgetQDialog):
 
             logger.error(f'error while converting factory to input: {ex}')
 
+        self.networkInfoWidget = SystemNetworkInfoWidget(self)
+        self.networkInfoWidget.networkInfoChanged.connect(self._applyDetectedNetworkInfo)
+        self.layout().insertRow(0, self.networkInfoWidget)
+
+        if self._config.get('autoDetectPrimaryAdapter', 'True') == 'True':
+            self._applyDetectedNetworkInfo(self.networkInfoWidget.info())
+
         connectWeakly(self.accepted, self, 'handleAccepted')
         connectWeakly(self.rejected, self, 'handleRejected')
+
+    @QtCore.Slot(dict)
+    def _applyDetectedNetworkInfo(self, info: dict):
+        """Fill host-interface fields when automatic detection is enabled."""
+        if self._config.get('autoDetectPrimaryAdapter', 'True') != 'True':
+            return
+
+        values = {
+            'primaryAdapterInterfaceName': info.get('name', ''),
+            'primaryAdapterInterfaceIP': info.get('ip', ''),
+            'defaultPrimaryGatewayIP': info.get('gateway', ''),
+        }
+
+        for key, value in values.items():
+            if value:
+                self._config[key] = value
+
+        for item in self.findChildren(GuiTUNSettingsItemXXX):
+            if item.key in values and values[item.key]:
+                item.setText(values[item.key])
 
     @QtCore.Slot()
     def handleAccepted(self):
