@@ -29,7 +29,7 @@
       <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link><AdditionalDependencies>Fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
-    <DriverSign><SignMode>Off</SignMode></DriverSign>
+    <DriverSign><SignMode>TestSign</SignMode><FileDigestAlgorithm>SHA256</FileDigestAlgorithm></DriverSign>
   </ItemDefinitionGroup>
   <ItemGroup><ClCompile Include="FuriousWfpCallout.c" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

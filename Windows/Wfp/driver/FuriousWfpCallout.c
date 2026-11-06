@@ -79,7 +79,7 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
             // WFP requires successful unregistration before the driver image
             // can be unloaded. This bootstrap callout has no flow contexts.
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                "FuriousWfpCallout: unregister retry, status=0x%08X\\n", status);
+                "FuriousWfpCallout: unregister retry, status=0x%08X\n", status);
             KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
         }
 
