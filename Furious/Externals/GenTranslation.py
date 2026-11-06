@@ -1,4 +1,44 @@
 TRANSLATION = {
+    "General": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "常规设置",
+        "isReviewed": "True"
+    },
+    "Connection": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "连接设置",
+        "isReviewed": "True"
+    },
+    "Routing Rules": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "路由规则",
+        "isReviewed": "True"
+    },
+    "Network": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "网络设置",
+        "isReviewed": "True"
+    },
+    "Privacy and Statistics": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "隐私与统计",
+        "isReviewed": "True"
+    },
+    "Advanced": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "高级设置",
+        "isReviewed": "True"
+    },
+    "Application": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "应用管理",
+        "isReviewed": "True"
+    },
+    "Plugins": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "插件设置",
+        "isReviewed": "True"
+    },
     "Custom Routing Rules": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "自定义路由规则",
