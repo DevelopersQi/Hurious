@@ -1160,7 +1160,11 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         registry = getPluginRegistry()
         tunBackend = str(AppSettings.get('TUNBackend') or 'auto').strip().casefold()
-        pluginTUN = registry.prepareTUN(config, tunBackend)
+        pluginTUN = (
+            registry.prepareTUN(config)
+            if tunBackend == 'auto'
+            else registry.prepareTUN(config, tunBackend)
+        )
 
         if pluginTUN:
             return True, False
