@@ -87,6 +87,22 @@ static BOOLEAN FuriousValidateEndpointConfig(
     return TRUE;
 }
 
+static ULONG FuriousGetDriverFlags(void)
+{
+    KIRQL oldIrql;
+    ULONG flags = 0;
+
+    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+    if (gCalloutsRegistered[0] && gCalloutsRegistered[1]) {
+        flags |= FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED;
+    }
+    if (gEndpointConfigValid) {
+        flags |= FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED;
+    }
+    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+    return flags;
+}
+
 static NTSTATUS NTAPI FuriousCreateClose(
     PDEVICE_OBJECT deviceObject,
     PIRP irp)
@@ -147,11 +163,7 @@ static NTSTATUS NTAPI FuriousDeviceControl(
         RtlZeroMemory(output, sizeof(*output));
         output->Size = sizeof(*output);
         output->Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
-        output->Flags = (gCalloutsRegistered[0] && gCalloutsRegistered[1])
-            ? FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED : 0;
-        if (gEndpointConfigValid) {
-            output->Flags |= FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED;
-        }
+        output->Flags = FuriousGetDriverFlags();
         status = STATUS_SUCCESS;
         information = sizeof(*output);
     } else if (stack->Parameters.DeviceIoControl.IoControlCode ==
