@@ -582,11 +582,14 @@ class ConnectionStartOperation(QtCore.QObject):
         if not self._isCurrent():
             return
 
-        self._fail(
-            event.message,
+        details = (
             f'{runtime.name()} exited during {self.stage.value} with code '
-            f'{event.code}; reason={event.reason.value}',
+            f'{event.code}; reason={event.reason.value}'
         )
+        if event.details:
+            details = f'{details}\n{event.details}'
+
+        self._fail(event.message, details)
 
     def _beginApplicationTun(self):
         """Acquire tun2socks and preserve the platform's startup ordering."""
