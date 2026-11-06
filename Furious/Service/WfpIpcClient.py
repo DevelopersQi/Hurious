@@ -11,6 +11,7 @@ from itertools import count
 from threading import Lock
 import struct
 import sys
+import time
 
 
 PIPE_NAME = r"\\.\pipe\FuriousWfpService.v1"
@@ -228,6 +229,12 @@ class WindowsNamedPipeTransport:
             ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID,
         )
         read_file.restype = wintypes.BOOL
+        set_pipe_state = kernel32.SetNamedPipeHandleState
+        set_pipe_state.argtypes = (
+            wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD),
+        )
+        set_pipe_state.restype = wintypes.BOOL
         close_handle = kernel32.CloseHandle
         close_handle.argtypes = (wintypes.HANDLE,)
         close_handle.restype = wintypes.BOOL
@@ -253,26 +260,42 @@ class WindowsNamedPipeTransport:
                 )
 
         try:
-            written = wintypes.DWORD()
+            # Use message-mode, nonblocking reads so a stalled service cannot
+            # indefinitely hang the caller.
+            mode = wintypes.DWORD(0x00000002 | 0x00000001)  # MESSAGE | NOWAIT
+            if not set_pipe_state(handle, ctypes.byref(mode), None, None):
+                raise WfpIpcUnavailable(
+                    f"cannot configure WFP service pipe (Win32 error {ctypes.get_last_error()})"
+                )
+
+            deadline = time.monotonic() + self.timeout_ms / 1000.0
             request_buffer = ctypes.create_string_buffer(request)
-            if not write_file(
+            written = wintypes.DWORD()
+            while not write_file(
                 handle, request_buffer, len(request), ctypes.byref(written), None
             ):
-                raise WfpIpcUnavailable(
-                    f"cannot write WFP service request (Win32 error {ctypes.get_last_error()})"
-                )
+                error = ctypes.get_last_error()
+                if error != 232 or time.monotonic() >= deadline:  # ERROR_NO_DATA
+                    raise WfpIpcUnavailable(
+                        f"cannot write WFP service request (Win32 error {error})"
+                    )
+                kernel32.Sleep(5)
             if written.value != len(request):
                 raise WfpIpcProtocolError("WFP service request was only partially written")
 
             response_buffer = ctypes.create_string_buffer(_RESPONSE.size)
             received = wintypes.DWORD()
-            if not read_file(
+            while not read_file(
                 handle, response_buffer, _RESPONSE.size,
                 ctypes.byref(received), None,
             ):
-                raise WfpIpcUnavailable(
-                    f"cannot read WFP service response (Win32 error {ctypes.get_last_error()})"
-                )
+                error = ctypes.get_last_error()
+                if error != 232 or time.monotonic() >= deadline:  # ERROR_NO_DATA
+                    raise WfpIpcUnavailable(
+                        f"cannot read WFP service response (Win32 error {error})"
+                    )
+                kernel32.Sleep(5)
+
             if received.value != _RESPONSE.size:
                 raise WfpIpcProtocolError("WFP service returned a truncated response")
             return response_buffer.raw[:received.value]
