@@ -1,4 +1,129 @@
 TRANSLATION = {
+    "Application Routing": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "应用分流",
+        "isReviewed": "True"
+    },
+    "Application Rules...": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "应用规则...",
+        "isReviewed": "True"
+    },
+    "Application": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "应用程序",
+        "isReviewed": "True"
+    },
+    "Process / EXE Path": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "进程 / EXE 路径",
+        "isReviewed": "True"
+    },
+    "Action": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "策略",
+        "isReviewed": "True"
+    },
+    "Enabled": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "启用",
+        "isReviewed": "True"
+    },
+    "Add Running App": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "添加运行中的应用",
+        "isReviewed": "True"
+    },
+    "Browse EXE...": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "浏览 EXE 文件...",
+        "isReviewed": "True"
+    },
+    "Remove": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "移除",
+        "isReviewed": "True"
+    },
+    "Move Up": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "上移",
+        "isReviewed": "True"
+    },
+    "Move Down": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "下移",
+        "isReviewed": "True"
+    },
+    "Rules are evaluated from top to bottom. The first matching app rule wins.": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "规则按从上到下的顺序匹配，优先使用第一个匹配的应用规则。",
+        "isReviewed": "True"
+    },
+    "Force Proxy": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "强制代理",
+        "isReviewed": "True"
+    },
+    "Force Direct": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "强制直连",
+        "isReviewed": "True"
+    },
+    "Enable or disable this application rule": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "启用或停用此应用规则",
+        "isReviewed": "True"
+    },
+    "Unable to Read Processes": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "无法读取进程",
+        "isReviewed": "True"
+    },
+    "Could not enumerate running applications: {error}": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "无法枚举正在运行的应用：{error}",
+        "isReviewed": "True"
+    },
+    "No Applications Found": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "未找到应用",
+        "isReviewed": "True"
+    },
+    "No selectable running applications were found.": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "没有找到可选择的运行中应用。",
+        "isReviewed": "True"
+    },
+    "Select Running Application": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "选择运行中的应用",
+        "isReviewed": "True"
+    },
+    "Select Application Executable": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "选择应用程序",
+        "isReviewed": "True"
+    },
+    "Executable files (*.exe);;All files (*)": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "可执行文件 (*.exe);;所有文件 (*)",
+        "isReviewed": "True"
+    },
+    "Protected Process": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "受保护的进程",
+        "isReviewed": "True"
+    },
+    "Proxy core and Furious processes cannot be added to application rules.": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "代理核心和 Furious 自身进程不能添加到应用分流规则。",
+        "isReviewed": "True"
+    },
+    "Invalid Application Rule": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "应用规则无效",
+        "isReviewed": "True"
+    },
     "General": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "常规设置",
