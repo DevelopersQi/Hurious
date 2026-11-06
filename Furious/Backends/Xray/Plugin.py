@@ -116,21 +116,6 @@ class XrayActionProvider(ActionProvider):
             routingEditor.raise_()
             routingEditor.activateWindow()
 
-        useXrayTUNAction = AppQAction(
-            _('Use Xray-core TUN'),
-            checkable=True,
-            checked=isXrayTUNEnabled(),
-        )
-
-        def updateUseXrayTUN():
-            """Persist the native Xray TUN action state."""
-            setXrayTUNEnabled(useXrayTUNAction.isChecked())
-
-            if SystemRuntime.isTUNMode() and isCoreActive(XrayCore):
-                showMBoxNewChangesNextTime()
-
-        useXrayTUNAction.callback = updateUseXrayTUN
-
         return (
             AppQAction(
                 _('Edit Routing...'),
@@ -138,7 +123,6 @@ class XrayActionProvider(ActionProvider):
                 callback=showRoutingDialog,
             ),
             AppQSeparator(),
-            useXrayTUNAction,
             AppQAction(
                 _('Customize Xray-core TUN Settings...'),
                 callback=lambda: XrayTunSettingsDialog(
@@ -173,10 +157,10 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
 
     def prepareTUN(self, config) -> bool:
         """Preserve user TUN or replace it with Furious-managed native TUN."""
-        if not isXrayTUNEnabled():
-            # An explicit user inbound is authoritative when Furious-managed
-            # native TUN is disabled.  Reporting it as handled prevents the
-            # normal connection path from also starting application tun2socks.
+        # Auto uses the native Xray TUN on desktop platforms.  Linux keeps
+        # the established Tun2socks fallback; users can explicitly select
+        # Xray-core Native TUN in the global TUN Backend selector.
+        if PLATFORM == 'Linux':
             return hasXrayTUNInbound(config)
 
         inbounds = config.get('inbounds')
