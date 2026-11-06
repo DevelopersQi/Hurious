@@ -135,26 +135,23 @@ class GuiXrayTUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
         """Return interface-setting editors in display order."""
         return [
             GuiXrayTUNItemText(
-                title='Name',
-                translatable=False,
+                title=_('Interface Name'),
                 key='name',
-                maximumWidth=360,
             ),
             GuiXrayTUNItemText(
-                title='Description',
-                translatable=False,
+                title=_('Interface Description'),
                 key='desc',
                 maximumWidth=360,
             ),
             GuiXrayTUNItemNumber(
-                title='MTU',
+                title=_('MTU'),
                 key='mtu',
                 default=1500,
                 minimum=1,
                 maximum=65535,
             ),
             GuiXrayTUNItemNumber(
-                title='UserLevel',
+                title=_('User Level'),
                 key='userLevel',
                 default=0,
                 minimum=0,
@@ -222,8 +219,7 @@ class GuiXrayTUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
                 key='autoSystemRoutingTable',
             ),
             GuiXrayTUNItemText(
-                title='AutoOutboundsInterface',
-                translatable=False,
+                title=_('Automatic Outbound Interface'),
                 key='autoOutboundsInterface',
             ),
         ]
