@@ -235,7 +235,8 @@ def getPrimaryAdapterInfo() -> dict[str, str]:
                 _run(
                     _linuxCommand(
                         [
-                            'ip', '-o', '-4', 'addr', 'show', 'dev', interface, 'scope', 'global'
+                            'ip', '-o', '-4', 'addr', 'show',
+                            'dev', interface, 'scope', 'global',
                         ]
                     )
                 )
