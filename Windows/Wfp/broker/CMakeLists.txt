@@ -8,6 +8,8 @@ endif()
 add_library(FuriousWfpTcpBroker STATIC
     WfpTcpRedirect.cpp
     WfpTcpRedirect.h
+    WfpTcpBrokerServer.cpp
+    WfpTcpBrokerServer.h
 )
 target_compile_features(FuriousWfpTcpBroker PUBLIC cxx_std_17)
 target_compile_definitions(FuriousWfpTcpBroker PUBLIC
@@ -20,7 +22,10 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(FuriousWfpTcpBrokerTests tests/WfpTcpRedirectTests.cpp)
+    add_executable(FuriousWfpTcpBrokerTests
+        tests/WfpTcpRedirectTests.cpp
+        tests/WfpTcpBrokerServerTests.cpp
+    )
     target_compile_features(FuriousWfpTcpBrokerTests PRIVATE cxx_std_17)
     target_link_libraries(FuriousWfpTcpBrokerTests PRIVATE FuriousWfpTcpBroker)
     if(MSVC)
