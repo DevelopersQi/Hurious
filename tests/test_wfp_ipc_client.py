@@ -104,6 +104,27 @@ class WfpIpcClientTest(unittest.TestCase):
         with self.assertRaises(WfpIpcProtocolError):
             WfpIpcClient(_Transport(response_mutator=corrupt)).status()
 
+    def testResponseParserRejectsMalformedProtocolHeaders(self):
+        request_id = 77
+        valid = struct.pack(
+            "<IHHIIQII",
+            IPC_MAGIC, IPC_VERSION, 24, 32, COMMAND_STATUS, request_id, 0, 1,
+        )
+        corruptions = (
+            valid[:0] + struct.pack("<I", 0) + valid[4:],
+            valid[:4] + struct.pack("<H", IPC_VERSION + 1) + valid[6:],
+            valid[:6] + struct.pack("<H", 20) + valid[8:],
+            valid[:8] + struct.pack("<I", 31) + valid[12:],
+        )
+        for response in corruptions:
+            with self.subTest(response=response):
+                with self.assertRaises(WfpIpcProtocolError):
+                    parse_response(response, COMMAND_STATUS, request_id)
+
+    def testRequestRejectsOversizedPayload(self):
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            build_request(COMMAND_STATUS, b"x" * (64 * 1024))
+
     def testClientRaisesOnServiceCommandFailure(self):
         with self.assertRaises(WfpIpcRemoteError) as caught:
             WfpIpcClient(_Transport(status=5)).status()
