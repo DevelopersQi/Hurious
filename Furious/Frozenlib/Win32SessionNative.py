@@ -13,6 +13,7 @@ The listener owns a hidden top-level window on a dedicated thread. Windows
 broadcasts WM_QUERYENDSESSION before logoff/shutdown and WM_ENDSESSION after
 the request has been accepted. The callback is invoked only for a confirmed
 end session, and the query is always accepted so Furious never blocks shutdown.
+The listener handles logoff and shutdown, not workstation lock/unlock changes.
 """
 
 from __future__ import annotations
