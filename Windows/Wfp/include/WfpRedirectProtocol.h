@@ -24,7 +24,8 @@ typedef uint64_t FURIOUS_WFP_U64;
 extern "C" {
 #endif
 
-#define FURIOUS_WFP_REDIRECT_ABI_VERSION 1u
+#define FURIOUS_WFP_REDIRECT_ABI_VERSION 2u
+#define FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS 8u
 #define FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC 0x46575243u /* "FWRC" */
 
 #define FURIOUS_WFP_REDIRECT_FAMILY_V4 4u
@@ -52,6 +53,8 @@ typedef struct FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG {
     FURIOUS_WFP_U16 UdpPortV4; // host byte order; loopback address is 127.0.0.1
     FURIOUS_WFP_U16 TcpPortV6; // host byte order; loopback address is ::1
     FURIOUS_WFP_U16 UdpPortV6; // host byte order; loopback address is ::1
+    FURIOUS_WFP_U32 ExcludedProcessCount;
+    FURIOUS_WFP_U32 ExcludedProcessIds[FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS];
 } FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG;
 
 // This structure is opaque to WFP and is returned to the local proxy through
@@ -90,6 +93,7 @@ inline bool IsValidEndpointConfig(
         value.ProxyProcessId == 0 ||
         value.PolicyGeneration == 0 ||
         value.Reserved0 != 0 ||
+        value.ExcludedProcessCount > FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS ||
         (value.Flags & ~FURIOUS_WFP_REDIRECT_KNOWN_FLAGS) != 0 ||
         (value.Flags & (FURIOUS_WFP_REDIRECT_FLAG_IPV4 |
                         FURIOUS_WFP_REDIRECT_FLAG_IPV6 |
@@ -114,6 +118,21 @@ inline bool IsValidEndpointConfig(
         (!tcp && (value.TcpPortV4 != 0 || value.TcpPortV6 != 0)) ||
         (!udp && (value.UdpPortV4 != 0 || value.UdpPortV6 != 0))) {
         return false;
+    }
+    for (FURIOUS_WFP_U32 i = 0; i < FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS; ++i) {
+        const FURIOUS_WFP_U32 processId = value.ExcludedProcessIds[i];
+        if (i < value.ExcludedProcessCount) {
+            if (processId == 0 || processId == value.ProxyProcessId) {
+                return false;
+            }
+            for (FURIOUS_WFP_U32 previous = 0; previous < i; ++previous) {
+                if (value.ExcludedProcessIds[previous] == processId) {
+                    return false;
+                }
+            }
+        } else if (processId != 0) {
+            return false;
+        }
     }
     return true;
 }
