@@ -21,7 +21,18 @@ from __future__ import annotations
 
 from Furious.Repository import *
 
-__all__ = ['cleanRoutingRule', 'customRoutingObjectFromSettings']
+import json
+
+__all__ = [
+    'cleanRoutingRule',
+    'customRoutingObjectFromSettings',
+    'getApplicationRoutingRules',
+    'saveApplicationRoutingRules',
+    'applicationRoutingRulesObject',
+]
+
+registerAppSettings('XrayApplicationRoutingRules', default='[]')
+
 
 
 def cleanRoutingRule(rule: dict):
@@ -98,3 +109,121 @@ def customRoutingObjectFromSettings(routing: str):
         'domainMatcher': 'hybrid',
         'rules': rules,
     }
+
+
+def getApplicationRoutingRules():
+    """Load validated, persistent per-application Xray routing rules."""
+    try:
+        raw = AppSettings.get('XrayApplicationRoutingRules') or '[]'
+        data = json.loads(raw)
+    except Exception:
+        # Preserve a safe empty policy when stored data is malformed.
+        logger.exception('failed to restore Xray application routing rules')
+        return []
+
+    if not isinstance(data, list):
+        return []
+
+    rules = []
+    seen = set()
+
+    for item in data:
+        if not isinstance(item, dict) or not item.get('enabled', True):
+            continue
+
+        process = item.get('process', '')
+        outbound = item.get('outboundTag', 'proxy')
+
+        if not isinstance(process, str):
+            continue
+
+        process = process.strip().replace('\\\\', '/')
+        if not process or process.casefold() in seen:
+            continue
+
+        if outbound not in ('proxy', 'direct'):
+            continue
+
+        # Xray process matching accepts an executable name or an absolute path.
+        # Reject glob-like values because Xray treats them as literal matches.
+        if any(token in process for token in ('*', '?', '\\n', '\\r')):
+            continue
+
+        seen.add(process.casefold())
+        try:
+            priority = int(item.get('priority', 100))
+        except (TypeError, ValueError):
+            priority = 100
+
+        rules.append({
+            'id': str(item.get('id') or ''),
+            'name': str(item.get('name') or process),
+            'process': process,
+            'outboundTag': outbound,
+            'priority': priority,
+            'enabled': True,
+        })
+
+    return sorted(rules, key=lambda item: (item['priority'], item['name'].casefold()))
+
+
+def saveApplicationRoutingRules(rules):
+    """Validate and persist ordered application-routing rules."""
+    if not isinstance(rules, list):
+        raise TypeError('application routing rules must be a list')
+
+    normalized = []
+    seen = set()
+
+    for index, item in enumerate(rules):
+        if not isinstance(item, dict):
+            raise ValueError(f'application rule {index + 1} must be an object')
+
+        process = item.get('process', '')
+        if not isinstance(process, str):
+            raise ValueError(f'application rule {index + 1} has an invalid process')
+
+        process = process.strip().replace('\\\\', '/')
+        if not process or any(token in process for token in ('*', '?', '\\n', '\\r')):
+            raise ValueError(f'application rule {index + 1} needs a valid EXE path or process name')
+
+        key = process.casefold()
+        if key in seen:
+            raise ValueError(f'duplicate application rule: {process}')
+        seen.add(key)
+
+        outbound = item.get('outboundTag', 'proxy')
+        if outbound not in ('proxy', 'direct'):
+            raise ValueError(f'application rule {index + 1} must use proxy or direct')
+
+        try:
+            priority = int(item.get('priority', (index + 1) * 10))
+        except (TypeError, ValueError):
+            raise ValueError(f'application rule {index + 1} has an invalid priority')
+
+        normalized.append({
+            'id': str(item.get('id') or f'app-{index + 1}'),
+            'name': str(item.get('name') or process),
+            'process': process,
+            'outboundTag': outbound,
+            'priority': priority,
+            'enabled': bool(item.get('enabled', True)),
+        })
+
+    AppSettings.set(
+        'XrayApplicationRoutingRules',
+        json.dumps(normalized, ensure_ascii=False, separators=(',', ':')),
+    )
+    return getApplicationRoutingRules()
+
+
+def applicationRoutingRulesObject():
+    """Build highest-priority Xray process rules from the saved application policy."""
+    return [
+        {
+            'type': 'field',
+            'process': [rule['process']],
+            'outboundTag': rule['outboundTag'],
+        }
+        for rule in getApplicationRoutingRules()
+    ]
