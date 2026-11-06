@@ -138,6 +138,82 @@ class XrayNativeTUNTest(unittest.TestCase):
         self.assertEqual(runtime, original)
         self.assertTrue(self.factory.usesApplicationTun2socks(runtime))
 
+    def testExplicitXrayBackendOverridesLegacyToggleAndPreservesCustomTUN(self):
+        """Force native Xray without replacing an explicit user inbound."""
+        original = self.configuration(nativeTUN=True)
+        runtime = original.deepcopy()
+
+        with mock.patch.object(XrayPluginModule, 'isXrayTUNEnabled', return_value=False):
+            handled = self.factory.prepareTUNForBackend(runtime, 'xray')
+
+        self.assertTrue(handled)
+        self.assertEqual(runtime, original)
+
+    def testExplicitTun2socksRejectsAnAuthoritativeCustomTUN(self):
+        """Never pair a user-defined native TUN with application tun2socks."""
+        runtime = self.configuration(nativeTUN=True)
+
+        with self.assertRaisesRegex(TUNPreparationError, 'already defines'):
+            self.factory.prepareTUNForBackend(runtime, 'tun2socks')
+
+    def testExplicitTun2socksIsSelectedWhenNoNativeTUNExists(self):
+        """Allow host tun2socks when the selected core has no native TUN."""
+        runtime = self.configuration(nativeTUN=False)
+
+        self.assertFalse(self.factory.prepareTUNForBackend(runtime, 'tun2socks'))
+        self.assertTrue(self.factory.usesApplicationTun2socks(runtime))
+
+    def testWrongNativeBackendIsRejected(self):
+        """Do not silently substitute Hysteria 2 for a requested Xray TUN."""
+        runtime = self.configuration(nativeTUN=False)
+
+        with self.assertRaisesRegex(TUNPreparationError, 'not supported'):
+            self.factory.prepareTUNForBackend(runtime, 'hysteria2')
+
+    def testExplicitHysteria2BackendOverridesLegacyToggle(self):
+        """Prepare native Hysteria 2 when explicitly selected."""
+        runtime = self.configuration(nativeTUN=False)
+
+        with (
+            mock.patch.object(Hysteria2PluginModule, 'isHysteria2TUNEnabled', return_value=False),
+            mock.patch.object(Hysteria2PluginModule, 'PLATFORM', 'Windows'),
+            mock.patch.object(Hysteria2PluginModule, 'getHysteria2TUNSettings', return_value={}),
+            mock.patch.object(
+                Hysteria2PluginModule,
+                'resolveHysteria2ServerAddresses',
+                return_value=['203.0.113.10'],
+            ),
+            mock.patch.object(
+                Hysteria2PluginModule,
+                'buildHysteria2TUNConfig',
+                return_value=copy.deepcopy(self.generatedTUN),
+            ),
+        ):
+            handled = self.factory.prepareTUNForBackend(runtime, 'hysteria2')
+
+        self.assertTrue(handled)
+        self.assertEqual(runtime['tun'], self.generatedTUN)
+
+    def testExplicitTun2socksPreservesNoCustomTUNAndRejectsCustomTUN(self):
+        """Enforce exactly one TUN owner for Hysteria 2 configurations."""
+        plain = self.configuration(nativeTUN=False)
+        self.assertFalse(self.factory.prepareTUNForBackend(plain, 'tun2socks'))
+
+        custom = self.configuration(nativeTUN=True)
+        snapshot = copy.deepcopy(custom)
+
+        with self.assertRaisesRegex(TUNPreparationError, 'already defines'):
+            self.factory.prepareTUNForBackend(custom, 'tun2socks')
+
+        self.assertEqual(custom, snapshot)
+
+    def testWrongNativeBackendIsRejected(self):
+        """Do not silently substitute Xray for a requested Hysteria 2 TUN."""
+        runtime = self.configuration(nativeTUN=False)
+
+        with self.assertRaisesRegex(TUNPreparationError, 'not supported'):
+            self.factory.prepareTUNForBackend(runtime, 'xray')
+
     def testDownloadTestExplicitlyStripsNativeTUN(self):
         """Keep normal custom TUN while deriving a TUN-free speed-test copy."""
         original = self.configuration(nativeTUN=True)
