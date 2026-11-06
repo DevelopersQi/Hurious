@@ -449,7 +449,13 @@ class GuiEditorWidgetQDialog(EditorBinding, AppQTransientDialog):
         self.tabCentralWidget.setLayout(self.tabCentralWidgetLayout)
 
         self.tabWidget = AppQTabWidget(translatable=tabTranslatable)
-        self.tabWidget.addTab(self.tabCentralWidget, tabText)
+
+        # Keep long single-column configuration forms usable on short displays.
+        self.tabScrollArea = QScrollArea(self.tabWidget)
+        self.tabScrollArea.setWidgetResizable(True)
+        self.tabScrollArea.setFrameShape(QFrame.Shape.NoFrame)
+        self.tabScrollArea.setWidget(self.tabCentralWidget)
+        self.tabWidget.addTab(self.tabScrollArea, tabText)
 
         self.dialogBtns = AppQDialogButtonBox(QtCore.Qt.Orientation.Horizontal)
         self.dialogBtns.addButton(_('OK'), AppQDialogButtonBox.ButtonRole.AcceptRole)
