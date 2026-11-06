@@ -102,19 +102,19 @@ DWORD Engine::RemoveProviderAndSublayer() {
         return status;
     }
 
-    // Delete only objects owned by the Furious provider. Provider deletion
-    // also removes its associated filters/callouts; never enumerate and
-    // delete objects belonging to Windows Firewall or other products.
-    status = FwpmProviderDeleteByKey0(handle_, &kProviderKey);
-    if (status == FWP_E_PROVIDER_NOT_FOUND) {
+    // Remove the owned sublayer before its provider because the sublayer
+    // references that provider. Never enumerate and delete objects owned by
+    // Windows Firewall or other products.
+    status = FwpmSubLayerDeleteByKey0(handle_, &kSublayerKey);
+    if (status == FWP_E_SUBLAYER_NOT_FOUND) {
         status = ERROR_SUCCESS;
     }
 
     if (status == ERROR_SUCCESS) {
-        const DWORD sublayerStatus = FwpmSubLayerDeleteByKey0(handle_, &kSublayerKey);
-        if (sublayerStatus != ERROR_SUCCESS &&
-            sublayerStatus != FWP_E_SUBLAYER_NOT_FOUND) {
-            status = sublayerStatus;
+        const DWORD providerStatus = FwpmProviderDeleteByKey0(handle_, &kProviderKey);
+        if (providerStatus != ERROR_SUCCESS &&
+            providerStatus != FWP_E_PROVIDER_NOT_FOUND) {
+            status = providerStatus;
         }
     }
 
