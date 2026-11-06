@@ -23,6 +23,9 @@ from Furious.Frozenlib import AppSettings, registerAppSettings
 from Furious.Repository import *
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     'cleanRoutingRule',
