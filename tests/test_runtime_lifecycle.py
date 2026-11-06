@@ -109,8 +109,8 @@ class RuntimeLifecycleTest(TestCase):
         with TemporaryDirectory() as directory:
             temporaryFile = Path(directory) / 'core-output.log'
             temporaryFile.write_bytes(
-                b'tun2socks: initializing Wintun adapter\\n'
-                b'tun2socks: failed to create Wintun adapter\\n'
+                b'tun2socks: initializing Wintun adapter\n'
+                b'tun2socks: failed to create Wintun adapter\n'
             )
             finished = Event()
             finished.set()
@@ -125,8 +125,8 @@ class RuntimeLifecycleTest(TestCase):
         self.assertEqual(
             [call.args[0] for call in msgQueue.putMessage.call_args_list],
             [
-                'tun2socks: initializing Wintun adapter\\n',
-                'tun2socks: failed to create Wintun adapter\\n',
+                'tun2socks: initializing Wintun adapter\n',
+                'tun2socks: failed to create Wintun adapter\n',
             ],
         )
 
