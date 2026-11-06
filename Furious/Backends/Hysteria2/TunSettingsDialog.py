@@ -160,17 +160,13 @@ class GuiHysteria2TUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
         """Return interface-setting editors in display order."""
         return [
             GuiHysteria2TUNItemText(
-                title='name',
+                title=_('Interface Name'),
                 path=('name',),
-                maximumWidth=360,
-                translatable=False,
             ),
-            GuiHysteria2TUNItemMTU(title='mtu', translatable=False),
+            GuiHysteria2TUNItemMTU(title=_('MTU')),
             GuiHysteria2TUNItemText(
-                title='timeout',
+                title=_('Timeout'),
                 path=('timeout',),
-                maximumWidth=360,
-                translatable=False,
             ),
         ]
 
@@ -186,32 +182,32 @@ class GuiHysteria2TUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
         """Return address and route editors in display order."""
         return [
             GuiHysteria2TUNItemText(
-                title='address.ipv4',
+                title=_('IPv4 TUN Address'),
                 path=('address', 'ipv4'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemText(
-                title='address.ipv6',
+                title=_('IPv6 TUN Address'),
                 path=('address', 'ipv6'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title='route.ipv4',
+                title=_('IPv4 Routes'),
                 path=('route', 'ipv4'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title='route.ipv6',
+                title=_('IPv6 Routes'),
                 path=('route', 'ipv6'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title='route.ipv4Exclude',
+                title=_('IPv4 Excluded Routes'),
                 path=('route', 'ipv4Exclude'),
                 translatable=False,
             ),
             GuiHysteria2TUNItemList(
-                title='route.ipv6Exclude',
+                title=_('IPv6 Excluded Routes'),
                 path=('route', 'ipv6Exclude'),
                 translatable=False,
             ),
