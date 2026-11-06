@@ -282,6 +282,11 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
 
         self.networkInfoWidget = SystemNetworkInfoWidget(self)
         self.layout().insertRow(0, self.networkInfoWidget)
+        networkNote = QLabel(
+            _('Hysteria2 address.ipv4/ipv6 are virtual TUN addresses, not the physical adapter IP.')
+        )
+        networkNote.setWordWrap(True)
+        self.layout().insertRow(1, networkNote)
 
         self.factoryToInput(self._settings)
 
