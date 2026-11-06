@@ -209,44 +209,31 @@ class GuiTUNSettingsGroupBoxBasic(GuiEditorWidgetQGroupBox):
 
     def setupPageLayout(self):
         """Set up page layout."""
+        # Use a single-column, wrapped form instead of a four-column grid.
+        # Long adapter labels and IP fields otherwise compete for horizontal
+        # space on Windows DPI-scaled displays.
         layout = QFormLayout()
         layout.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        layout.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(10)
 
-        pairsLayout = QGridLayout()
-        pairsLayout.setColumnStretch(1, 1)
-        pairsLayout.setColumnStretch(3, 1)
+        for container in self._containers:
+            widgets = container.widgets()
 
-        def addPair(index: int, row: int, column: int):
-            """Add pair."""
-            label, inputWidget = self._containers[index].widgets()
-
-            pairsLayout.addWidget(label, row, column)
-            pairsLayout.addWidget(inputWidget, row, column + 1)
-
-        addPair(0, 0, 0)
-        addPair(1, 0, 2)
-        addPair(2, 1, 0)
-        addPair(3, 1, 2)
-
-        layout.addRow(pairsLayout)
-
-        # Original implementation: both controls share the same label column.
-        # layout.addRow(*self._containers[4].widgets())
-        # layout.addRow(*self._containers[5].widgets())
-
-        # Use independent rows so the longer DNS label does not shift the bypass input.
-        for container in self._containers[4:6]:
-            rowLayout = QFormLayout()
-            rowLayout.setFieldGrowthPolicy(
-                QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
-            )
-            rowLayout.addRow(*container.widgets())
-
-            layout.addRow(rowLayout)
-
-        layout.addRow(*self._containers[6].widgets())
-        layout.addRow(*self._containers[7].widgets())
+            if len(widgets) == 2:
+                label, inputWidget = widgets
+                inputWidget.setMinimumWidth(0)
+                inputWidget.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Fixed,
+                )
+                layout.addRow(label, inputWidget)
+            elif len(widgets) == 1:
+                layout.addRow(widgets[0])
 
         return layout
 
@@ -334,9 +321,9 @@ class TunSettingsDialog(GuiEditorWidgetQDialog):
         self.setTabText(_('Customize Tun2socks Settings'))
 
         if PLATFORM == 'Darwin' or PLATFORM == 'Linux':
-            self.setFixedSize(int(690 * GOLDEN_RATIO), int(690))
+            self.setFixedSize(int(690 * GOLDEN_RATIO), 760)
         else:
-            self.setFixedSize(int(620 * GOLDEN_RATIO), int(620))
+            self.setFixedSize(int(620 * GOLDEN_RATIO), 720)
 
         # Shallow copy
         self._config = Storage.UserTUNSettings()
