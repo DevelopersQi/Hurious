@@ -1,4 +1,14 @@
 TRANSLATION = {
+    "Xray gateway configures the virtual TUN interface, not the physical system gateway.": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog"],
+        "ZH": "Xray 的 Gateway 用于配置虚拟 TUN 网卡，不是物理网卡的系统网关。",
+        "isReviewed": "True"
+    },
+    "Hysteria2 address.ipv4/ipv6 are virtual TUN addresses, not the physical adapter IP.": {
+        "source": ["Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "Hysteria2 的 address.ipv4/ipv6 是虚拟 TUN 网卡地址，不是物理网卡 IP。",
+        "isReviewed": "True"
+    },
     "MTU": {
         "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
         "ZH": "MTU（最大传输单元）",
