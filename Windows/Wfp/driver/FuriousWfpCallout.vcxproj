@@ -28,7 +28,7 @@
       <WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError>
       <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <Link><AdditionalDependencies>Fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><AdditionalDependencies>Fwpkclnt.lib;Wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <DriverSign><SignMode>TestSign</SignMode><FileDigestAlgorithm>SHA256</FileDigestAlgorithm></DriverSign>
   </ItemDefinitionGroup>
   <ItemGroup><ClCompile Include="FuriousWfpCallout.c" /></ItemGroup>

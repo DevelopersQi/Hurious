@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "../include/WfpControlProtocol.h"
+#include "WfpDriverClient.h"
 #include "WfpPolicyCompiler.h"
 
 #include <cstddef>
@@ -108,6 +109,13 @@ inline DWORD DispatchCommand(uint32_t command,
     switch (command) {
     case FURIOUS_WFP_IPC_COMMAND_STATUS:
         return payloadSize == 0 ? ERROR_SUCCESS : ERROR_INVALID_PARAMETER;
+    case FURIOUS_WFP_IPC_COMMAND_DRIVER_STATUS: {
+        if (payloadSize != 0) {
+            return ERROR_INVALID_PARAMETER;
+        }
+        FURIOUS_WFP_DRIVER_STATUS status = {};
+        return furious::wfp::driver::QueryStatus(&status);
+    }
     case FURIOUS_WFP_IPC_COMMAND_SET_POLICY:
         if (payload == nullptr || payloadSize == 0) {
             return ERROR_INVALID_DATA;

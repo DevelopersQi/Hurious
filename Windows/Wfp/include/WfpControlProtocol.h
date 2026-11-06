@@ -14,6 +14,7 @@
 #define FURIOUS_WFP_IPC_COMMAND_STATUS 1u
 #define FURIOUS_WFP_IPC_COMMAND_SET_POLICY 2u
 #define FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY 3u
+#define FURIOUS_WFP_IPC_COMMAND_DRIVER_STATUS 4u
 
 #pragma pack(push, 1)
 typedef struct FURIOUS_WFP_IPC_HEADER {
@@ -83,7 +84,8 @@ inline ValidationResult ValidateRequest(const void* message, size_t messageSize)
     }
     if (header.Command != FURIOUS_WFP_IPC_COMMAND_STATUS &&
         header.Command != FURIOUS_WFP_IPC_COMMAND_SET_POLICY &&
-        header.Command != FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY) {
+        header.Command != FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY &&
+        header.Command != FURIOUS_WFP_IPC_COMMAND_DRIVER_STATUS) {
         return ValidationResult::UnsupportedCommand;
     }
     return ValidationResult::Valid;
