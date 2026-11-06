@@ -1,4 +1,9 @@
 TRANSLATION = {
+    "Automatically Detect Primary Adapter Network Settings": {
+        "source": ["Furious.Window.TunSettingsDialog"],
+        "ZH": "自动检测主网卡网络参数",
+        "isReviewed": "True"
+    },
     "Xray gateway configures the virtual TUN interface, not the physical system gateway.": {
         "source": ["Furious.Backends.Xray.TunSettingsDialog"],
         "ZH": "Xray 的 Gateway 用于配置虚拟 TUN 网卡，不是物理网卡的系统网关。",
