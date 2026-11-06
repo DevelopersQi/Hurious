@@ -49,6 +49,19 @@ logger = logging.getLogger(__name__)
 registerAppSettings('Connect', isBinary=True)
 registerAppSettings('CustomProxyBypass')
 
+# Keep backend-mismatch diagnostics in the translation catalogue.  The actual
+# message is produced by PluginRegistry and translated at the connection boundary.
+_TRANSLATABLE_TUN_BACKEND_ERRORS = (
+    _(
+        'Hysteria 2 Native TUN is not supported by the selected Xray-core '
+        'configuration. Select Auto or Xray-core Native TUN.'
+    ),
+    _(
+        'Xray-core Native TUN is not supported by the selected Hysteria 2 '
+        'configuration. Select Auto or Hysteria 2 Native TUN.'
+    ),
+)
+
 
 class ConnectionState(Enum):
     """Describe the application connection lifecycle."""
