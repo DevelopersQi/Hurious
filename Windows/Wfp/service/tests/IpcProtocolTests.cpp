@@ -25,6 +25,9 @@ int main() {
     driverStatus.Size = sizeof(driverStatus);
     driverStatus.Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
     CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Version = 1;
+    CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
     driverStatus.Reserved = 1;
     CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
     driverStatus.Reserved = 0;
