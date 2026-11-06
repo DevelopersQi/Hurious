@@ -338,6 +338,40 @@ class ConnectionStartupAsyncTest(TestCase):
         self.assertEqual(runtime.stopCount, 1)
         self.assertEqual(runtime.disposeCount, 1)
 
+    def testRuntimeExitDetailsReachConnectionFailure(self):
+        """Keep the child's captured stderr visible in startup diagnostics."""
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(
+                    endpoint='127.0.0.1:1',
+                    timeout=500,
+                ),
+            ),
+        )
+        failures = []
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        processQtEvents()
+        interpreted = runtime.interpretExit(
+            CoreRuntime.ExitCode.ConfigurationError.value
+        )
+        operation.runtimeExited(
+            runtime,
+            RuntimeExit(
+                interpreted.code,
+                interpreted.reason,
+                interpreted.message,
+                'tun2socks: failed to create Wintun adapter',
+            ),
+        )
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        self.assertIn('failed to create Wintun adapter', failures[0][2])
+
     def testEarlyRuntimeExitFailsOnceAndIgnoresLateProbeEvents(self):
         """Let process termination own the terminal result before timeout."""
         runtime = _Runtime()
