@@ -55,11 +55,17 @@ def _singleColumnFormLayout(containers):
         widgets = container.widgets()
         if len(widgets) == 2:
             label, editor = widgets
-            editor.setMinimumWidth(0)
-            editor.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Fixed,
-            )
+            if isinstance(editor, QLineEdit):
+                editor.setMinimumWidth(0)
+                editor.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Fixed,
+                )
+            else:
+                editor.setSizePolicy(
+                    QSizePolicy.Policy.Fixed,
+                    QSizePolicy.Policy.Fixed,
+                )
             layout.addRow(label, editor)
         elif len(widgets) == 1:
             layout.addRow(widgets[0])
