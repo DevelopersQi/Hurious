@@ -3,6 +3,7 @@
 #include <fwpmu.h>
 
 #include <cstring>
+#include <cwchar>
 
 namespace {
 
@@ -13,6 +14,28 @@ const GUID kProviderKey =
 
 const GUID kSublayerKey =
 { 0x7c0f8c32, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x02 } };
+
+bool IsExpectedText(const wchar_t* actual, const wchar_t* expected) {
+    return actual != nullptr && std::wcscmp(actual, expected) == 0;
+}
+
+bool IsOwnedProvider(const FWPM_PROVIDER0* provider) {
+    return provider != nullptr &&
+        (provider->flags & FWPM_PROVIDER_FLAG_PERSISTENT) != 0 &&
+        IsExpectedText(provider->displayData.name, L"Furious") &&
+        IsExpectedText(provider->displayData.description,
+                       L"Furious application traffic routing");
+}
+
+bool IsOwnedSublayer(const FWPM_SUBLAYER0* sublayer) {
+    return sublayer != nullptr &&
+        sublayer->providerKey != nullptr &&
+        std::memcmp(sublayer->providerKey, &kProviderKey, sizeof(kProviderKey)) == 0 &&
+        (sublayer->flags & FWPM_SUBLAYER_FLAG_PERSISTENT) != 0 &&
+        IsExpectedText(sublayer->displayData.name, L"Furious application routing") &&
+        IsExpectedText(sublayer->displayData.description,
+                       L"Furious-owned application routing filters");
+}
 
 DWORD CommitOrAbort(HANDLE engine, DWORD operationStatus) {
     if (operationStatus == ERROR_SUCCESS) {
@@ -78,8 +101,7 @@ DWORD Engine::EnsureProviderAndSublayer() {
         if (status == ERROR_SUCCESS) {
             // A matching GUID is not sufficient: refuse to adopt an object
             // that does not have the persistence contract expected by Furious.
-            if (existingProvider == nullptr ||
-                (existingProvider->flags & FWPM_PROVIDER_FLAG_PERSISTENT) == 0) {
+            if (!IsOwnedProvider(existingProvider)) {
                 status = ERROR_INVALID_DATA;
             }
             if (existingProvider != nullptr) {
@@ -103,13 +125,7 @@ DWORD Engine::EnsureProviderAndSublayer() {
             FWPM_SUBLAYER0* existingSublayer = nullptr;
             status = FwpmSubLayerGetByKey0(handle_, &kSublayerKey, &existingSublayer);
             if (status == ERROR_SUCCESS) {
-                const bool providerMatches = existingSublayer != nullptr &&
-                    existingSublayer->providerKey != nullptr &&
-                    std::memcmp(existingSublayer->providerKey, &kProviderKey,
-                                sizeof(kProviderKey)) == 0;
-                const bool persistent = existingSublayer != nullptr &&
-                    (existingSublayer->flags & FWPM_SUBLAYER_FLAG_PERSISTENT) != 0;
-                if (!providerMatches || !persistent) {
+                if (!IsOwnedSublayer(existingSublayer)) {
                     status = ERROR_INVALID_DATA;
                 }
                 if (existingSublayer != nullptr) {
@@ -132,12 +148,39 @@ DWORD Engine::RemoveProviderAndSublayer() {
         return status;
     }
 
-    // Remove the owned sublayer before its provider because the sublayer
-    // references that provider. Never enumerate and delete objects owned by
-    // Windows Firewall or other products.
-    status = FwpmSubLayerDeleteByKey0(handle_, &kSublayerKey);
+    // Verify both objects before deleting either one. A GUID collision or a
+    // partially-created foreign object must never cause us to remove another
+    // product's WFP configuration.
+    FWPM_SUBLAYER0* existingSublayer = nullptr;
+    status = FwpmSubLayerGetByKey0(handle_, &kSublayerKey, &existingSublayer);
     if (status == FWP_E_SUBLAYER_NOT_FOUND) {
         status = ERROR_SUCCESS;
+    } else if (status == ERROR_SUCCESS && !IsOwnedSublayer(existingSublayer)) {
+        status = ERROR_INVALID_DATA;
+    }
+    if (existingSublayer != nullptr) {
+        FwpmFreeMemory0(reinterpret_cast<void**>(&existingSublayer));
+    }
+
+    FWPM_PROVIDER0* existingProvider = nullptr;
+    if (status == ERROR_SUCCESS) {
+        status = FwpmProviderGetByKey0(handle_, &kProviderKey, &existingProvider);
+        if (status == FWP_E_PROVIDER_NOT_FOUND) {
+            status = ERROR_SUCCESS;
+        } else if (status == ERROR_SUCCESS && !IsOwnedProvider(existingProvider)) {
+            status = ERROR_INVALID_DATA;
+        }
+    }
+    if (existingProvider != nullptr) {
+        FwpmFreeMemory0(reinterpret_cast<void**>(&existingProvider));
+    }
+
+    if (status == ERROR_SUCCESS) {
+        const DWORD sublayerStatus = FwpmSubLayerDeleteByKey0(handle_, &kSublayerKey);
+        if (sublayerStatus != ERROR_SUCCESS &&
+            sublayerStatus != FWP_E_SUBLAYER_NOT_FOUND) {
+            status = sublayerStatus;
+        }
     }
 
     if (status == ERROR_SUCCESS) {
