@@ -188,7 +188,10 @@ class XrayNativeTUNTest(unittest.TestCase):
         """Do not silently substitute Hysteria 2 for a requested Xray TUN."""
         runtime = self.configuration(nativeTUN=False)
 
-        with self.assertRaisesRegex(TUNPreparationError, 'not supported'):
+        with self.assertRaisesRegex(
+            TUNPreparationError,
+            'Hysteria 2 Native TUN is not supported by the selected Xray-core configuration',
+        ):
             self.factory.prepareTUNForBackend(runtime, 'hysteria2')
 
     def testDownloadTestExplicitlyStripsNativeTUN(self):
@@ -504,7 +507,10 @@ class Hysteria2NativeTUNTest(unittest.TestCase):
         """Do not silently substitute Xray for a requested Hysteria 2 TUN."""
         runtime = self.configuration(nativeTUN=False)
 
-        with self.assertRaisesRegex(TUNPreparationError, 'not supported'):
+        with self.assertRaisesRegex(
+            TUNPreparationError,
+            'Xray-core Native TUN is not supported by the selected Hysteria 2 configuration',
+        ):
             self.factory.prepareTUNForBackend(runtime, 'xray')
 
     def testDownloadTestExplicitlyStripsNativeTUN(self):
