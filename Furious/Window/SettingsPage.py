@@ -563,9 +563,15 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
         self._optionLabels = {}
         self._optionHelpLabels = {}
 
-        self.titleLabel = AppQLabel(title, parent=self)
+        self._titleKey = title
+        self._descriptionKey = description
+        self.titleLabel = AppQLabel(_(self._titleKey), translatable=False, parent=self)
         self.titleLabel.setObjectName('SettingsCardTitle')
-        self.descriptionLabel = AppQLabel(description, parent=self)
+        self.descriptionLabel = AppQLabel(
+            _(self._descriptionKey),
+            translatable=False,
+            parent=self,
+        )
         self.descriptionLabel.setObjectName('SettingsCardDescription')
         self.descriptionLabel.setWordWrap(True)
 
@@ -604,7 +610,8 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
             self._optionLabels[backend] = label
 
             helpLabel = AppQLabel(
-                helpText,
+                '',
+                translatable=False,
                 parent=optionWidget,
             )
             self._optionHelpLabels[backend] = helpLabel
@@ -616,7 +623,7 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
             optionLayout.addWidget(helpLabel)
             optionsLayout.addWidget(optionWidget, index // 2, index % 2)
 
-        self.statusLabel = AppQLabel('', parent=self)
+        self.statusLabel = AppQLabel('', translatable=False, parent=self)
         self.statusLabel.setObjectName('SettingsCardDescription')
         self.statusLabel.setWordWrap(True)
         self._connectionController = AppConnectionController()
@@ -636,7 +643,10 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
         self.syncRuntimeStatus()
 
     def retranslate(self):
-        """Refresh all plain Qt option labels for the active UI language."""
+        """Refresh all TUN backend card text from untranslated source keys."""
+        self.titleLabel.setText(_(self._titleKey))
+        self.descriptionLabel.setText(_(self._descriptionKey))
+
         for backend, label, helpText in self.Options:
             radio = self.optionButtons.get(backend)
             helpLabel = self._optionHelpLabels.get(backend)
@@ -874,11 +884,9 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self.tunModeCard.titleLabel.setEnabled(self.tunModeCard.checkBox.isEnabled())
 
         self.tunBackendCard = _TUNBackendSettingsCard(
-            _('TUN Backend'),
-            _(
-                'Choose how system traffic is routed. Automatic selects the '
-                'native backend when supported and otherwise uses Tun2socks.'
-            ),
+            'TUN Backend',
+            'Choose how system traffic is routed. Automatic selects the '
+            'native backend when supported and otherwise uses Tun2socks.',
         )
         self.tunBackendCard.setAvailable(self._tunModeAvailable)
 
