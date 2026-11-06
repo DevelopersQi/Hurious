@@ -1192,10 +1192,11 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             (_('Advanced'), (self.advancedSection,)),
             (_('Application'), (self.applicationSection,)),
         )
+        self._categoryTitles = [title for title, _sections in categories]
         for title, sections in categories:
             self.categoryTabs.addTab(
                 self._categoryScrollPage(sections),
-                title,
+                _(title),
             )
 
         if self.pluginSections:
@@ -1211,7 +1212,9 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             pluginScroll.setWidgetResizable(True)
             pluginScroll.setFrameShape(QFrame.Shape.NoFrame)
             pluginScroll.setWidget(pluginPage)
-            self.categoryTabs.addTab(pluginScroll, _('Plugins'))
+            self._pluginCategoryIndex = self.categoryTabs.addTab(pluginScroll, _('Plugins'))
+        else:
+            self._pluginCategoryIndex = None
 
         contentLayout.addWidget(self.categoryTabs, 1)
         self.setCentralWidget(contentWidget)
@@ -1487,3 +1490,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
     def retranslate(self):
         """Synchronize page-level dynamic state after a language change."""
         self.languageCard.sync()
+        for index, title in enumerate(self._categoryTitles):
+            self.categoryTabs.setTabText(index, _(title))
+        if self._pluginCategoryIndex is not None:
+            self.categoryTabs.setTabText(self._pluginCategoryIndex, _('Plugins'))
