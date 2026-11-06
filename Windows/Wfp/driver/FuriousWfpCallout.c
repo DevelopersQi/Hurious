@@ -49,6 +49,43 @@ static BOOLEAN gSymbolicLinkCreated = FALSE;
 static UINT32 gCalloutIds[FURIOUS_WFP_CALLOUT_COUNT] = { 0, 0 };
 static HANDLE gRedirectHandle = NULL;
 static PDEVICE_OBJECT gDeviceObject = NULL;
+static KSPIN_LOCK gEndpointConfigLock;
+static FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG gEndpointConfig;
+static BOOLEAN gEndpointConfigValid = FALSE;
+
+static BOOLEAN FuriousValidateEndpointConfig(
+    const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG* value)
+{
+    BOOLEAN v4, v6, tcp, udp;
+
+    if (value == NULL ||
+        value->Size != sizeof(*value) ||
+        value->AbiVersion != FURIOUS_WFP_REDIRECT_ABI_VERSION ||
+        value->Backend < 1u || value->Backend > 3u ||
+        value->ProxyProcessId == 0 ||
+        value->PolicyGeneration == 0 ||
+        value->Reserved0 != 0 ||
+        (value->Flags & ~FURIOUS_WFP_REDIRECT_KNOWN_FLAGS) != 0) {
+        return FALSE;
+    }
+
+    v4 = (value->Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV4) != 0;
+    v6 = (value->Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV6) != 0;
+    tcp = (value->Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) != 0;
+    udp = (value->Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    if ((!v4 && !v6) || (!tcp && !udp) ||
+        ((v4 && tcp) != (value->TcpPortV4 != 0)) ||
+        ((v4 && udp) != (value->UdpPortV4 != 0)) ||
+        ((v6 && tcp) != (value->TcpPortV6 != 0)) ||
+        ((v6 && udp) != (value->UdpPortV6 != 0)) ||
+        (!v4 && (value->TcpPortV4 != 0 || value->UdpPortV4 != 0)) ||
+        (!v6 && (value->TcpPortV6 != 0 || value->UdpPortV6 != 0)) ||
+        (!tcp && (value->TcpPortV4 != 0 || value->TcpPortV6 != 0)) ||
+        (!udp && (value->UdpPortV4 != 0 || value->UdpPortV6 != 0))) {
+        return FALSE;
+    }
+    return TRUE;
+}
 
 static NTSTATUS NTAPI FuriousCreateClose(
     PDEVICE_OBJECT deviceObject,
@@ -71,6 +108,35 @@ static NTSTATUS NTAPI FuriousDeviceControl(
 
     UNREFERENCED_PARAMETER(deviceObject);
     if (stack->Parameters.DeviceIoControl.IoControlCode ==
+            FURIOUS_WFP_DRIVER_IOCTL_SET_ENDPOINT_CONFIG) {
+        const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG* input =
+            (const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG*)irp->AssociatedIrp.SystemBuffer;
+        KIRQL oldIrql;
+        if (input == NULL ||
+            stack->Parameters.DeviceIoControl.InputBufferLength != sizeof(*input)) {
+            status = STATUS_INFO_LENGTH_MISMATCH;
+        } else if (!FuriousValidateEndpointConfig(input)) {
+            status = STATUS_INVALID_PARAMETER;
+        } else {
+            KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+            RtlCopyMemory(&gEndpointConfig, input, sizeof(gEndpointConfig));
+            gEndpointConfigValid = TRUE;
+            KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+            status = STATUS_SUCCESS;
+        }
+    } else if (stack->Parameters.DeviceIoControl.IoControlCode ==
+                   FURIOUS_WFP_DRIVER_IOCTL_CLEAR_ENDPOINT_CONFIG) {
+        KIRQL oldIrql;
+        if (stack->Parameters.DeviceIoControl.InputBufferLength != 0) {
+            status = STATUS_INFO_LENGTH_MISMATCH;
+        } else {
+            KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+            RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
+            gEndpointConfigValid = FALSE;
+            KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+            status = STATUS_SUCCESS;
+        }
+    } else if (stack->Parameters.DeviceIoControl.IoControlCode ==
             FURIOUS_WFP_DRIVER_IOCTL_QUERY_STATUS &&
         stack->Parameters.DeviceIoControl.InputBufferLength == 0 &&
         stack->Parameters.DeviceIoControl.OutputBufferLength >=
@@ -83,6 +149,9 @@ static NTSTATUS NTAPI FuriousDeviceControl(
         output->Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
         output->Flags = (gCalloutsRegistered[0] && gCalloutsRegistered[1])
             ? FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED : 0;
+        if (gEndpointConfigValid) {
+            output->Flags |= FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED;
+        }
         status = STATUS_SUCCESS;
         information = sizeof(*output);
     } else if (stack->Parameters.DeviceIoControl.IoControlCode ==
@@ -186,6 +255,10 @@ NTSTATUS DriverEntry(
     FWPS_CALLOUT1 callout = { 0 };
     NTSTATUS status;
     UNREFERENCED_PARAMETER(registryPath);
+
+    KeInitializeSpinLock(&gEndpointConfigLock);
+    RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
+    gEndpointConfigValid = FALSE;
 
     driverObject->DriverUnload = FuriousUnload;
     driverObject->MajorFunction[IRP_MJ_CREATE] = FuriousCreateClose;
