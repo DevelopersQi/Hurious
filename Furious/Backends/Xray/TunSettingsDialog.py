@@ -39,6 +39,19 @@ __all__ = ['XrayTunSettingsDialog']
 
 logger = logging.getLogger(__name__)
 
+# Keep indirect editor title strings visible to the translation catalogue generator.
+_TUN_SETTINGS_TRANSLATIONS = (
+    _('Interface Name'),
+    _('Interface Description'),
+    _('MTU'),
+    _('User Level'),
+    _('Gateway (separated by commas)'),
+    _('DNS (separated by commas)'),
+    _('AutoSystemRoutingTable (separated by commas)'),
+    _('Automatic Outbound Interface'),
+)
+
+
 
 def _singleColumnFormLayout(containers):
     """Lay out native TUN fields vertically with expandable input controls."""
