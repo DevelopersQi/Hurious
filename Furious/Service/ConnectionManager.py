@@ -49,6 +49,7 @@ from Furious.Core.Tun2socks import Tun2socks
 from Furious.Frozenlib.SystemNetwork import resolvePrimaryAdapterInterfaceName
 from Furious.Service.RuntimeLease import RuntimeEventRouter, RuntimeLease
 from Furious.Service.WfpRuntimeSnapshot import WfpRuntimeSnapshot
+from Furious.Service.WfpIpcController import WfpIpcController
 
 from typing import Callable, Tuple, Union
 from dataclasses import dataclass, field
@@ -59,6 +60,7 @@ import os
 import logging
 import tempfile
 import functools
+import sys
 
 __all__ = ['ConnectionManager', 'ConnectionStartOperation', 'ConnectionStartStage']
 
@@ -119,6 +121,9 @@ class _ConnectionStartAttempt:
         self.manager._leases.extend(self.leases)
         self.leases.clear()
         self.manager._advanceWfpRuntimeGeneration()
+
+        if self.manager._wfpIpcController is not None:
+            self.manager._wfpIpcController.queryStatus()
 
         self.committed = True
 
@@ -1111,6 +1116,21 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._activeStartOperation = None
         self._activeTUNBackend = None
         self._wfpRuntimeGeneration = 0
+        self._wfpIpcController = (
+            WfpIpcController(parent=self) if sys.platform == 'win32' else None
+        )
+
+        if self._wfpIpcController is not None:
+            self._wfpIpcController.requestFinished.connect(
+                self._onWfpIpcRequestFinished
+            )
+
+    def _onWfpIpcRequestFinished(self, requestId, command, result, error):
+        """Log asynchronous WFP control-plane results without affecting proxy state."""
+        if error:
+            logger.warning(f'WFP IPC {command} request failed: {error}')
+        elif command == 'status':
+            logger.debug('WFP service status request completed')
 
     def _advanceWfpRuntimeGeneration(self):
         """Advance the identity of the committed runtime ownership snapshot."""
@@ -1864,10 +1884,17 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._leases.clear()
             self._advanceWfpRuntimeGeneration()
 
+        if self._wfpIpcController is not None:
+            self._wfpIpcController.clearEndpointConfig()
+
     def cleanup(self):
         """Release resources owned by the core manager."""
         self.cancelStart()
         self.stopAll()
+
+        if self._wfpIpcController is not None:
+            self._wfpIpcController.close()
+            self._wfpIpcController = None
 
         if self._dnsResolver is not None:
             dispose = getattr(self._dnsResolver, 'dispose', None)
