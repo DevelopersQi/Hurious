@@ -349,7 +349,9 @@ class TunSettingsDialog(GuiEditorWidgetQDialog):
             logger.error(f'error while converting factory to input: {ex}')
 
         self.networkInfoWidget = SystemNetworkInfoWidget(self)
-        self.networkInfoWidget.networkInfoChanged.connect(self._applyDetectedNetworkInfo)
+        self.networkInfoWidget.networkInfoChanged.connect(
+            self._applyDetectedNetworkInfo
+        )
         self.layout().insertRow(0, self.networkInfoWidget)
 
         if self._config.get('autoDetectPrimaryAdapter', 'True') == 'True':
