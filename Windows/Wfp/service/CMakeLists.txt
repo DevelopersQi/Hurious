@@ -5,6 +5,19 @@ if(NOT WIN32)
     message(FATAL_ERROR "The Furious WFP service can only be built on Windows.")
 endif()
 
+add_library(FuriousWfpTcpBroker STATIC
+    ../broker/WfpTcpRedirect.cpp
+    ../broker/WfpTcpRedirect.h
+    ../broker/WfpTcpBrokerServer.cpp
+    ../broker/WfpTcpBrokerServer.h
+)
+target_compile_features(FuriousWfpTcpBroker PUBLIC cxx_std_17)
+target_compile_definitions(FuriousWfpTcpBroker PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
+target_link_libraries(FuriousWfpTcpBroker PUBLIC ws2_32)
+if(MSVC)
+    target_compile_options(FuriousWfpTcpBroker PRIVATE /W4 /WX /permissive-)
+endif()
+
 add_library(FuriousWfpServiceCore STATIC
     WfpEngine.cpp
     WfpEngine.h
@@ -16,7 +29,7 @@ target_compile_features(FuriousWfpServiceCore PUBLIC cxx_std_17)
 target_compile_definitions(FuriousWfpServiceCore PRIVATE
     WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
 )
-target_link_libraries(FuriousWfpServiceCore PUBLIC fwpuclnt advapi32)
+target_link_libraries(FuriousWfpServiceCore PUBLIC fwpuclnt advapi32 FuriousWfpTcpBroker)
 if(MSVC)
     target_compile_options(FuriousWfpServiceCore PRIVATE /W4 /WX /permissive-)
 endif()
@@ -41,7 +54,7 @@ if(BUILD_TESTING)
     add_executable(FuriousWfpIpcProtocolTests tests/IpcProtocolTests.cpp)
     target_compile_features(FuriousWfpIpcProtocolTests PRIVATE cxx_std_17)
     target_compile_definitions(FuriousWfpIpcProtocolTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
-    target_link_libraries(FuriousWfpIpcProtocolTests PRIVATE fwpuclnt)
+    target_link_libraries(FuriousWfpIpcProtocolTests PRIVATE fwpuclnt FuriousWfpTcpBroker)
 
     if(MSVC)
         target_compile_options(FuriousWfpIpcProtocolTests PRIVATE /W4 /WX /permissive-)
@@ -58,7 +71,7 @@ if(BUILD_TESTING)
     target_compile_definitions(FuriousWfpNamedPipeIntegrationTests PRIVATE
         WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
     )
-    target_link_libraries(FuriousWfpNamedPipeIntegrationTests PRIVATE advapi32 fwpuclnt)
+    target_link_libraries(FuriousWfpNamedPipeIntegrationTests PRIVATE advapi32 fwpuclnt FuriousWfpTcpBroker)
     if(MSVC)
         target_compile_options(FuriousWfpNamedPipeIntegrationTests PRIVATE /W4 /WX /permissive-)
     endif()

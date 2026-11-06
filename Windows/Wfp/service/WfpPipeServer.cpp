@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\FuriousWfpService.v1";
+constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\FuriousWfpService.v2";
 constexpr wchar_t kPipeSddl[] = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)";
 
 bool IsAuthorizedClient(HANDLE pipe) noexcept {
@@ -130,6 +130,7 @@ DWORD ServeClient(HANDLE pipe, HANDLE stopEvent) noexcept {
     response.Win32Status = furious::wfp::ipc::DispatchCommand(
         request.Command, payload, payloadSize);
     response.ServiceState = SERVICE_RUNNING;
+    furious::wfp::ipc::PopulateBrokerResponse(&response);
 
     return WriteResponse(pipe, response);
 }

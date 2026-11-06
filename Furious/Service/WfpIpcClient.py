@@ -11,12 +11,13 @@ from itertools import count
 from threading import Lock
 import struct
 import sys
+import ipaddress
 import time
 
 
-PIPE_NAME = r"\\.\pipe\FuriousWfpService.v1"
+PIPE_NAME = r"\\.\pipe\FuriousWfpService.v2"
 IPC_MAGIC = 0x46575043
-IPC_VERSION = 1
+IPC_VERSION = 2
 MAX_MESSAGE_SIZE = 64 * 1024
 
 COMMAND_STATUS = 1
@@ -25,6 +26,8 @@ COMMAND_CLEAR_POLICY = 3
 COMMAND_DRIVER_STATUS = 4
 COMMAND_SET_ENDPOINT_CONFIG = 5
 COMMAND_CLEAR_ENDPOINT_CONFIG = 6
+COMMAND_START_BROKER = 7
+COMMAND_STOP_BROKER = 8
 
 REDIRECT_ABI_VERSION = 2
 MAX_EXCLUDED_PROCESS_IDS = 8
@@ -35,8 +38,9 @@ REDIRECT_FLAG_UDP = 0x00000008
 REDIRECT_KNOWN_FLAGS = 0x0000000F
 
 _HEADER = struct.Struct("<IHHIIQ")
-_RESPONSE = struct.Struct("<IHHIIQII")
+_RESPONSE = struct.Struct("<IHHIIQIIIHH")
 _ENDPOINT_CONFIG = struct.Struct("<IIIIIIQHHHHI8I")
+_BROKER_START = struct.Struct("<IIHHHH16s")
 
 
 class WfpIpcError(RuntimeError):
@@ -65,6 +69,9 @@ class WfpIpcResponse:
     request_id: int
     win32_status: int
     service_state: int
+    broker_process_id: int
+    tcp_port_v4: int
+    tcp_port_v6: int
 
 
 _request_ids = count(1)
@@ -100,9 +107,10 @@ def parse_response(data, command, request_id):
     if len(data) != _RESPONSE.size:
         raise WfpIpcProtocolError("WFP service returned an invalid response size")
 
-    magic, version, header_size, total_size, response_command, response_id, status, state = (
-        _RESPONSE.unpack(data)
-    )
+    (
+        magic, version, header_size, total_size, response_command, response_id,
+        status, state, broker_pid, tcp_port_v4, tcp_port_v6,
+    ) = _RESPONSE.unpack(data)
     if (
         magic != IPC_MAGIC
         or version != IPC_VERSION
@@ -113,8 +121,30 @@ def parse_response(data, command, request_id):
     ):
         raise WfpIpcProtocolError("WFP service response does not match the request")
 
-    return WfpIpcResponse(response_command, response_id, status, state)
+    return WfpIpcResponse(response_command, response_id, status, state, broker_pid, tcp_port_v4, tcp_port_v6)
 
+
+def pack_broker_start_request(socks_host, socks_port, *, listen_ipv4=True, listen_ipv6=True):
+    """Encode a loopback SOCKS inbound and requested broker listener families."""
+    host = str(socks_host).strip()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    address = ipaddress.ip_address(host)
+    if not address.is_loopback:
+        raise ValueError("the SOCKS inbound must use a loopback IP address")
+    port = int(socks_port)
+    if not 1 <= port <= 0xFFFF:
+        raise ValueError("SOCKS inbound port must be in range 1..65535")
+    flags = (1 if listen_ipv4 else 0) | (2 if listen_ipv6 else 0)
+    if flags == 0:
+        raise ValueError("at least one broker listener family must be enabled")
+    address_bytes = address.packed
+    if address.version == 4:
+        family = 4
+        address_bytes += bytes(12)
+    else:
+        family = 6
+    return _BROKER_START.pack(_BROKER_START.size, 1, family, flags, port, 0, address_bytes)
 
 def pack_endpoint_config(
     *,
@@ -331,3 +361,10 @@ class WfpIpcClient:
 
     def clearEndpointConfig(self):
         return self.request(COMMAND_CLEAR_ENDPOINT_CONFIG)
+
+    def startBroker(self, socks_host, socks_port, listen_ipv4=True, listen_ipv6=True):
+        payload = pack_broker_start_request(socks_host, socks_port, listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6)
+        return self.request(COMMAND_START_BROKER, payload)
+
+    def stopBroker(self):
+        return self.request(COMMAND_STOP_BROKER)

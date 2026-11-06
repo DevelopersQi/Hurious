@@ -36,10 +36,11 @@ supplied list. Backend lifecycle wiring to populate and refresh Xray/Hysteria2
 PIDs is still pending; this ABI support alone does not make those exclusions
 active.
 
-The initial native TCP broker primitives now live in `broker/`. They are not
-yet a running listener service and do not publish endpoint ports or a broker PID.
-The WFP endpoint remains unconfigured until listener lifecycle and backend
-inbound discovery are integrated and validated.
+The native TCP broker is hosted by the elevated WFP service. Its authenticated
+IPC start command returns the actual service PID and dynamically bound IPv4/IPv6
+listener ports. ConnectionManager starts and stops the broker with the proxy
+runtime. The WFP endpoint remains unconfigured until application-routing policy
+is integrated and validated.
 
 A production redirect path additionally requires:
 - ALE application identity based on the WFP application ID (not PID alone);

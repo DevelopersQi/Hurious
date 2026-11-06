@@ -33,11 +33,11 @@ class _WfpIpcWorker:
         )
         self._thread.start()
 
-    def submit(self, request_id, command):
+    def submit(self, request_id, command, arguments=()):
         if self._closed:
             return False
 
-        self._queue.put((int(request_id), str(command)))
+        self._queue.put((int(request_id), str(command), tuple(arguments)))
         return True
 
     def close(self):
@@ -56,7 +56,7 @@ class _WfpIpcWorker:
                 if item is self._STOP:
                     return
 
-                request_id, command = item
+                request_id, command, arguments = item
                 try:
                     if client is None:
                         client = self._client_factory()
@@ -65,6 +65,12 @@ class _WfpIpcWorker:
                         result = client.status()
                     elif command == "clear-endpoint":
                         result = client.clearEndpointConfig()
+                    elif command == "start-broker":
+                        result = client.startBroker(*arguments)
+                    elif command == "stop-broker":
+                        result = client.stopBroker()
+                    elif command == "set-endpoint":
+                        result = client.setEndpointConfig(arguments[0])
                     else:
                         raise ValueError("unsupported WFP IPC operation")
 
@@ -78,9 +84,8 @@ class _WfpIpcWorker:
 class WfpIpcController(QtCore.QObject):
     """Queue WFP control operations without blocking the application thread.
 
-    Endpoint activation is intentionally not exposed here. The TCP broker must
-    provide real listener ports and its process ID before SET_ENDPOINT_CONFIG
-    can safely be issued.
+    Endpoint activation remains caller-controlled. Broker startup only returns
+    verified listener ports and a process ID; it does not enable WFP redirection.
     """
 
     requestFinished = QtCore.Signal(int, str, object, str)
@@ -104,12 +109,12 @@ class WfpIpcController(QtCore.QObject):
             str(error),
         )
 
-    def _submit(self, command):
+    def _submit(self, command, *arguments):
         if self._closed:
             return None
 
         request_id = next(self._requestIds)
-        if not self._worker.submit(request_id, command):
+        if not self._worker.submit(request_id, command, arguments):
             return None
 
         return request_id
@@ -121,6 +126,18 @@ class WfpIpcController(QtCore.QObject):
     def clearEndpointConfig(self):
         """Clear a previously installed endpoint configuration asynchronously."""
         return self._submit("clear-endpoint")
+
+    def startBroker(self, socksHost, socksPort, listenIpv4=True, listenIpv6=True):
+        """Start the service-hosted TCP broker asynchronously."""
+        return self._submit("start-broker", socksHost, socksPort, listenIpv4, listenIpv6)
+
+    def stopBroker(self):
+        """Stop the service-hosted TCP broker asynchronously."""
+        return self._submit("stop-broker")
+
+    def setEndpointConfig(self, payload):
+        """Submit a native endpoint configuration asynchronously."""
+        return self._submit("set-endpoint", bytes(payload))
 
     def close(self):
         """Stop accepting commands and let the worker drain queued requests."""

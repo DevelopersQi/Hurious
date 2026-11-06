@@ -2,6 +2,7 @@
 #include "WfpDriverLifecycle.h"
 #include "WfpEngine.h"
 #include "WfpPipeServer.h"
+#include "WfpIpcDispatcher.h"
 
 #include <windows.h>
 
@@ -42,6 +43,8 @@ DWORD CleanupWfp(
     furious::wfp::DriverLifecycle& driver,
     bool filtersInstalled,
     bool providerReady) {
+    furious::wfp::ipc::StopBroker();
+
     if (driver.IsPresent()) {
         const DWORD clearStatus = furious::wfp::driver::ClearEndpointConfig();
         if (clearStatus != ERROR_SUCCESS) {

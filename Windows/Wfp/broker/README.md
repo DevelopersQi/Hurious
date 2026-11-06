@@ -11,7 +11,7 @@ long-running broker service.
 - Re-apply the opaque redirect-record chain to a new socket before connect.
 - Negotiate a no-auth SOCKS5 session and issue a binary IPv4/IPv6 CONNECT.
 - Relay TCP data in both directions with half-close support and an idle timeout.
-- Bind IPv4 and IPv6 loopback listeners on dynamically assigned ports.
+- Bind IPv4 and IPv6 loopback listeners on dynamically assigned ports, keeping an available family active if the other is disabled by the host.
 - Bound queued and active sessions, with worker threads and coordinated shutdown.
 - Restrict the local SOCKS upstream to loopback addresses and bound handshake waits.
 

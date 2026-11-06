@@ -5,6 +5,7 @@
 #include "../include/WfpControlProtocol.h"
 #include "WfpDriverClient.h"
 #include "WfpPolicyCompiler.h"
+#include "../broker/WfpTcpBrokerServer.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -103,10 +104,47 @@ inline DWORD CopyCompiledPolicySnapshot(
     return GetPolicyStore().CopyCompiledSnapshot(output);
 }
 
+inline furious::wfp::broker::TcpBrokerServer& GetTcpBrokerServer() noexcept {
+    static furious::wfp::broker::TcpBrokerServer server;
+    return server;
+}
+inline DWORD StopBroker() noexcept { GetTcpBrokerServer().Stop(); return ERROR_SUCCESS; }
+inline void PopulateBrokerResponse(FURIOUS_WFP_IPC_RESPONSE* response) noexcept {
+    if (response == nullptr) return;
+    auto& broker = GetTcpBrokerServer();
+    if (!broker.IsRunning()) { response->BrokerProcessId = 0; response->TcpPortV4 = 0; response->TcpPortV6 = 0; return; }
+    const auto ports = broker.ListenerPorts();
+    response->BrokerProcessId = broker.ProcessId();
+    response->TcpPortV4 = ports.ipv4;
+    response->TcpPortV6 = ports.ipv6;
+}
+inline DWORD StartBroker(const void* payload, size_t payloadSize) noexcept {
+    if (payload == nullptr || payloadSize != sizeof(FURIOUS_WFP_BROKER_START_REQUEST)) return ERROR_INVALID_DATA;
+    FURIOUS_WFP_BROKER_START_REQUEST request = {};
+    std::memcpy(&request, payload, sizeof(request));
+    if (request.Size != sizeof(request) || request.AbiVersion != FURIOUS_WFP_BROKER_ABI_VERSION || request.Reserved != 0 || request.SocksPort == 0 || (request.Flags & ~FURIOUS_WFP_BROKER_KNOWN_FLAGS) != 0 || request.Flags == 0) return ERROR_INVALID_PARAMETER;
+    auto& broker = GetTcpBrokerServer();
+    if (broker.IsRunning()) return ERROR_ALREADY_INITIALIZED;
+    sockaddr_storage address = {};
+    int addressLength = 0;
+    if (request.SocksAddressFamily == FURIOUS_WFP_BROKER_FAMILY_IPV4) {
+        for (size_t i = 4; i < sizeof(request.SocksAddress); ++i) if (request.SocksAddress[i] != 0) return ERROR_INVALID_PARAMETER;
+        auto* ipv4 = reinterpret_cast<sockaddr_in*>(&address); ipv4->sin_family = AF_INET; ipv4->sin_port = htons(request.SocksPort);
+        std::memcpy(&ipv4->sin_addr, request.SocksAddress, 4); addressLength = sizeof(sockaddr_in);
+    } else if (request.SocksAddressFamily == FURIOUS_WFP_BROKER_FAMILY_IPV6) {
+        auto* ipv6 = reinterpret_cast<sockaddr_in6*>(&address); ipv6->sin6_family = AF_INET6; ipv6->sin6_port = htons(request.SocksPort);
+        std::memcpy(&ipv6->sin6_addr, request.SocksAddress, 16); addressLength = sizeof(sockaddr_in6);
+    } else return ERROR_INVALID_PARAMETER;
+    const bool listenV4 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV4) != 0;
+    const bool listenV6 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV6) != 0;
+    return broker.Start(reinterpret_cast<const sockaddr*>(&address), addressLength, listenV4, listenV6) ? ERROR_SUCCESS : ERROR_GEN_FAILURE;
+}
 inline DWORD DispatchCommand(uint32_t command,
                              const void* payload,
                              size_t payloadSize) noexcept {
     switch (command) {
+    case FURIOUS_WFP_IPC_COMMAND_START_BROKER: return StartBroker(payload, payloadSize);
+    case FURIOUS_WFP_IPC_COMMAND_STOP_BROKER: return payloadSize == 0 ? StopBroker() : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_STATUS:
         return payloadSize == 0 ? ERROR_SUCCESS : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_DRIVER_STATUS: {

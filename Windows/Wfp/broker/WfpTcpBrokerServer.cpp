@@ -142,14 +142,14 @@ bool TcpBrokerServer::Start(
     maximumSessions_ = maximumSessions;
     ports_ = TcpBrokerListenerPorts{};
 
-    bool ready = true;
+    bool anyListener = false;
     if (enableIpv4) {
-        ready = CreateListener(AF_INET, ipv4Listener_, ports_.ipv4);
+        anyListener = CreateListener(AF_INET, ipv4Listener_, ports_.ipv4) || anyListener;
     }
-    if (ready && enableIpv6) {
-        ready = CreateListener(AF_INET6, ipv6Listener_, ports_.ipv6);
+    if (enableIpv6) {
+        anyListener = CreateListener(AF_INET6, ipv6Listener_, ports_.ipv6) || anyListener;
     }
-    if (!ready) {
+    if (!anyListener) {
         Stop();
         return false;
     }

@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace {
-constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\FuriousWfpService.v1";
+constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\FuriousWfpService.v2";
 
 int Fail(const char* message, HANDLE stopEvent, furious::wfp::PipeServer& server,
          std::thread& worker) {

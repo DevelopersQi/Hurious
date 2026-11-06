@@ -1036,6 +1036,8 @@ class ConnectionStartOperation(QtCore.QObject):
         self._setStage(ConnectionStartStage.Committing)
 
         self.attempt.commit(self.exitCallback)
+        if not self.proxyModeOnly:
+            self.manager._startWfpBroker(self.attempt.runtimeConfiguration)
         self._terminal = True
 
         self._setStage(ConnectionStartStage.Succeeded)
@@ -1131,7 +1133,33 @@ class ConnectionManager(Mixins.CleanupOnExit):
             logger.warning(f'WFP IPC {command} request failed: {error}')
         elif command == 'status':
             logger.debug('WFP service status request completed')
+        elif command == 'start-broker' and result is not None:
+            logger.info(
+                f'WFP TCP broker started: pid={result.broker_process_id}, '
+                f'IPv4={result.tcp_port_v4}, IPv6={result.tcp_port_v6}'
+            )
+        elif command == 'stop-broker':
+            logger.debug('WFP TCP broker stop request completed')
 
+    def _startWfpBroker(self, configuration):
+        """Start the service-hosted TCP broker for a ready proxy runtime."""
+        controller = self._wfpIpcController
+        if controller is None:
+            return None
+        endpointGetter = getattr(configuration, 'socksProxy', None)
+        if not callable(endpointGetter):
+            logger.debug('active core does not expose a SOCKS inbound endpoint')
+            return None
+        endpoint = str(endpointGetter() or '').strip()
+        if not endpoint:
+            logger.warning('WFP TCP broker skipped: no local SOCKS inbound is configured')
+            return None
+        try:
+            host, port = parseHostPort(endpoint)
+            return controller.startBroker(host, int(port))
+        except Exception as error:
+            logger.warning(f'WFP TCP broker start could not be queued: {error}')
+            return None
     def _advanceWfpRuntimeGeneration(self):
         """Advance the identity of the committed runtime ownership snapshot."""
         self._wfpRuntimeGeneration = (
@@ -1872,6 +1900,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         self._leases.remove(lease)
         self._advanceWfpRuntimeGeneration()
+        if not self.wfpExcludedProcessIds and self._wfpIpcController is not None:
+            self._wfpIpcController.clearEndpointConfig()
+            self._wfpIpcController.stopBroker()
 
     def stopAll(self):
         """Stop every managed proxy-core and TUN runtime."""
@@ -1886,6 +1917,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         if self._wfpIpcController is not None:
             self._wfpIpcController.clearEndpointConfig()
+            self._wfpIpcController.stopBroker()
 
     def cleanup(self):
         """Release resources owned by the core manager."""

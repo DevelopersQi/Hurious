@@ -91,6 +91,9 @@ int main() {
     using furious::wfp::ipc::DispatchCommand;
     using furious::wfp::ipc::CopyPolicySnapshot;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_START_BROKER, nullptr, 0) == ERROR_INVALID_DATA);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STOP_BROKER, nullptr, 1) == ERROR_INVALID_PARAMETER);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STOP_BROKER, nullptr, 0) == ERROR_SUCCESS);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY, nullptr, 0) == ERROR_INVALID_DATA);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, nullptr, 0) == ERROR_SUCCESS);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
