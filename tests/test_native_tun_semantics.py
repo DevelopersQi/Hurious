@@ -246,6 +246,7 @@ class XrayNativeTUNTest(unittest.TestCase):
         original = self.configuration(nativeTUN=False)
         registry = mock.Mock()
         registry.prepareTUN.return_value = True
+        registry.factoryForConfig.return_value.factoryId = 'official.xray'
         manager = _RecordingConnectionManager()
 
         with (
@@ -266,6 +267,7 @@ class XrayNativeTUNTest(unittest.TestCase):
 
         registry.prepareTUN.assert_called_once()
         self.assertEqual(registry.prepareTUN.call_args.args[1], 'xray')
+        self.assertEqual(manager.activeTUNBackend, 'xray')
         registry.usesApplicationTun2socks.assert_not_called()
 
         manager.cleanup()
