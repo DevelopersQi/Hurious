@@ -29,15 +29,17 @@ redirect state only when a redirect-record handle is present. IPv4 loopback
 (127.0.0.0/8), IPv6 loopback (::1), and IPv4-mapped IPv6 loopback
 (::ffff:127.0.0.0/104) destinations are passed through unchanged so local IPC
 and developer services are not captured by the transparent proxy.
-These safeguards do not replace explicit exclusions for the broker and proxy
-core processes; those exclusions must be implemented and tested before enabling
-a live endpoint.
+Endpoint ABI v2 now supports the mandatory local redirect-target PID plus up
+to eight auxiliary process exclusions. The kernel validates and enforces the
+supplied list. Backend lifecycle wiring to populate and refresh Xray/Hysteria2
+PIDs is still pending; this ABI support alone does not make those exclusions
+active.
 
 A production redirect path additionally requires:
 - ALE application identity based on the WFP application ID (not PID alone);
 - backend endpoint discovery and safe SET/CLEAR endpoint configuration;
 - proxy-side WSAIoctl redirect-context and redirect-record propagation;
-- redirect-state tracking and explicit relay/core exclusions;
+- backend lifecycle-driven relay/core PID exclusions and restart-safe refresh;
 - original-destination preservation and full relay behavior;
 - TCP and UDP behavior verified independently;
 - IPv4 and IPv6 parity;
