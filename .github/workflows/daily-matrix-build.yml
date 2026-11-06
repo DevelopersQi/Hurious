@@ -685,14 +685,18 @@ jobs:
           if not dll.is_file() or dll.stat().st_size < 1024:
               raise SystemExit(f'Bundled Wintun DLL is missing or empty: {dll}')
           if not license_file.is_file() or license_file.stat().st_size == 0:
-              raise SystemExit(f'Wintun redistribution license is missing: {license_file}')
+              raise SystemExit(
+                  f'Wintun redistribution license is missing: {license_file}'
+              )
 
           data = dll.read_bytes()
           if data[:2] != b'MZ' or len(data) < 0x40:
               raise SystemExit('Bundled wintun.dll has an invalid DOS/PE header')
 
           pe_offset = struct.unpack_from('<I', data, 0x3C)[0]
-          if data[pe_offset:pe_offset + 4] != b'PE\\0\\0':
+          if pe_offset + 6 > len(data):
+              raise SystemExit('Bundled wintun.dll has a truncated PE header')
+          if data[pe_offset:pe_offset + 4] != b'PE\0\0':
               raise SystemExit('Bundled wintun.dll has an invalid PE signature')
 
           machine = struct.unpack_from('<H', data, pe_offset + 4)[0]
