@@ -1,4 +1,5 @@
 #include "../../include/WfpControlProtocol.h"
+#include "../../include/WfpRedirectProtocol.h"
 #include "../WfpIpcDispatcher.h"
 #include "../WfpDriverClient.h"
 #include "../WfpPolicyValidator.h"
@@ -174,5 +175,60 @@ int main() {
     CHECK(furious::wfp::policy::CompilePolicy(
               policyBytes.data(), policyBytes.size(), compiledRules) != ERROR_SUCCESS);
     CHECK(compiledRules.size() == previousCompiledSize);
+
+    using furious::wfp::redirect::IsValidEndpointConfig;
+    using furious::wfp::redirect::IsValidRedirectContext;
+    static_assert(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64,
+                  "Redirect context ABI must remain 64 bytes");
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG endpoint = {};
+    endpoint.Size = sizeof(endpoint);
+    endpoint.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    endpoint.Backend = 1;
+    endpoint.Flags = FURIOUS_WFP_REDIRECT_FLAG_IPV4 |
+                     FURIOUS_WFP_REDIRECT_FLAG_IPV6 |
+                     FURIOUS_WFP_REDIRECT_FLAG_TCP |
+                     FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    endpoint.ProxyProcessId = 1234;
+    endpoint.PolicyGeneration = 7;
+    endpoint.TcpPortV4 = 10808;
+    endpoint.UdpPortV4 = 10808;
+    endpoint.TcpPortV6 = 10809;
+    endpoint.UdpPortV6 = 10809;
+    CHECK(IsValidEndpointConfig(endpoint));
+    auto invalidEndpoint = endpoint;
+    invalidEndpoint.ProxyProcessId = 0;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.TcpPortV4 = 0;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.Flags |= 0x80000000u;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+
+    FURIOUS_WFP_REDIRECT_CONTEXT redirectContext = {};
+    redirectContext.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    redirectContext.Size = sizeof(redirectContext);
+    redirectContext.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    redirectContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    redirectContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_TCP;
+    redirectContext.OriginalPortNetworkOrder = 0x5000;
+    redirectContext.OriginalAddress[0] = 192;
+    redirectContext.OriginalAddress[1] = 0;
+    redirectContext.OriginalAddress[2] = 2;
+    redirectContext.OriginalAddress[3] = 1;
+    redirectContext.OriginalProcessId = 4321;
+    redirectContext.RulePriority = 10;
+    redirectContext.PolicyGeneration = 7;
+    CHECK(IsValidRedirectContext(redirectContext));
+    auto invalidContext = redirectContext;
+    invalidContext.AddressFamily = 5;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.Reserved[2] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+
     return 0;
 }
