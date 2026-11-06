@@ -124,7 +124,7 @@ class MainWindow(AppQMainWindow):
             'log',
             self.logPage,
             'Log',
-            'pin-angle.svg',
+            'journal-text.svg',
         )
         self.navigationView.addPage(
             'subscription',
