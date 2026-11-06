@@ -272,7 +272,7 @@ class XrayTunSettingsDialog(GuiEditorWidgetQDialog):
         super().__init__(*args, **kwargs)
 
         self.setTabText(_('Customize Xray-core TUN Settings'))
-        self.setFixedSize(int(650 * GOLDEN_RATIO), 650)
+        self.setFixedSize(int(650 * GOLDEN_RATIO), 770)
 
         self._settings = getXrayTUNSettings()
 
