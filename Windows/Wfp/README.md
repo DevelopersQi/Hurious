@@ -26,8 +26,9 @@ enabling endpoint redirection.
 The current classify path requires process-ID metadata but correctly treats
 redirect-record metadata as optional for a first-time connection. It queries
 redirect state only when a redirect-record handle is present. IPv4 loopback
-(127.0.0.0/8) and IPv6 loopback (::1) destinations are passed through unchanged
-so local IPC and developer services are not captured by the transparent proxy.
+(127.0.0.0/8), IPv6 loopback (::1), and IPv4-mapped IPv6 loopback
+(::ffff:127.0.0.0/104) destinations are passed through unchanged so local IPC
+and developer services are not captured by the transparent proxy.
 These safeguards do not replace explicit exclusions for the broker and proxy
 core processes; those exclusions must be implemented and tested before enabling
 a live endpoint.
