@@ -123,28 +123,12 @@ class Hysteria2ActionProvider(ActionProvider):
         isCoreActive = kwargs.pop('isCoreActive', lambda coreType: False)
 
         # These modules require a fully initialized Furious.Qt package.
-        from Furious.Qt import AppQAction, showMBoxNewChangesNextTime
+        from Furious.Qt import AppQAction
         from Furious.Qt import gettext as _
 
         from .TunSettingsDialog import Hysteria2TunSettingsDialog
 
-        useHysteria2TUNAction = AppQAction(
-            _('Use Hysteria2 TUN'),
-            checkable=True,
-            checked=isHysteria2TUNEnabled(),
-        )
-
-        def updateUseHysteria2TUN():
-            """Persist the native Hysteria 2 TUN action state."""
-            setHysteria2TUNEnabled(useHysteria2TUNAction.isChecked())
-
-            if SystemRuntime.isTUNMode() and isCoreActive(Hysteria2):
-                showMBoxNewChangesNextTime()
-
-        useHysteria2TUNAction.callback = updateUseHysteria2TUN
-
         return (
-            useHysteria2TUNAction,
             AppQAction(
                 _('Customize Hysteria2 TUN Settings...'),
                 callback=lambda: Hysteria2TunSettingsDialog(
@@ -164,10 +148,10 @@ class Hysteria2CoreRuntimeFactory(CoreRuntimeFactory):
 
     def prepareTUN(self, config) -> bool:
         """Preserve user TUN or replace it with Furious-managed native TUN."""
-        if not isHysteria2TUNEnabled():
-            # Presence is authoritative even when the block is malformed: the
-            # core must report that error instead of Furious silently changing
-            # the connection to application tun2socks.
+        # Auto uses native Hysteria 2 TUN on desktop platforms. Linux
+        # keeps the established Tun2socks fallback; native Hysteria 2 TUN
+        # remains available through the global backend selector when elevated.
+        if PLATFORM == 'Linux':
             return hasHysteria2TUNConfig(config)
 
         if PLATFORM == 'Linux' and not SystemRuntime.isAdmin():
