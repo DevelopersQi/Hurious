@@ -132,17 +132,8 @@ int main() {
     std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
     CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::InvalidAction);
 
-    wchar_t currentExecutable[FURIOUS_WFP_MAX_IMAGE_PATH_CHARS] = {};
-    const DWORD executableChars = GetModuleFileNameW(
-        nullptr, currentExecutable, static_cast<DWORD>(_countof(currentExecutable)));
-    CHECK(executableChars > 0 && executableChars < _countof(currentExecutable));
-    policyRule.ImagePathChars = executableChars;
-    std::memset(policyRule.ImagePath, 0, sizeof(policyRule.ImagePath));
-    std::memcpy(policyRule.ImagePath, currentExecutable,
-                (static_cast<size_t>(executableChars) + 1) * sizeof(wchar_t));
     policyHeader.PolicyGeneration = 2;
     std::memcpy(policyBytes.data(), &policyHeader, sizeof(policyHeader));
-    std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
 
     std::vector<furious::wfp::policy::CompiledApplicationRule> compiledRules;
     CHECK(furious::wfp::policy::CompilePolicy(
