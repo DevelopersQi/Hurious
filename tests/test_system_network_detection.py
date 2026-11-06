@@ -1,6 +1,7 @@
 """Unit tests for platform-independent system network parsing."""
 
 import unittest
+from unittest import mock
 
 from Furious.Frozenlib import SystemNetwork
 from Furious.Qt.SystemNetworkInfo import SystemNetworkInfoWidget
@@ -76,6 +77,40 @@ destination: default
     inet 192.168.1.20 netmask 0xffffff00 broadcast 192.168.1.255
 """
         self.assertEqual(SystemNetwork._macInterfaceIP(output), '192.168.1.20')
+
+
+    def test_preferred_primary_interface_name_wins(self):
+        with mock.patch.object(
+            SystemNetwork,
+            'getPrimaryAdapterInfo',
+            side_effect=AssertionError('automatic detection must not override user choice'),
+        ):
+            self.assertEqual(
+                SystemNetwork.resolvePrimaryAdapterInterfaceName(' en7 '),
+                'en7',
+            )
+
+    def test_primary_interface_name_is_detected_when_not_configured(self):
+        with mock.patch.object(
+            SystemNetwork,
+            'getPrimaryAdapterInfo',
+            return_value={'name': 'en5', 'ip': '192.168.1.20', 'gateway': '192.168.1.1'},
+        ):
+            self.assertEqual(
+                SystemNetwork.resolvePrimaryAdapterInterfaceName(),
+                'en5',
+            )
+
+    def test_missing_primary_interface_detection_returns_empty(self):
+        with mock.patch.object(
+            SystemNetwork,
+            'getPrimaryAdapterInfo',
+            return_value={'name': '', 'ip': '', 'gateway': ''},
+        ):
+            self.assertEqual(
+                SystemNetwork.resolvePrimaryAdapterInterfaceName(),
+                '',
+            )
 
     def test_invalid_or_non_routable_ipv4_is_rejected(self):
         for address in ('0.0.0.0', '127.0.0.1', '169.254.1.1', '224.0.0.1'):
