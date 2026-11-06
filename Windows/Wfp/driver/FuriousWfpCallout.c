@@ -10,6 +10,10 @@
 #include <initguid.h>
 
 #include "../include/WfpDriverProtocol.h"
+#include "../include/WfpRedirectProtocol.h"
+
+C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 40);
+C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64);
 
 DEFINE_GUID(
     FURIOUS_WFP_ALE_CONNECT_V4_CALLOUT,
