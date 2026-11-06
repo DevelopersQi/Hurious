@@ -18,8 +18,13 @@
 name: Daily matrix build
 
 on:
-  # Full packaging is intentionally opt-in (or scheduled). Every push is
-  # covered by the lightweight quick-validation workflow instead.
+  # Run one Windows 10 packaging build when this workflow is deliberately
+  # changed on the feature branch; ordinary source commits stay lightweight.
+  push:
+    branches:
+      - feat/auto-detect-tun-network
+    paths:
+      - .github/workflows/daily-matrix-build.yml
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
     - cron: '17 2 * * *'
@@ -1173,11 +1178,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: binary-distributions-${{ matrix.id }}-Python${{ matrix.python-version }}
-          path: |
-            Furious-*.zip
-            Furious-*.msi
-            Furious-*.dmg
-            Furious-*.AppImage
-            Furious-*.deb
-            Furious-*.flatpak
-            Furious-*.rpm
+          path: Furious-*.zip
+          if-no-files-found: error
