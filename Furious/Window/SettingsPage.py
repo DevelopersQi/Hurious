@@ -500,56 +500,121 @@ class _ApplicationThemeSettingsCard(_SettingsCard):
             AppSettingsController().setApplicationTheme(preference)
 
 
-class _TUNBackendSettingsCard(_SettingsCard):
-    """Select the preferred implementation used by global TUN mode."""
+class _TUNBackendSettingsCard(QFrame):
+    """Present global TUN backends as a compact, explanatory choice grid."""
 
-    Options = TUN_BACKEND_OPTIONS
-
-    _TranslatableOptions = (
-        _('Automatic (Recommended)'),
-        _('Tun2socks'),
-        _('Xray-core Native TUN'),
-        _('Hysteria 2 Native TUN'),
+    Options = (
+        ('auto', _('Automatic (Recommended)'), _('Prefer a native TUN backend when the active node supports it; otherwise use Tun2socks.')),
+        ('tun2socks', _('Tun2socks'), _('Compatibility option for routing traffic through the external Tun2socks adapter.')),
+        ('xray', _('Xray-core Native TUN'), _('Use Xray-core native TUN. Available when the active node uses Xray-core.')),
+        ('hysteria2', _('Hysteria 2 Native TUN'), _('Use Hysteria 2 native TUN. Available when the active node uses Hysteria 2.')),
     )
 
     def __init__(self, title='', description='', parent=None):
-        """Initialize the global TUN implementation selector."""
-        self.comboBox = AppQComboBox()
-        self.comboBox.setObjectName('SettingsComboBox')
-        self.comboBox.setContentWidthAdjustable()
-        self.comboBox.setMinimumWidth(260)
+        """Build a two-column selector with clear per-backend guidance."""
+        super().__init__(parent)
+        self.setObjectName('TUNBackendSettingsCard')
+        self.iconFileName = 'diagram-3.svg'
+        self._available = True
 
-        for label, backend in self.Options:
-            self.comboBox.addItem(_(label), backend)
+        self.titleLabel = AppQLabel(title, parent=self)
+        self.titleLabel.setObjectName('SettingsCardTitle')
+        self.descriptionLabel = AppQLabel(description, parent=self)
+        self.descriptionLabel.setObjectName('SettingsCardDescription')
+        self.descriptionLabel.setWordWrap(True)
+
+        self.buttonGroup = QButtonGroup(self)
+        self.buttonGroup.setExclusive(True)
+        self.optionButtons = {}
+
+        headerLayout = QVBoxLayout()
+        headerLayout.setContentsMargins(0, 0, 0, 0)
+        headerLayout.setSpacing(3)
+        headerLayout.addWidget(self.titleLabel)
+        headerLayout.addWidget(self.descriptionLabel)
+
+        optionsWidget = QWidget(self)
+        optionsLayout = QGridLayout(optionsWidget)
+        optionsLayout.setContentsMargins(0, 4, 0, 0)
+        optionsLayout.setHorizontalSpacing(18)
+        optionsLayout.setVerticalSpacing(10)
+
+        for index, (backend, label, helpText) in enumerate(self.Options):
+            optionWidget = QFrame(optionsWidget)
+            optionWidget.setObjectName('TUNBackendOption')
+            optionLayout = QVBoxLayout(optionWidget)
+            optionLayout.setContentsMargins(10, 8, 10, 8)
+            optionLayout.setSpacing(3)
+
+            radio = QRadioButton(label, optionWidget)
+            radio.setObjectName('TUNBackendOptionRadio')
+            radio.setProperty('backend', backend)
+            self.buttonGroup.addButton(radio)
+            self.optionButtons[backend] = radio
+
+            helpLabel = AppQLabel(helpText, parent=optionWidget)
+            helpLabel.setObjectName('SettingsCardDescription')
+            helpLabel.setWordWrap(True)
+            helpLabel.setContentsMargins(22, 0, 0, 0)
+
+            optionLayout.addWidget(radio)
+            optionLayout.addWidget(helpLabel)
+            optionsLayout.addWidget(optionWidget, index // 2, index % 2)
+
+        self.statusLabel = AppQLabel(
+            _('Changes apply the next time you connect with TUN mode enabled.'),
+            parent=self,
+        )
+        self.statusLabel.setObjectName('SettingsCardDescription')
+        self.statusLabel.setWordWrap(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+        layout.addLayout(headerLayout)
+        layout.addWidget(optionsWidget)
+        layout.addWidget(self.statusLabel)
 
         self.sync()
-        self.comboBox.currentIndexChanged.connect(self._selectionChanged)
+        self.buttonGroup.idClicked.connect(self._selectionChanged)
+        self.buttonGroup.buttonToggled.connect(self._buttonToggled)
 
-        super().__init__(
-            'diagram-3.svg',
-            self.comboBox,
-            title,
-            description,
-            parent=parent,
-        )
+    def _buttonToggled(self, button, checked):
+        """Keep option availability and visual state in sync."""
+        if checked:
+            button.setProperty('selected', True)
+            button.style().unpolish(button)
+            button.style().polish(button)
+        else:
+            button.setProperty('selected', False)
 
     def sync(self, backend=None):
-        """Reflect the persisted backend without emitting a second change."""
-        blocker = QtCore.QSignalBlocker(self.comboBox)
+        """Reflect the persisted backend without emitting another change."""
         selectedBackend = (
             backend if isinstance(backend, str) else AppSettings.get('TUNBackend')
         )
-        index = self.comboBox.findData(selectedBackend)
+        radio = self.optionButtons.get(selectedBackend)
+        if radio is None:
+            radio = self.optionButtons.get('auto')
+        if radio is not None:
+            blocker = QtCore.QSignalBlocker(self.buttonGroup)
+            radio.setChecked(True)
+            del blocker
 
-        self.comboBox.setCurrentIndex(max(index, 0))
-
-        del blocker
+    def setAvailable(self, available):
+        """Enable or disable backend choices with global TUN availability."""
+        self._available = bool(available)
+        for radio in self.optionButtons.values():
+            radio.setEnabled(self._available)
+        self.titleLabel.setEnabled(self._available)
+        self.descriptionLabel.setEnabled(self._available)
+        self.statusLabel.setEnabled(self._available)
 
     @QtCore.Slot(int)
-    def _selectionChanged(self, _index: int):
-        """Persist the selected implementation for the next connection."""
-        backend = self.comboBox.currentData()
-
+    def _selectionChanged(self, buttonId):
+        """Persist the selected backend for the next TUN connection."""
+        radio = self.buttonGroup.button(buttonId)
+        backend = radio.property('backend') if radio is not None else None
         if isinstance(backend, str):
             AppSettingsController().setTUNBackend(backend)
 
