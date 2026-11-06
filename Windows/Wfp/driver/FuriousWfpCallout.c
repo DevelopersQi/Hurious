@@ -87,6 +87,33 @@ static BOOLEAN FuriousValidateEndpointConfig(
     return TRUE;
 }
 
+static VOID FuriousSetCalloutRegistered(ULONG index, BOOLEAN registered, UINT32 calloutId)
+{
+    KIRQL oldIrql;
+
+    if (index >= FURIOUS_WFP_CALLOUT_COUNT) {
+        return;
+    }
+    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+    gCalloutsRegistered[index] = registered;
+    gCalloutIds[index] = registered ? calloutId : 0;
+    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+}
+
+static BOOLEAN FuriousIsCalloutRegistered(ULONG index)
+{
+    KIRQL oldIrql;
+    BOOLEAN registered;
+
+    if (index >= FURIOUS_WFP_CALLOUT_COUNT) {
+        return FALSE;
+    }
+    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+    registered = gCalloutsRegistered[index];
+    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+    return registered;
+}
+
 static ULONG FuriousGetDriverFlags(void)
 {
     KIRQL oldIrql;
@@ -226,7 +253,7 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
     {
         ULONG index;
         for (index = 0; index < FURIOUS_WFP_CALLOUT_COUNT; ++index) {
-            if (gCalloutsRegistered[index]) {
+            if (FuriousIsCalloutRegistered(index)) {
                 NTSTATUS status;
                 LARGE_INTEGER retryDelay;
                 retryDelay.QuadPart = -1000000;
@@ -240,8 +267,7 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
                         "FuriousWfpCallout: unregister retry, status=0x%08X\\n", status);
                     KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
                 }
-                gCalloutsRegistered[index] = FALSE;
-                gCalloutIds[index] = 0;
+                FuriousSetCalloutRegistered(index, FALSE, 0);
             }
         }
     }
@@ -319,20 +345,19 @@ NTSTATUS DriverEntry(
     callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_REDIRECT_V4_CALLOUT;
     status = FwpsCalloutRegister1(gDeviceObject, &callout, &gCalloutIds[0]);
     if (NT_SUCCESS(status)) {
-        gCalloutsRegistered[0] = TRUE;
+        FuriousSetCalloutRegistered(0, TRUE, gCalloutIds[0]);
         callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_REDIRECT_V6_CALLOUT;
         status = FwpsCalloutRegister1(gDeviceObject, &callout, &gCalloutIds[1]);
         if (NT_SUCCESS(status)) {
-            gCalloutsRegistered[1] = TRUE;
+            FuriousSetCalloutRegistered(1, TRUE, gCalloutIds[1]);
             gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
             return STATUS_SUCCESS;
         }
     }
 
-    if (gCalloutsRegistered[0]) {
+    if (FuriousIsCalloutRegistered(0)) {
         FwpsCalloutUnregisterById0(gCalloutIds[0]);
-        gCalloutsRegistered[0] = FALSE;
-        gCalloutIds[0] = 0;
+        FuriousSetCalloutRegistered(0, FALSE, 0);
     }
     if (gRedirectHandle != NULL) {
         FwpsRedirectHandleDestroy0(gRedirectHandle);
