@@ -22,7 +22,7 @@ connected but idle local client cannot indefinitely block service shutdown.
 This is an initial authenticated control-channel implementation, not a
 production-ready privileged service. The current automated tests compile the
 Windows x64 service and exercise protocol validation and command dispatch; they
-do not yet perform end-to-end named-pipe token/ACL integration tests. Before
+include an end-to-end local named-pipe STATUS round-trip under the CI runner's authorized identity, but do not yet exercise a separate unprivileged Windows account or all token failure paths. Before
 release it still needs:
 - an installer that creates the service with least-privilege service ACLs;
 - integration tests for allowed and denied client tokens, impersonation failure,
