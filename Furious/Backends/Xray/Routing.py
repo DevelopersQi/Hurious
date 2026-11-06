@@ -34,6 +34,17 @@ __all__ = [
 
 registerAppSettings('XrayApplicationRoutingRules', default='[]')
 
+_PROTECTED_APPLICATION_PROCESSES = {
+    'furious.exe', 'furious', 'xray.exe', 'xray',
+    'hysteria.exe', 'hysteria', 'hysteria2.exe', 'hysteria2',
+    'tun2socks.exe', 'tun2socks',
+}
+
+
+def _isProtectedApplicationProcess(process: str) -> bool:
+    basename = process.replace(chr(92), '/').rsplit('/', 1)[-1].casefold()
+    return basename in _PROTECTED_APPLICATION_PROCESSES
+
 
 
 def cleanRoutingRule(rule: dict):
@@ -139,7 +150,7 @@ def getApplicationRoutingRules():
             continue
 
         process = process.strip().replace(chr(92), '/')
-        if not process or process.casefold() in seen:
+        if not process or _isProtectedApplicationProcess(process) or process.casefold() in seen:
             continue
 
         if outbound not in ('proxy', 'direct'):
