@@ -251,5 +251,23 @@ class TUNSettingsUITest(unittest.TestCase):
                 self.assertIn('Furious.Backends.Hysteria2.TunSettingsDialog', sources)
 
 
+    def test_tun_backend_selection_uses_consistent_radio_indicators(self):
+        source = read_source('Furious/Window/SettingsPage.py')
+        self.assertIn(
+            'QRadioButton#TUNBackendOptionRadio::indicator',
+            source,
+        )
+        self.assertIn(
+            'QRadioButton#TUNBackendOptionRadio::indicator:checked',
+            source,
+        )
+        self.assertIn('border-radius: 8px;', source)
+        self.assertIn('background-color: palette(highlight);', source)
+        self.assertNotIn(
+            'QCheckBox#TUNBackendOptionRadio::indicator',
+            source,
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
