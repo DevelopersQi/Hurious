@@ -934,7 +934,6 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         )
 
         self.generalSection.addCard(self.tunModeCard)
-        self.generalSection.addCard(self.tunBackendCard)
         self.generalSection.addCard(self.applicationThemeCard)
         self.generalSection.addCard(self.languageCard)
         self.generalSection.addCard(self.monochromeCard)
@@ -1043,6 +1042,9 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         if not SystemRuntime.flatpakID():
             self.connectionSection.addCard(self.tunSettingsCard)
 
+        # Keep backend overrides with advanced connection settings; everyday
+        # TUN use only requires the single VPN Mode switch in General.
+        self.connectionSection.addCard(self.tunBackendCard)
         self.connectionSection.addCard(self.systemProxyCard)
         self.connectionSection.addCard(self.proxyBypassCard)
         self.connectionSection.addCard(self.networkTestCard)
