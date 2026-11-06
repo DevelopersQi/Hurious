@@ -390,7 +390,7 @@ jobs:
           path: ${{ runner.temp }}/bindings/wheels
           # Immutable upstream revisions + Python ABI + architecture. Never restore
           # an older binding cache when any input changes.
-          key: furious-native-bindings-windows-${{ runner.arch }}-py${{ matrix.python-version }}-xray-5b1573f-hysteria-99d4f04-hysteria2-f478b08-tun2socks-6b90d77-v1
+          key: furious-native-bindings-${{ matrix.id }}-${{ runner.arch }}-py${{ matrix.python-version }}-xray-5b1573f-hysteria-99d4f04-hysteria2-f478b08-tun2socks-6b90d77-v1
       - name: Build Windows AMD64 bindings from source
         shell: pwsh
         env:
