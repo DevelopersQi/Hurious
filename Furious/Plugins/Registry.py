@@ -1017,6 +1017,24 @@ class PluginRegistry:
 
             return False
 
+        factoryId = str(getattr(factory, 'factoryId', '')).casefold()
+        nativeBackend = {
+            'official.xray': 'xray',
+            'official.hysteria2': 'hysteria2',
+        }.get(factoryId)
+
+        if nativeBackend and backend in ('xray', 'hysteria2') and backend != nativeBackend:
+            if nativeBackend == 'xray':
+                raise TUNPreparationError(
+                    'Hysteria 2 Native TUN is not supported by the selected '
+                    'Xray-core configuration. Select Auto or Xray-core Native TUN.'
+                )
+
+            raise TUNPreparationError(
+                'Xray-core Native TUN is not supported by the selected '
+                'Hysteria 2 configuration. Select Auto or Hysteria 2 Native TUN.'
+            )
+
         try:
             handled = factory.prepareTUNForBackend(_connectionOf(config), backend)
 
