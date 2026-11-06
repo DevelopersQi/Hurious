@@ -18,6 +18,7 @@ DEFINE_GUID(
 
 static BOOLEAN gCalloutRegistered = FALSE;
 static UINT32 gCalloutId = 0;
+static PDEVICE_OBJECT gDeviceObject = NULL;
 
 static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
@@ -64,9 +65,21 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
     if (gCalloutRegistered) {
-        FwpsCalloutUnregisterById0(gCalloutId);
+        NTSTATUS status = FwpsCalloutUnregisterById0(gCalloutId);
+        if (!NT_SUCCESS(status)) {
+            // No filters are installed in this bootstrap driver, so an
+            // unregister failure indicates an unexpected WFP state.
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+                "FuriousWfpCallout: unregister failed: 0x%08X\\n", status);
+            return;
+        }
         gCalloutRegistered = FALSE;
         gCalloutId = 0;
+    }
+
+    if (gDeviceObject != NULL) {
+        IoDeleteDevice(gDeviceObject);
+        gDeviceObject = NULL;
     }
 }
 
@@ -80,14 +93,33 @@ NTSTATUS DriverEntry(
     UNREFERENCED_PARAMETER(registryPath);
     driverObject->DriverUnload = FuriousUnload;
 
+    // FwpsCalloutRegister0 requires a device object created by this driver.
+    // Keep it unnamed: this bootstrap callout exposes no user-mode device API.
+    status = IoCreateDevice(
+        driverObject,
+        0,
+        NULL,
+        FILE_DEVICE_NETWORK,
+        FILE_DEVICE_SECURE_OPEN,
+        FALSE,
+        &gDeviceObject);
+    if (!NT_SUCCESS(status)) {
+        gDeviceObject = NULL;
+        return status;
+    }
+
     callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_V4_CALLOUT;
     callout.classifyFn = FuriousClassify;
     callout.notifyFn = FuriousNotify;
     callout.flowDeleteFn = FuriousFlowDelete;
 
-    status = FwpsCalloutRegister0(driverObject, &callout, &gCalloutId);
+    status = FwpsCalloutRegister0(gDeviceObject, &callout, &gCalloutId);
     if (NT_SUCCESS(status)) {
         gCalloutRegistered = TRUE;
+        return status;
     }
+
+    IoDeleteDevice(gDeviceObject);
+    gDeviceObject = NULL;
     return status;
 }
