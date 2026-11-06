@@ -212,6 +212,38 @@ class ConnectionStartupAsyncTest(TestCase):
             deepcopy=False,
         )
 
+    def testWfpExcludedProcessIdsUseLiveProxyCorePidsOnly(self):
+        """Expose fresh core PIDs while excluding tun2socks and invalid IDs."""
+        manager = self._manager()
+
+        class _PidRuntime:
+            def __init__(self, processId):
+                self.processId = processId
+
+        coreA = _PidRuntime(4321)
+        coreB = _PidRuntime(4321)
+        invalid = _PidRuntime(0)
+        missing = object()
+        tunRuntime = object.__new__(
+            importlib.import_module('Furious.Core.Tun2socks').Tun2socks
+        )
+        tunRuntime.processId = 9876
+
+        manager._leases = [
+            mock.Mock(runtime=coreA),
+            mock.Mock(runtime=coreB),
+            mock.Mock(runtime=invalid),
+            mock.Mock(runtime=missing),
+            mock.Mock(runtime=tunRuntime),
+        ]
+
+        self.assertEqual(manager.wfpExcludedProcessIds, (4321,))
+
+        # The property is a live snapshot, not a cached PID list.
+        coreA.processId = None
+        coreB.processId = 7654
+        self.assertEqual(manager.wfpExcludedProcessIds, (7654,))
+
     def testLocalEndpointReadinessCompletesEarlyAndKeepsQtResponsive(self):
         """Commit as soon as a real listener accepts while timers still run."""
         server = self._server()

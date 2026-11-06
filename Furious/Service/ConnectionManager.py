@@ -1119,6 +1119,28 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Return the backend selected for the current connection lifecycle."""
         return self._activeTUNBackend
 
+    @property
+    def wfpExcludedProcessIds(self):
+        """Return live proxy-core PIDs that must bypass WFP redirection.
+
+        The TUN packet-path runtime is deliberately excluded: it is not the
+        socket-owning proxy core and must not be conflated with Xray or
+        Hysteria2. PID values are sampled on demand so stopped/restarted
+        runtimes cannot leave a cached stale process identifier here.
+        """
+        processIds = set()
+
+        for runtime in self.runtimes:
+            if isinstance(runtime, Tun2socks):
+                continue
+
+            processId = getattr(runtime, 'processId', None)
+
+            if isinstance(processId, int) and processId > 0:
+                processIds.add(processId)
+
+        return tuple(sorted(processIds))
+
     def _connectionDnsResolver(self) -> DnsResolver:
         """Return the resolver owned by this connection-manager lifecycle."""
         if self._dnsResolver is None:
