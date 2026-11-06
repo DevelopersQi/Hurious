@@ -1,7 +1,7 @@
 # WFP callout driver bootstrap
 
-`FuriousWfpCallout.c` is a minimal WDK callout-registration bootstrap for
-`FWPM_LAYER_ALE_AUTH_CONNECT_V4`. It intentionally does not install a WFP filter,
+`FuriousWfpCallout.c` is a minimal WDK callout-registration bootstrap for the IPv4 and IPv6
+`ALE_CONNECT_REDIRECT` layers. It intentionally does not install a WFP filter,
 block traffic, redirect sockets, or communicate with a user-mode process.
 
 The source includes the kernel and NDIS headers before FWPS headers, matching the WDK WFP callout sample header dependencies. The project does not redefine compiler-reserved kernel macros.
