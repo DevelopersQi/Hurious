@@ -46,6 +46,19 @@ int main() {
     request.RequestId = 42;
 
     CHECK(ValidateRequest(&request, sizeof(request)) == ValidationResult::Valid);
+
+    std::array<uint8_t, sizeof(FURIOUS_WFP_IPC_HEADER) +
+                        sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG)> endpointRequestBytes = {};
+    auto endpointRequest = request;
+    endpointRequest.Command = FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG;
+    endpointRequest.TotalSize = static_cast<uint32_t>(endpointRequestBytes.size());
+    std::memcpy(endpointRequestBytes.data(), &endpointRequest, sizeof(endpointRequest));
+    CHECK(ValidateRequest(
+        endpointRequestBytes.data(), endpointRequestBytes.size()) == ValidationResult::Valid);
+    endpointRequest.Command = FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG;
+    endpointRequest.TotalSize = sizeof(FURIOUS_WFP_IPC_HEADER);
+    CHECK(ValidateRequest(
+        &endpointRequest, sizeof(endpointRequest)) == ValidationResult::Valid);
     CHECK(ValidateRequest(nullptr, sizeof(request)) == ValidationResult::NullMessage);
     CHECK(ValidateRequest(&request, sizeof(request) - 1) == ValidationResult::MessageTooSmall);
 
@@ -77,6 +90,14 @@ int main() {
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS, nullptr, 0) == ERROR_SUCCESS);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY, nullptr, 0) == ERROR_INVALID_DATA);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          nullptr, 0) == ERROR_INVALID_DATA);
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG invalidEndpointPayload = {};
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &invalidEndpointPayload, sizeof(invalidEndpointPayload)) ==
+          ERROR_INVALID_PARAMETER);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG,
+                          &invalidEndpointPayload, 1) == ERROR_INVALID_PARAMETER);
     CHECK(DispatchCommand(0xFFFFFFFFu, nullptr, 0) == ERROR_INVALID_FUNCTION);
 
     using furious::wfp::policy::ValidatePolicy;

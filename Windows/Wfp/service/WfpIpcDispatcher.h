@@ -116,6 +116,20 @@ inline DWORD DispatchCommand(uint32_t command,
         FURIOUS_WFP_DRIVER_STATUS status = {};
         return furious::wfp::driver::QueryStatus(&status);
     }
+    case FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG: {
+        if (payload == nullptr ||
+            payloadSize != sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG)) {
+            return ERROR_INVALID_DATA;
+        }
+        FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG config = {};
+        std::memcpy(&config, payload, sizeof(config));
+        return furious::wfp::driver::SetEndpointConfig(config);
+    }
+    case FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG:
+        if (payloadSize != 0) {
+            return ERROR_INVALID_PARAMETER;
+        }
+        return furious::wfp::driver::ClearEndpointConfig();
     case FURIOUS_WFP_IPC_COMMAND_SET_POLICY:
         if (payload == nullptr || payloadSize == 0) {
             return ERROR_INVALID_DATA;
