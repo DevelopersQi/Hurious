@@ -252,6 +252,10 @@ class RuntimeLifecycleTest(TestCase):
             self.assertIs(runtime.state, RuntimeState.Alive)
             self.assertTrue(runtime.isRunning())
             runtime._output.putMessage('tun2socks: failed to create Wintun adapter')
+            # multiprocessing.Queue uses an asynchronous feeder thread; wait
+            # until the parent-side pipe has the message before simulating the
+            # child exit, otherwise this fixture races the queue transport.
+            self.assertTrue(waitFor(lambda: runtime._output._reader.poll()))
 
             runtime._pollProcess()
             runtime._pollProcess()
