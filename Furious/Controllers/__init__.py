@@ -29,6 +29,7 @@ from .SettingsController import (
     LOG_AUTO_SCROLL_DOWN_SETTING,
     PROXY_ENDPOINT_INFO_SETTING,
     SYSTEM_PROXY_MODE_OPTIONS,
+    TUN_BACKEND_OPTIONS,
     SettingsController,
 )
 
@@ -38,6 +39,7 @@ __all__ = [
     'LOG_AUTO_SCROLL_DOWN_SETTING',
     'PROXY_ENDPOINT_INFO_SETTING',
     'SYSTEM_PROXY_MODE_OPTIONS',
+    'TUN_BACKEND_OPTIONS',
     'ConnectionController',
     'ConnectionError',
     'ConnectionState',
