@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from Furious.Frozenlib import *
+from Furious.Qt.DynamicTranslate import gettext as _
 from Furious.Core import *
 from Furious.Repository import *
 from Furious.Plugins.API import *
@@ -201,6 +202,14 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
 
         if backend == 'auto':
             return self.prepareTUN(config)
+
+        if backend == 'hysteria2':
+            raise TUNPreparationError(
+                _(
+                    'Hysteria 2 Native TUN is not supported by the selected '
+                    'Xray-core configuration. Select Auto or Xray-core Native TUN.'
+                )
+            )
 
         if backend == 'xray':
             if hasXrayTUNInbound(config):
