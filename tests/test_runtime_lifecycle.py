@@ -19,6 +19,7 @@
 
 from Furious.Core import MultiprocessingRuntime, ProcessLaunchSpec
 from Furious.Core.Tun2socks import Tun2socks
+from Furious.Core.ProcessOutput import ProcessOutputRedirector
 from Furious.Interface import (
     CoreRuntime,
     RuntimeExitReason,
@@ -35,6 +36,9 @@ from unittest import TestCase, mock
 
 import threading
 import weakref
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Event
 
 
 class _Runtime(CoreRuntime):
@@ -99,6 +103,32 @@ class RuntimeLifecycleTest(TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = application()
+
+    def testProducerFlushesFinalCoreOutputAfterWriterCloses(self):
+        """Forward final stderr lines even when the core exits between polls."""
+        with TemporaryDirectory() as directory:
+            temporaryFile = Path(directory) / 'core-output.log'
+            temporaryFile.write_bytes(
+                b'tun2socks: initializing Wintun adapter\\n'
+                b'tun2socks: failed to create Wintun adapter\\n'
+            )
+            finished = Event()
+            finished.set()
+            msgQueue = mock.Mock()
+
+            ProcessOutputRedirector._produceMessages(
+                msgQueue,
+                str(temporaryFile),
+                finished,
+            )
+
+        self.assertEqual(
+            [call.args[0] for call in msgQueue.putMessage.call_args_list],
+            [
+                'tun2socks: initializing Wintun adapter\\n',
+                'tun2socks: failed to create Wintun adapter\\n',
+            ],
+        )
 
     def testWatcherThreadExitIsConsumedOnRouterQtThread(self):
         """Queue a worker-thread publication onto the Qt owner's thread."""
