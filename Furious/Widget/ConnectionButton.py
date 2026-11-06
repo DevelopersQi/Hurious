@@ -97,7 +97,12 @@ class ConnectionButton(AppQPushButton):
         state = self.controller.state
 
         if state is ConnectionState.Disconnected:
-            if self._selectionCount != 1 or not self.activateSelected():
+            # With no highlighted row, connect the currently activated profile.
+            # A single selected row is first made active; multiple rows remain
+            # disabled by syncPresentation().
+            if self._selectionCount == 1 and not self.activateSelected():
+                return
+            if self._selectionCount > 1:
                 return
 
             self.controller.toggle()
