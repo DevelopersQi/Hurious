@@ -896,7 +896,11 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self.pageTitleLabel.setObjectName('SettingsPageTitle')
 
         self.generalSection = _SettingsSection(_('General'))
-        self.connectionSection = _SettingsSection(_('Connection and Interface'))
+        self.connectionSection = _SettingsSection(_('Connection'))
+        self.routingSection = _SettingsSection(_('Routing Rules'))
+        self.networkSection = _SettingsSection(_('Network'))
+        self.privacySection = _SettingsSection(_('Privacy and Statistics'))
+        self.advancedSection = _SettingsSection(_('Advanced'))
         self.applicationSection = _SettingsSection(_('Application'))
         self.pluginSettingsTitleLabel = AppQLabel(_('Plugin Settings'))
         self.pluginSettingsTitleLabel.setObjectName('SettingsSectionTitle')
@@ -965,7 +969,6 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             ),
         )
 
-        self.generalSection.addCard(self.tunModeCard)
         self.generalSection.addCard(self.applicationThemeCard)
         self.generalSection.addCard(self.languageCard)
         self.generalSection.addCard(self.monochromeCard)
@@ -1074,9 +1077,11 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         if not SystemRuntime.flatpakID():
             self.connectionSection.addCard(self.tunSettingsCard)
 
-        # Keep backend overrides with advanced connection settings; everyday
-        # TUN use only requires the single VPN Mode switch in General.
+        # Keep each settings domain in its own concise category.
+        self.connectionSection.addCard(self.tunModeCard)
         self.connectionSection.addCard(self.tunBackendCard)
+        self.connectionSection.addCard(self.systemProxyCard)
+
         self.customRoutingCard = None
         if callable(self._openRoutingEditor):
             self.customRoutingCard = _ActionSettingsCard(
@@ -1090,16 +1095,18 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 ),
                 _('Configure'),
             )
-            self.connectionSection.addCard(self.customRoutingCard)
-        self.connectionSection.addCard(self.systemProxyCard)
-        self.connectionSection.addCard(self.proxyBypassCard)
-        self.connectionSection.addCard(self.networkTestCard)
-        self.connectionSection.addCard(self.forceLocalhostCard)
-        self.connectionSection.addCard(self.connectionProgressCard)
-        self.connectionSection.addCard(self.metricsCollectionCard)
-        self.connectionSection.addCard(self.endpointInfoCard)
-        self.connectionSection.addCard(self.clearTrafficUsageCard)
-        self.connectionSection.addCard(self.editorWhitespaceCard)
+            self.routingSection.addCard(self.customRoutingCard)
+        self.routingSection.addCard(self.proxyBypassCard)
+
+        self.networkSection.addCard(self.networkTestCard)
+        self.networkSection.addCard(self.forceLocalhostCard)
+        self.networkSection.addCard(self.connectionProgressCard)
+
+        self.privacySection.addCard(self.metricsCollectionCard)
+        self.privacySection.addCard(self.endpointInfoCard)
+        self.privacySection.addCard(self.clearTrafficUsageCard)
+
+        self.advancedSection.addCard(self.editorWhitespaceCard)
 
         if SystemRuntime.isAssetsFolderWritable():
             self.autoAssetsCard = _ToggleSettingsCard(
@@ -1109,7 +1116,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 _('Automatically Update Asset Files'),
                 _('Keep supported proxy-core data files up to date.'),
             )
-            self.connectionSection.addCard(self.autoAssetsCard)
+            self.advancedSection.addCard(self.autoAssetsCard)
         else:
             self.autoAssetsCard = None
 
@@ -1146,7 +1153,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 _('Restart with privileges required by system-level networking.'),
                 _('Restart'),
             )
-            self.generalSection.addCard(self.restartCard)
+            self.applicationSection.addCard(self.restartCard)
         else:
             self.restartCard = None
 
@@ -1158,7 +1165,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 _('Open the folder containing the current application.'),
                 _('Open'),
             )
-            self.generalSection.addCard(self.openFolderCard)
+            self.applicationSection.addCard(self.openFolderCard)
         else:
             self.openFolderCard = None
 
@@ -1167,28 +1174,67 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
 
         contentLayout = QVBoxLayout(contentWidget)
         contentLayout.setContentsMargins(20, 18, 20, 24)
-        contentLayout.setSpacing(22)
+        contentLayout.setSpacing(14)
         contentLayout.addWidget(self.pageTitleLabel)
-        contentLayout.addWidget(self.generalSection)
-        contentLayout.addWidget(self.connectionSection)
+
+        self.categoryTabs = QTabWidget()
+        self.categoryTabs.setObjectName('SettingsCategoryTabs')
+        self.categoryTabs.setTabPosition(QTabWidget.TabPosition.West)
+        self.categoryTabs.setDocumentMode(True)
+        self.categoryTabs.setMovable(False)
+
+        categories = (
+            (_('General'), (self.generalSection,)),
+            (_('Connection'), (self.connectionSection,)),
+            (_('Routing Rules'), (self.routingSection,)),
+            (_('Network'), (self.networkSection,)),
+            (_('Privacy and Statistics'), (self.privacySection,)),
+            (_('Advanced'), (self.advancedSection,)),
+            (_('Application'), (self.applicationSection,)),
+        )
+        for title, sections in categories:
+            self.categoryTabs.addTab(
+                self._categoryScrollPage(sections),
+                title,
+            )
 
         if self.pluginSections:
-            contentLayout.addWidget(self.pluginSettingsTitleLabel)
-
+            pluginPage = QWidget()
+            pluginLayout = QVBoxLayout(pluginPage)
+            pluginLayout.setContentsMargins(16, 12, 16, 16)
+            pluginLayout.setSpacing(18)
+            pluginLayout.addWidget(self.pluginSettingsTitleLabel)
             for section in self.pluginSections:
-                contentLayout.addWidget(section)
+                pluginLayout.addWidget(section)
+            pluginLayout.addStretch(1)
+            pluginScroll = QScrollArea()
+            pluginScroll.setWidgetResizable(True)
+            pluginScroll.setFrameShape(QFrame.Shape.NoFrame)
+            pluginScroll.setWidget(pluginPage)
+            self.categoryTabs.addTab(pluginScroll, _('Plugins'))
 
-        contentLayout.addWidget(self.applicationSection)
-        contentLayout.addStretch(1)
-
-        self.scrollArea = QScrollArea()
-        self.scrollArea.setObjectName('SettingsScrollArea')
-        self.scrollArea.setWidgetResizable(True)
-        self.scrollArea.setFrameShape(QFrame.Shape.NoFrame)
-        self.scrollArea.setWidget(contentWidget)
-        self.setCentralWidget(self.scrollArea)
+        contentLayout.addWidget(self.categoryTabs, 1)
+        self.setCentralWidget(contentWidget)
 
         self.retranslate()
+
+    @staticmethod
+    def _categoryScrollPage(sections):
+        """Create an independently scrollable settings category."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(18)
+        for section in sections:
+            layout.addWidget(section)
+        layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setObjectName('SettingsCategoryScrollArea')
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        return scroll
 
     @staticmethod
     def _translatedPluginText(value: str, translatable: bool) -> str:
