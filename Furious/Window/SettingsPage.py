@@ -383,7 +383,7 @@ class _LineEditSettingsCard(_SettingsCard):
         self.lineEdit = AppQLineEdit(translatable=False)
         self.lineEdit.setObjectName('SettingsLineEdit')
         self.lineEdit.setMaximumWidth(420)
-        self.lineEdit.setMinimumWidth(260)
+        self.lineEdit.setMinimumWidth(180)
         self.lineEdit.setPlaceholderText(placeholder)
         self.lineEdit.setText(str(AppSettings.get(settingName) or ''))
 
@@ -477,7 +477,7 @@ class _ApplicationThemeSettingsCard(_SettingsCard):
         self.comboBox = AppQComboBox()
         self.comboBox.setObjectName('SettingsComboBox')
         self.comboBox.setContentWidthAdjustable()
-        self.comboBox.setMinimumWidth(260)
+        self.comboBox.setMinimumWidth(190)
 
         for label, preference in self.Options:
             self.comboBox.addItem(_(label), preference.value)
@@ -1173,15 +1173,54 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         contentWidget.setObjectName('SettingsPageContent')
 
         contentLayout = QVBoxLayout(contentWidget)
-        contentLayout.setContentsMargins(20, 18, 20, 24)
-        contentLayout.setSpacing(14)
+        contentLayout.setContentsMargins(18, 16, 18, 20)
+        contentLayout.setSpacing(12)
         contentLayout.addWidget(self.pageTitleLabel)
 
-        self.categoryTabs = QTabWidget()
-        self.categoryTabs.setObjectName('SettingsCategoryTabs')
-        self.categoryTabs.setTabPosition(QTabWidget.TabPosition.West)
-        self.categoryTabs.setDocumentMode(True)
-        self.categoryTabs.setMovable(False)
+        navigation = QHBoxLayout()
+        navigation.setContentsMargins(0, 0, 0, 0)
+        navigation.setSpacing(14)
+
+        self.categoryList = QListWidget()
+        self.categoryList.setObjectName('SettingsCategoryList')
+        self.categoryList.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.categoryList.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.categoryList.setVerticalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.categoryList.setMinimumWidth(142)
+        self.categoryList.setMaximumWidth(190)
+        self.categoryList.setSpacing(4)
+        self.categoryList.setUniformItemSizes(True)
+        self.categoryList.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.categoryList.setStyleSheet(
+            'QListWidget#SettingsCategoryList {'
+            ' border: 1px solid palette(midlight);'
+            ' border-radius: 9px;'
+            ' background: palette(alternate-base);'
+            ' padding: 6px;'
+            '}'
+            'QListWidget#SettingsCategoryList::item {'
+            ' min-height: 38px;'
+            ' padding: 5px 10px;'
+            ' border-radius: 6px;'
+            ' color: palette(text);'
+            '}'
+            'QListWidget#SettingsCategoryList::item:hover {'
+            ' background: palette(midlight);'
+            '}'
+            'QListWidget#SettingsCategoryList::item:selected {'
+            ' background: palette(highlight);'
+            ' color: palette(highlighted-text);'
+            ' font-weight: 600;'
+            '}'
+        )
+
+        self.categoryStack = QStackedWidget()
+        self.categoryStack.setObjectName('SettingsCategoryStack')
+        self.categoryStack.setMinimumWidth(0)
 
         categories = (
             ('General', (self.generalSection,)),
@@ -1194,10 +1233,8 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         )
         self._categoryTitles = [title for title, _sections in categories]
         for title, sections in categories:
-            self.categoryTabs.addTab(
-                self._categoryScrollPage(sections),
-                _(title),
-            )
+            self.categoryList.addItem(_(title))
+            self.categoryStack.addWidget(self._categoryScrollPage(sections))
 
         if self.pluginSections:
             pluginPage = QWidget()
@@ -1209,14 +1246,23 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 pluginLayout.addWidget(section)
             pluginLayout.addStretch(1)
             pluginScroll = QScrollArea()
+            pluginScroll.setObjectName('SettingsCategoryScrollArea')
             pluginScroll.setWidgetResizable(True)
             pluginScroll.setFrameShape(QFrame.Shape.NoFrame)
             pluginScroll.setWidget(pluginPage)
-            self._pluginCategoryIndex = self.categoryTabs.addTab(pluginScroll, _('Plugins'))
+            self._pluginCategoryIndex = self.categoryList.count()
+            self.categoryList.addItem(_('Plugins'))
+            self.categoryStack.addWidget(pluginScroll)
         else:
             self._pluginCategoryIndex = None
 
-        contentLayout.addWidget(self.categoryTabs, 1)
+        self.categoryList.currentRowChanged.connect(
+            self.categoryStack.setCurrentIndex
+        )
+        self.categoryList.setCurrentRow(0)
+        navigation.addWidget(self.categoryList)
+        navigation.addWidget(self.categoryStack, 1)
+        contentLayout.addLayout(navigation, 1)
         self.setCentralWidget(contentWidget)
 
         self.retranslate()
@@ -1487,10 +1533,17 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
 
         self.languageCard.sync()
 
+    def resizeEvent(self, event):
+        """Keep the category rail usable while preserving room for controls."""
+        super().resizeEvent(event)
+        if hasattr(self, 'categoryList'):
+            width = 148 if self.width() < 900 else 176
+            self.categoryList.setFixedWidth(width)
+
     def retranslate(self):
         """Synchronize page-level dynamic state after a language change."""
         self.languageCard.sync()
         for index, title in enumerate(self._categoryTitles):
-            self.categoryTabs.setTabText(index, _(title))
+            self.categoryList.item(index).setText(_(title))
         if self._pluginCategoryIndex is not None:
-            self.categoryTabs.setTabText(self._pluginCategoryIndex, _('Plugins'))
+            self.categoryList.item(self._pluginCategoryIndex).setText(_('Plugins'))
