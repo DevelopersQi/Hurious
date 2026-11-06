@@ -16,9 +16,19 @@ C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 40);
 C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64);
 
 DEFINE_GUID(
-    FURIOUS_WFP_ALE_CONNECT_V4_CALLOUT,
+    FURIOUS_WFP_ALE_CONNECT_REDIRECT_V4_CALLOUT,
     0x7c0f8c33, 0x3f1b, 0x4e83,
     0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x03);
+
+DEFINE_GUID(
+    FURIOUS_WFP_ALE_CONNECT_REDIRECT_V6_CALLOUT,
+    0x7c0f8c35, 0x3f1b, 0x4e83,
+    0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x05);
+
+DEFINE_GUID(
+    FURIOUS_WFP_PROVIDER_KEY,
+    0x7c0f8c31, 0x3f1b, 0x4e83,
+    0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x01);
 
 DEFINE_GUID(
     FURIOUS_WFP_DEVICE_CLASS_GUID,
@@ -32,9 +42,12 @@ static const UNICODE_STRING gSymbolicLink =
 static const UNICODE_STRING gDeviceSddl =
     RTL_CONSTANT_STRING(L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
 
-static BOOLEAN gCalloutRegistered = FALSE;
+#define FURIOUS_WFP_CALLOUT_COUNT 2
+
+static BOOLEAN gCalloutsRegistered[FURIOUS_WFP_CALLOUT_COUNT] = { FALSE, FALSE };
 static BOOLEAN gSymbolicLinkCreated = FALSE;
-static UINT32 gCalloutId = 0;
+static UINT32 gCalloutIds[FURIOUS_WFP_CALLOUT_COUNT] = { 0, 0 };
+static HANDLE gRedirectHandle = NULL;
 static PDEVICE_OBJECT gDeviceObject = NULL;
 
 static NTSTATUS NTAPI FuriousCreateClose(
@@ -68,7 +81,7 @@ static NTSTATUS NTAPI FuriousDeviceControl(
         RtlZeroMemory(output, sizeof(*output));
         output->Size = sizeof(*output);
         output->Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
-        output->Flags = gCalloutRegistered
+        output->Flags = (gCalloutsRegistered[0] && gCalloutsRegistered[1])
             ? FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED : 0;
         status = STATUS_SUCCESS;
         information = sizeof(*output);
@@ -87,7 +100,7 @@ static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
     const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
     VOID* layerData,
-    const FWPS_FILTER0* filter,
+    const FWPS_FILTER1* filter,
     UINT64 flowContext,
     FWPS_CLASSIFY_OUT0* classifyOut)
 {
@@ -106,7 +119,7 @@ static VOID NTAPI FuriousClassify(
 static NTSTATUS NTAPI FuriousNotify(
     FWPS_CALLOUT_NOTIFY_TYPE notifyType,
     const GUID* filterKey,
-    const FWPS_FILTER0* filter)
+    const FWPS_FILTER1* filter)
 {
     UNREFERENCED_PARAMETER(notifyType);
     UNREFERENCED_PARAMETER(filterKey);
@@ -127,22 +140,31 @@ static VOID NTAPI FuriousFlowDelete(
 static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
-    if (gCalloutRegistered) {
-        NTSTATUS status;
-        LARGE_INTEGER retryDelay;
-        retryDelay.QuadPart = -1000000;
-        for (;;) {
-            status = FwpsCalloutUnregisterById0(gCalloutId);
-            if (status == STATUS_SUCCESS ||
-                status == STATUS_FWP_CALLOUT_NOT_FOUND) {
-                break;
+    {
+        ULONG index;
+        for (index = 0; index < FURIOUS_WFP_CALLOUT_COUNT; ++index) {
+            if (gCalloutsRegistered[index]) {
+                NTSTATUS status;
+                LARGE_INTEGER retryDelay;
+                retryDelay.QuadPart = -1000000;
+                for (;;) {
+                    status = FwpsCalloutUnregisterById0(gCalloutIds[index]);
+                    if (status == STATUS_SUCCESS ||
+                        status == STATUS_FWP_CALLOUT_NOT_FOUND) {
+                        break;
+                    }
+                    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+                        "FuriousWfpCallout: unregister retry, status=0x%08X\\n", status);
+                    KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
+                }
+                gCalloutsRegistered[index] = FALSE;
+                gCalloutIds[index] = 0;
             }
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                "FuriousWfpCallout: unregister retry, status=0x%08X\\n", status);
-            KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
         }
-        gCalloutRegistered = FALSE;
-        gCalloutId = 0;
+    }
+    if (gRedirectHandle != NULL) {
+        FwpsRedirectHandleDestroy0(gRedirectHandle);
+        gRedirectHandle = NULL;
     }
 
     if (gSymbolicLinkCreated) {
@@ -159,7 +181,7 @@ NTSTATUS DriverEntry(
     _In_ PDRIVER_OBJECT driverObject,
     _In_ PUNICODE_STRING registryPath)
 {
-    FWPS_CALLOUT0 callout = { 0 };
+    FWPS_CALLOUT1 callout = { 0 };
     NTSTATUS status;
     UNREFERENCED_PARAMETER(registryPath);
 
@@ -193,18 +215,42 @@ NTSTATUS DriverEntry(
     }
     gSymbolicLinkCreated = TRUE;
 
-    callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_V4_CALLOUT;
+    status = FwpsRedirectHandleCreate0(
+        &FURIOUS_WFP_PROVIDER_KEY, 0, &gRedirectHandle);
+    if (!NT_SUCCESS(status)) {
+        IoDeleteSymbolicLink((PUNICODE_STRING)&gSymbolicLink);
+        gSymbolicLinkCreated = FALSE;
+        IoDeleteDevice(gDeviceObject);
+        gDeviceObject = NULL;
+        return status;
+    }
+
     callout.classifyFn = FuriousClassify;
     callout.notifyFn = FuriousNotify;
     callout.flowDeleteFn = FuriousFlowDelete;
 
-    status = FwpsCalloutRegister0(gDeviceObject, &callout, &gCalloutId);
+    callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_REDIRECT_V4_CALLOUT;
+    status = FwpsCalloutRegister1(gDeviceObject, &callout, &gCalloutIds[0]);
     if (NT_SUCCESS(status)) {
-        gCalloutRegistered = TRUE;
-        gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-        return status;
+        gCalloutsRegistered[0] = TRUE;
+        callout.calloutKey = FURIOUS_WFP_ALE_CONNECT_REDIRECT_V6_CALLOUT;
+        status = FwpsCalloutRegister1(gDeviceObject, &callout, &gCalloutIds[1]);
+        if (NT_SUCCESS(status)) {
+            gCalloutsRegistered[1] = TRUE;
+            gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
+            return STATUS_SUCCESS;
+        }
     }
 
+    if (gCalloutsRegistered[0]) {
+        FwpsCalloutUnregisterById0(gCalloutIds[0]);
+        gCalloutsRegistered[0] = FALSE;
+        gCalloutIds[0] = 0;
+    }
+    if (gRedirectHandle != NULL) {
+        FwpsRedirectHandleDestroy0(gRedirectHandle);
+        gRedirectHandle = NULL;
+    }
     IoDeleteSymbolicLink((PUNICODE_STRING)&gSymbolicLink);
     gSymbolicLinkCreated = FALSE;
     IoDeleteDevice(gDeviceObject);
