@@ -334,7 +334,13 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
 
         # Application process rules are evaluated before domain/IP rules so an
         # explicit per-app choice wins regardless of the selected global profile.
-        appRules = applicationRoutingRulesObject()
+        appRules = (
+            applicationRoutingRulesObject()
+            if PLATFORM == 'Windows'
+            and SystemRuntime.isTUNMode()
+            and hasXrayTUNInbound(config)
+            else []
+        )
         if appRules:
             if not isinstance(routingObject, dict):
                 routingObject = {}
