@@ -53,6 +53,19 @@ __all__ = ['SettingsPage']
 
 logger = logging.getLogger(__name__)
 
+# Static translation keys for the radio labels and helper text, which are
+# rendered by native QRadioButton widgets rather than AppQLabel.
+_TUN_BACKEND_TRANSLATIONS = (
+    _('Auto (Recommended)'),
+    _('Use native TUN when supported; otherwise use Tun2socks.'),
+    _('Tun2socks'),
+    _('Compatibility mode using the Tun2socks adapter.'),
+    _('Xray-core Native TUN'),
+    _('Use Xray-core built-in TUN.'),
+    _('Hysteria 2 Native TUN'),
+    _('Use Hysteria 2 built-in TUN.'),
+)
+
 
 def _endpointPrivacyParagraphs():
     """Return concise translated disclosure text for the current providers."""
