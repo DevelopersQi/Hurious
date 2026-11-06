@@ -29,18 +29,24 @@ from Furious.Core import (
 import time
 import functools
 import multiprocessing
+import logging
 
 __all__ = ['Tun2socks']
+
+logger = logging.getLogger(__name__)
 
 
 def startTun2socks(msgQueue: multiprocessing.Queue, *args):
     """Start tun2socks."""
     try:
         import tun2socks
-    except ImportError:
-        # Fake running process
-        while True:
-            time.sleep(3600)
+    except ImportError as ex:
+        # A missing native binding must fail visibly instead of pretending that
+        # a TUN device is running until the host-side readiness check times out.
+        message = f'failed to import tun2socks: {ex}'
+        logger.exception(message)
+        msgQueue.putMessage(message)
+        raise
     else:
         if versionToValue(tun2socks.__version__) <= versionToValue('2.5.1.1'):
             redirect = False
@@ -91,10 +97,11 @@ class Tun2socks(MultiprocessingRuntime):
                     networkInterface,
                     logLevel,
                     proxy,
+                    # The pinned Python binding exposes exactly five
+                    # startFromArgs parameters. Buffer tuning values remain
+                    # accepted by this wrapper for compatibility with callers,
+                    # but are not part of the native binding API.
                     restAPI,
-                    tcpSendBufferSize,
-                    tcpReceiveBufferSize,
-                    tcpAutoTuning,
                 ),
                 processOptions=kwargs.pop('processOptions', {}),
             ),
