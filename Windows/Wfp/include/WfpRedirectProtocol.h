@@ -6,7 +6,19 @@
 // SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT and must also preserve redirect
 // records on any proxy-created outbound socket.
 
+#if defined(FURIOUS_WFP_KERNEL_MODE)
+#include <ntdef.h>
+typedef UCHAR FURIOUS_WFP_U8;
+typedef USHORT FURIOUS_WFP_U16;
+typedef ULONG FURIOUS_WFP_U32;
+typedef ULONGLONG FURIOUS_WFP_U64;
+#else
 #include <stdint.h>
+typedef uint8_t FURIOUS_WFP_U8;
+typedef uint16_t FURIOUS_WFP_U16;
+typedef uint32_t FURIOUS_WFP_U32;
+typedef uint64_t FURIOUS_WFP_U64;
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,35 +41,35 @@ extern "C" {
 
 #pragma pack(push, 1)
 typedef struct FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG {
-    uint32_t Size;
-    uint32_t AbiVersion;
-    uint32_t Backend;
-    uint32_t Flags;
-    uint32_t ProxyProcessId;
-    uint32_t Reserved0;
-    uint64_t PolicyGeneration;
-    uint16_t TcpPortV4; // host byte order; loopback address is 127.0.0.1
-    uint16_t UdpPortV4; // host byte order; loopback address is 127.0.0.1
-    uint16_t TcpPortV6; // host byte order; loopback address is ::1
-    uint16_t UdpPortV6; // host byte order; loopback address is ::1
+    FURIOUS_WFP_U32 Size;
+    FURIOUS_WFP_U32 AbiVersion;
+    FURIOUS_WFP_U32 Backend;
+    FURIOUS_WFP_U32 Flags;
+    FURIOUS_WFP_U32 ProxyProcessId;
+    FURIOUS_WFP_U32 Reserved0;
+    FURIOUS_WFP_U64 PolicyGeneration;
+    FURIOUS_WFP_U16 TcpPortV4; // host byte order; loopback address is 127.0.0.1
+    FURIOUS_WFP_U16 UdpPortV4; // host byte order; loopback address is 127.0.0.1
+    FURIOUS_WFP_U16 TcpPortV6; // host byte order; loopback address is ::1
+    FURIOUS_WFP_U16 UdpPortV6; // host byte order; loopback address is ::1
 } FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG;
 
 // This structure is opaque to WFP and is returned to the local proxy through
 // SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT. Address bytes and port are in
 // network byte order; IPv4 uses the first four address bytes.
 typedef struct FURIOUS_WFP_REDIRECT_CONTEXT {
-    uint32_t Magic;
-    uint32_t Size;
-    uint16_t AbiVersion;
-    uint16_t AddressFamily;
-    uint8_t Protocol;
-    uint8_t Flags;
-    uint16_t OriginalPortNetworkOrder;
-    uint8_t OriginalAddress[16];
-    uint32_t OriginalProcessId;
-    uint32_t RulePriority;
-    uint64_t PolicyGeneration;
-    uint32_t Reserved[4];
+    FURIOUS_WFP_U32 Magic;
+    FURIOUS_WFP_U32 Size;
+    FURIOUS_WFP_U16 AbiVersion;
+    FURIOUS_WFP_U16 AddressFamily;
+    FURIOUS_WFP_U8 Protocol;
+    FURIOUS_WFP_U8 Flags;
+    FURIOUS_WFP_U16 OriginalPortNetworkOrder;
+    FURIOUS_WFP_U8 OriginalAddress[16];
+    FURIOUS_WFP_U32 OriginalProcessId;
+    FURIOUS_WFP_U32 RulePriority;
+    FURIOUS_WFP_U64 PolicyGeneration;
+    FURIOUS_WFP_U32 Reserved[4];
 } FURIOUS_WFP_REDIRECT_CONTEXT;
 #pragma pack(pop)
 
@@ -65,7 +77,7 @@ typedef struct FURIOUS_WFP_REDIRECT_CONTEXT {
 }
 #endif
 
-#ifdef __cplusplus
+#if defined(__cplusplus) && !defined(FURIOUS_WFP_KERNEL_MODE)
 #include <cstddef>
 
 namespace furious::wfp::redirect {
@@ -121,7 +133,7 @@ inline bool IsValidRedirectContext(
         value.Flags != 0) {
         return false;
     }
-    for (uint32_t reserved : value.Reserved) {
+    for (FURIOUS_WFP_U32 reserved : value.Reserved) {
         if (reserved != 0) {
             return false;
         }
