@@ -83,6 +83,32 @@ class TUNSettingsUITest(unittest.TestCase):
                     )
                     self.assertIn('_singleColumnFormLayout', method_source)
 
+    def test_tun2socks_basic_and_memory_groups_share_wrapped_layout(self):
+        source = read_source('Furious/Window/TunSettingsDialog.py')
+        tree = ast.parse(source)
+        classes = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
+        }
+
+        for class_name in (
+            'GuiTUNSettingsGroupBoxBasic',
+            'GuiTUNSettingsGroupBoxMemory',
+        ):
+            with self.subTest(group=class_name):
+                methods = [
+                    node
+                    for node in classes[class_name].body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == 'setupPageLayout'
+                ]
+                self.assertEqual(len(methods), 1)
+                method_source = ast.get_source_segment(source, methods[0])
+                self.assertIn('QFormLayout.RowWrapPolicy.WrapAllRows', method_source)
+
+        self.assertIn('if isinstance(inputWidget, QLineEdit)', source)
+
     def test_native_tun_forms_do_not_disable_label_translation(self):
         hysteria = read_source('Furious/Backends/Hysteria2/TunSettingsDialog.py')
         self.assertNotIn('translatable=False', hysteria)
