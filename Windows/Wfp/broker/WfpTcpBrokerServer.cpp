@@ -282,8 +282,12 @@ void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
         {
             std::lock_guard<std::mutex> lock(activeMutex_);
             if (!stopping_.load()) {
-                activeSockets_.insert(upstream);
-                keep = true;
+                try {
+                    activeSockets_.insert(upstream);
+                    keep = true;
+                } catch (...) {
+                    keep = false;
+                }
             }
         }
         if (keep) {
