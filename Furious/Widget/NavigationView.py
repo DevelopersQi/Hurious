@@ -396,8 +396,13 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
         return self._navigationWidth
 
     def _setNavigationWidth(self, width: int):
-        """Apply an animated overlay width without resizing the page stack."""
+        """Resize the navigation reservation and panel together."""
         self._navigationWidth = int(width)
+
+        # The rail participates in the horizontal layout. Keeping its width in
+        # sync with the panel makes the page stack yield space instead of
+        # remaining underneath an expanded navigation overlay.
+        self.navigationRail.setFixedWidth(self._navigationWidth)
 
         self.navigationPanel.setGeometry(
             0,
@@ -469,7 +474,8 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
         """Refresh navigation icons for the active theme."""
         iconFactory = self._iconFactory(theme)
 
-        self.toggleButton.setIcon(iconFactory('list.svg'))
+        toggleIcon = 'chevron-bar-left.svg' if self._expanded else 'chevron-bar-right.svg'
+        self.toggleButton.setIcon(iconFactory(toggleIcon))
 
         for page in self._pages.values():
             self._updatePageIcon(page, theme)
