@@ -18,12 +18,8 @@
 name: Daily matrix build
 
 on:
-  push:
-    branches:
-      - integrate/native-bindings-forks
-      - fix/windows-startup-smoke-test
-      - fix/windows-native-session-notifications
-      - feat/auto-detect-tun-network
+  # Full packaging is intentionally opt-in (or scheduled). Every push is
+  # covered by the lightweight quick-validation workflow instead.
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
     - cron: '17 2 * * *'
