@@ -43,15 +43,22 @@ class _Win32Session:
 
     @staticmethod
     def _loadModule():
-        """Load the optional native Windows session integration."""
+        """Load the native Windows session integration."""
         try:
             import win32session
         except ImportError:
-            logger.warning(
-                'win32session native extension is unavailable; '
-                'Windows session shutdown notification is disabled'
+            try:
+                from Furious.Frozenlib import Win32SessionNative as win32session
+            except ImportError:
+                logger.exception(
+                    'built-in Windows session notification support is unavailable'
+                )
+                return None
+
+            logger.info(
+                'using built-in Win32 API session notifications '
+                'because the win32session extension is unavailable'
             )
-            return None
 
         return win32session
 
@@ -79,9 +86,9 @@ class _Win32Session:
             if win32session is None:
                 return False
 
-            win32session.set(callback)
+            result = win32session.set(callback)
 
-            return True
+            return result is not False
         else:
             return False
 
