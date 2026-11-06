@@ -86,6 +86,7 @@ from .TrafficStatsManager import (
 )
 from .UpdateManager import UpdateManager
 from .WfpRuntimeSnapshot import WfpRuntimeSnapshot
+from .WfpIpcController import WfpIpcController
 
 __all__ = [
     'ConnectionManager',
@@ -136,6 +137,7 @@ __all__ = [
     'TrafficStatsManager',
     'UpdateManager',
     'WfpRuntimeSnapshot',
+    'WfpIpcController',
     'formatTrafficSpeed',
     'formatTrafficUsage',
     'formatLogEntry',
