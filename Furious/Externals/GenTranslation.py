@@ -3408,5 +3408,47 @@ TRANSLATION = {
         "RU": "Тесты",
         "ZH": "测试",
         "isReviewed": "True"
+    },
+    "TUN Backend": {
+        "source": [
+            "Furious.Window.SettingsPage"
+        ],
+        "ZH": "TUN 后端",
+        "isReviewed": "True"
+    },
+    "Choose how system traffic is routed. Automatic selects the native backend when supported and otherwise uses Tun2socks.": {
+        "source": [
+            "Furious.Window.SettingsPage"
+        ],
+        "ZH": "选择系统流量的转发方式。自动模式会优先使用受支持的核心原生 TUN，否则使用 Tun2socks。",
+        "isReviewed": "True"
+    },
+    "Tun2socks": {
+        "source": [
+            "Furious.Window.SettingsPage"
+        ],
+        "ZH": "Tun2socks",
+        "isReviewed": "True"
+    },
+    "Native TUN": {
+        "source": [
+            "Furious.Window.SettingsPage"
+        ],
+        "ZH": "原生 TUN",
+        "isReviewed": "True"
+    },
+    "Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Select Auto or Xray-core Native TUN.": {
+        "source": [
+            "Furious.Controllers.ConnectionController"
+        ],
+        "ZH": "当前选择的 Xray-core 配置不支持 Hysteria 2 原生 TUN。请选择“自动”或“Xray-core 原生 TUN”。",
+        "isReviewed": "True"
+    },
+    "Xray-core Native TUN is not supported by the selected Hysteria 2 configuration. Select Auto or Hysteria 2 Native TUN.": {
+        "source": [
+            "Furious.Controllers.ConnectionController"
+        ],
+        "ZH": "当前选择的 Hysteria 2 配置不支持 Xray-core 原生 TUN。请选择“自动”或“Hysteria 2 原生 TUN”。",
+        "isReviewed": "True"
     }
 }
