@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from Furious.Frozenlib import (
     APPLICATION_TUN2SOCKS_DEVICE_NAME,
+    AppSettings,
     APPLICATION_TUN2SOCKS_GATEWAY_ADDRESS,
     APPLICATION_TUN2SOCKS_INTERFACE_DNS_ADDRESS,
     APPLICATION_TUN2SOCKS_IP_ADDRESS,
@@ -1158,7 +1159,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
             return False, False
 
         registry = getPluginRegistry()
-        pluginTUN = registry.prepareTUN(config)
+        tunBackend = str(AppSettings.get('TUNBackend') or 'auto').strip().casefold()
+        pluginTUN = registry.prepareTUN(config, tunBackend)
 
         if pluginTUN:
             return True, False
