@@ -76,6 +76,11 @@ class _ConnectionStartAttempt:
     committed: bool = False
 
     @property
+    def activeTUNBackend(self):
+        """Return the backend prepared for the current connection attempt."""
+        return self._activeTUNBackend
+
+    @property
     def runtimes(self):
         """Return an ordered execution-resource snapshot for this attempt."""
         return [lease.runtime for lease in self.leases]
@@ -1104,6 +1109,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._lastStartError = ''
         self._startGeneration = 0
         self._activeStartOperation = None
+        self._activeTUNBackend = None
 
     @property
     def runtimes(self):
@@ -1155,6 +1161,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Prepare plugin-native TUN and decide whether tun2socks is required."""
         tunModeRequested = not proxyModeOnly and SystemRuntime.isTUNMode()
 
+        self._activeTUNBackend = None
+
         if not tunModeRequested:
             return False, False
 
@@ -1177,6 +1185,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
         if pluginTUN:
             factory = registry.factoryForConfig(config)
             factoryId = getattr(factory, 'factoryId', 'unknown')
+            self._activeTUNBackend = {
+                'official.xray': 'xray',
+                'official.hysteria2': 'hysteria2',
+            }.get(factoryId, 'native')
             logger.info(
                 f'native TUN backend selected: {factoryId}; '
                 f'preference: {tunBackend}'
@@ -1187,6 +1199,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         useAppTun2socks = registry.usesApplicationTun2socks(config)
 
         if useAppTun2socks:
+            self._activeTUNBackend = 'tun2socks'
             logger.info(
                 f'application-managed Tun2socks selected; preference: {tunBackend}. '
                 f'Remote address: {config.remoteAddress()!r}'
