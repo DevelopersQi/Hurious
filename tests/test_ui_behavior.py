@@ -433,21 +433,23 @@ class SettingsPageOrganizationTest(unittest.TestCase):
         page, _callbacks = self.buildPage()
 
         expectedGeneralCards = [
-            page.tunModeCard,
             page.applicationThemeCard,
             page.languageCard,
             page.monochromeCard,
             page.startupCard,
             page.powerSaveCard,
-            page.restartCard,
-            page.openFolderCard,
         ]
 
+        expectedApplicationCards = [page.updateCard, page.aboutCard]
+        if page.restartCard is not None:
+            expectedApplicationCards.append(page.restartCard)
+        if page.openFolderCard is not None:
+            expectedApplicationCards.append(page.openFolderCard)
+
         self.assertEqual(page.generalSection.cards, expectedGeneralCards)
-        self.assertEqual(
-            page.applicationSection.cards,
-            [page.updateCard, page.aboutCard],
-        )
+        self.assertEqual(page.applicationSection.cards, expectedApplicationCards)
+        self.assertIn(page.tunModeCard, page.connectionSection.cards)
+        self.assertEqual(page.categoryTabs.count(), 7)
         self.assertEqual(
             [
                 page.generalSection.layout.itemAt(index + 1).widget()
@@ -487,7 +489,7 @@ class SettingsPageOrganizationTest(unittest.TestCase):
                     isAdmin=isAdmin,
                 )
 
-                self.assertIn(page.tunModeCard, page.generalSection.cards)
+                self.assertIn(page.tunModeCard, page.connectionSection.cards)
                 self.assertFalse(page.tunModeCard.checkBox.isEnabled())
 
                 page.setConnectionControlsEnabled(True)
@@ -517,8 +519,8 @@ class SettingsPageOrganizationTest(unittest.TestCase):
 
                 for card in (page.restartCard, page.openFolderCard):
                     if card is not None:
-                        self.assertIn(card, page.generalSection.cards)
-                        self.assertNotIn(card, page.applicationSection.cards)
+                        self.assertIn(card, page.applicationSection.cards)
+                        self.assertNotIn(card, page.generalSection.cards)
 
                 page.close()
                 page.deleteLater()
