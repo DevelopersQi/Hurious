@@ -38,6 +38,12 @@ def translation_catalogue() -> dict:
 class TUNSettingsUITest(unittest.TestCase):
     """Keep native and Tun2socks settings layouts consistent and translatable."""
 
+    def test_editor_dialogs_allow_vertical_scrolling_for_long_forms(self):
+        source = read_source('Furious/Qt/EditorWidgets.py')
+        self.assertIn('self.tabScrollArea = QScrollArea(self.tabWidget)', source)
+        self.assertIn('self.tabScrollArea.setWidgetResizable(True)', source)
+        self.assertIn('self.tabScrollArea.setWidget(self.tabCentralWidget)', source)
+
     def test_native_tun_groups_use_one_responsive_form_layout(self):
         for relative_path, class_names in (
             (
