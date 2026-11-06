@@ -1013,8 +1013,7 @@ class PluginRegistry:
         if factory is None:
             if backend != 'auto':
                 raise TUNPreparationError(
-                    'The selected TUN backend is not supported by this core. '
-                    'Select Auto or a compatible backend.'
+                    f'TUN backend {backend!r} cannot be used with this core configuration'
                 )
 
             return False
