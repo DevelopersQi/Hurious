@@ -222,6 +222,22 @@ static NTSTATUS NTAPI FuriousDeviceControl(
 
 #define FURIOUS_WFP_REDIRECT_POOL_TAG 'cWrF'
 
+static FURIOUS_WFP_REDIRECT_CONTEXT* FuriousAllocateRedirectContext(void)
+{
+#if (NTDDI_VERSION >= NTDDI_WIN10_VB)
+    return (FURIOUS_WFP_REDIRECT_CONTEXT*)ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(FURIOUS_WFP_REDIRECT_CONTEXT),
+        FURIOUS_WFP_REDIRECT_POOL_TAG);
+#else
+#pragma warning(suppress: 4996)
+    return (FURIOUS_WFP_REDIRECT_CONTEXT*)ExAllocatePoolWithTag(
+        NonPagedPoolNx,
+        sizeof(FURIOUS_WFP_REDIRECT_CONTEXT),
+        FURIOUS_WFP_REDIRECT_POOL_TAG);
+#endif
+}
+
 static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
     const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
@@ -256,7 +272,7 @@ static VOID NTAPI FuriousClassify(
     if (!FWPS_IS_METADATA_FIELD_PRESENT(
             inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID) ||
         !FWPS_IS_METADATA_FIELD_PRESENT(
-            inMetaValues, FWPS_METADATA_FIELD_REDIRECT_RECORDS)) {
+            inMetaValues, FWPS_METADATA_FIELD_REDIRECT_RECORD_HANDLE)) {
         classifyOut->actionType = FWP_ACTION_CONTINUE;
         return;
     }
@@ -324,8 +340,7 @@ static VOID NTAPI FuriousClassify(
         return;
     }
 
-    redirectContext = (FURIOUS_WFP_REDIRECT_CONTEXT*)ExAllocatePoolWithTag(
-        NonPagedPoolNx, sizeof(*redirectContext), FURIOUS_WFP_REDIRECT_POOL_TAG);
+    redirectContext = FuriousAllocateRedirectContext();
     if (redirectContext == NULL) {
         classifyOut->actionType = FWP_ACTION_CONTINUE;
         return;
@@ -396,6 +411,7 @@ static VOID NTAPI FuriousClassify(
                 remote->sin6_addr.u.Byte[15] = 1;
             } else {
                 remote->sin6_addr = local->sin6_addr;
+                remote->sin6_scope_id = local->sin6_scope_id;
             }
         } else {
             RtlZeroMemory(&remote->sin6_addr, sizeof(remote->sin6_addr));
