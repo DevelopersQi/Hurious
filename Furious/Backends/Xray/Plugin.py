@@ -195,6 +195,36 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
 
         return True
 
+    def prepareTUNForBackend(self, config, backend: str) -> bool:
+        """Honor the global TUN selector while preserving explicit user inbounds."""
+        backend = str(backend or 'auto').strip().casefold()
+
+        if backend == 'auto':
+            return self.prepareTUN(config)
+
+        if backend == 'xray':
+            if hasXrayTUNInbound(config):
+                return True
+
+            inbounds = config.get('inbounds')
+
+            if not isinstance(inbounds, list):
+                inbounds = []
+
+            config['inbounds'] = [
+                inbound
+                for inbound in inbounds
+                if not (
+                    isinstance(inbound, dict)
+                    and str(inbound.get('protocol', '')).casefold() == 'tun'
+                )
+            ]
+            config['inbounds'].append(buildXrayTUNInbound())
+
+            return True
+
+        return super().prepareTUNForBackend(config, backend)
+
     def usesApplicationTun2socks(self, config) -> bool:
         """Use host tun2socks only when the runtime has no native TUN inbound."""
         return not hasXrayTUNInbound(config)
