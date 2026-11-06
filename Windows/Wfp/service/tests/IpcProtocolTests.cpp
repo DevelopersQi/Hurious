@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
@@ -54,6 +55,7 @@ int main() {
     CHECK(ValidateRequest(oversized.data(), oversized.size()) == ValidationResult::MessageTooLarge);
 
     using furious::wfp::ipc::DispatchCommand;
+    using furious::wfp::ipc::CopyPolicySnapshot;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS, nullptr, 0) == ERROR_SUCCESS);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY, nullptr, 0) == ERROR_INVALID_DATA);
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, nullptr, 0) == ERROR_SUCCESS);
@@ -86,6 +88,12 @@ int main() {
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY,
                           nullptr, 0) == ERROR_SUCCESS);
     CHECK(ValidatePolicy(nullptr, policyBytes.size()) == PolicyValidationResult::NullPolicy);
+    auto missingBackend = policyBytes;
+    policyHeader.Backend = FuriousWfpBackendNone;
+    std::memcpy(missingBackend.data(), &policyHeader, sizeof(policyHeader));
+    CHECK(ValidatePolicy(missingBackend.data(), missingBackend.size()) ==
+          PolicyValidationResult::ProxyBackendRequired);
+    policyHeader.Backend = FuriousWfpBackendXray;
     auto zeroGeneration = policyBytes;
     policyHeader.PolicyGeneration = 0;
     std::memcpy(zeroGeneration.data(), &policyHeader, sizeof(policyHeader));

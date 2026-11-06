@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 namespace furious::wfp::policy {
-enum class ValidationResult { Valid, NullPolicy, HeaderTooSmall, InvalidTotalSize, UnsupportedAbi, InvalidPolicyGeneration, TooManyRules, InvalidBackend, InvalidRuleSize, InvalidEnabledFlag, InvalidAction, InvalidPathLength, PathNotAbsolute, PathContainsInvalidCharacter, DuplicatePriority, DuplicateImagePath };
+enum class ValidationResult { Valid, NullPolicy, HeaderTooSmall, InvalidTotalSize, UnsupportedAbi, InvalidPolicyGeneration, ProxyBackendRequired, TooManyRules, InvalidBackend, InvalidRuleSize, InvalidEnabledFlag, InvalidAction, InvalidPathLength, PathNotAbsolute, PathContainsInvalidCharacter, DuplicatePriority, DuplicateImagePath };
 inline bool IsAbsoluteWindowsPath(const wchar_t* p, uint32_t n) noexcept {
  if (!p || n < 3) return false;
  const bool drive=((p[0]>=L'A'&&p[0]<=L'Z')||(p[0]>=L'a'&&p[0]<=L'z'))&&p[1]==L':'&&(p[2]==L'\\'||p[2]==L'/');
@@ -28,6 +28,7 @@ inline ValidationResult ValidatePolicy(const void* data,size_t bytes) noexcept {
   if(r.Size!=sizeof(FURIOUS_WFP_APPLICATION_RULE))return ValidationResult::InvalidRuleSize;
   if(r.Enabled>1)return ValidationResult::InvalidEnabledFlag;
   if(r.Action!=FuriousWfpActionProxy&&r.Action!=FuriousWfpActionDirect)return ValidationResult::InvalidAction;
+  if(r.Enabled!=0&&r.Action==FuriousWfpActionProxy&&h.Backend==FuriousWfpBackendNone)return ValidationResult::ProxyBackendRequired;
   if(r.ImagePathChars<3||r.ImagePathChars>=FURIOUS_WFP_MAX_IMAGE_PATH_CHARS||r.ImagePath[r.ImagePathChars]!=L'\0')return ValidationResult::InvalidPathLength;
   for(uint32_t c=0;c<r.ImagePathChars;++c){const wchar_t ch=r.ImagePath[c];if(ch==L'\0'||ch<0x20||ch==L'*'||ch==L'?')return ValidationResult::PathContainsInvalidCharacter;}
   if(!IsAbsoluteWindowsPath(r.ImagePath,r.ImagePathChars))return ValidationResult::PathNotAbsolute;

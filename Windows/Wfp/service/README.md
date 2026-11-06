@@ -9,28 +9,35 @@ transactional cleanup on normal shutdown.
 The service exposes only the versioned local named pipe
 `\\\\.\\pipe\\FuriousWfpService.v1`. Its DACL grants access only to
 LocalSystem and the built-in Administrators group, and remote pipe clients are
-rejected. Before reading a request, the server impersonates the pipe client,
-opens the thread token, and verifies that the caller is LocalSystem or a member
-of Administrators. It always attempts to revert impersonation before dispatch.
+rejected. Before dispatch, the server impersonates the pipe client, opens the
+thread token, and verifies that the caller is LocalSystem or a member of
+Administrators. It always attempts to revert impersonation before dispatch.
 
 The server uses message-mode framing, a fixed 64 KiB request bound, and the
-shared protocol validator. STATUS is currently the only implemented operation.
-SET_POLICY and CLEAR_POLICY return ERROR_NOT_SUPPORTED; no policy is installed
-and no traffic is redirected. The server's worker polls nonblocking reads so a
-connected but idle local client cannot indefinitely block service shutdown.
+shared protocol validator. STATUS validates an empty request. SET_POLICY accepts
+a bounded ABI-v1 policy payload, validates its header, generation, backend,
+rules, priorities and executable paths, then atomically replaces the in-memory
+policy snapshot. CLEAR_POLICY empties the snapshot. Policy generations must
+increase monotonically; clearing does not reset the generation counter.
 
-This is an initial authenticated control-channel implementation, not a
-production-ready privileged service. The current automated tests compile the
-Windows x64 service and exercise protocol validation and command dispatch; they
-include an end-to-end local named-pipe STATUS round-trip under the CI runner's authorized identity, but do not yet exercise a separate unprivileged Windows account or all token failure paths. Before
-release it still needs:
-- an installer that creates the service with least-privilege service ACLs;
-- integration tests for allowed and denied client tokens, impersonation failure,
-  malformed frames, stop during connect/read, and BFE unavailable;
-- crash recovery and stale-filter reconciliation after abnormal termination;
-- driver presence/ABI negotiation and health monitoring;
-- strict policy payload validation before any future policy mutation;
-- driver package signing, installation, rollback and Windows 10 x64 VM tests.
+## Current implementation boundary
 
-Do not expose a network listener. Do not install it on production machines during
-development. No WFP traffic filters are added by this milestone.
+Policy data is now accepted and stored by the service, but it is **not yet
+compiled into WFP application-ID filters**, and no traffic is blocked or
+redirected. The driver remains a pass-through ALE callout and is not loaded by
+the service. Do not treat policy acceptance as application routing being active.
+
+Before enabling traffic filters or redirect:
+- resolve each executable path to a canonical WFP application ID;
+- verify provider, sublayer and callout ownership before reusing objects;
+- load and negotiate the driver ABI and register matching management callouts;
+- implement redirect-state tracking, original-destination preservation and
+  explicit proxy/core exclusions;
+- implement TCP and UDP separately, with IPv4 and IPv6 parity;
+- reconcile stale filters after crashes and ensure safe rollback;
+- test allowed and denied client tokens, impersonation failures, malformed
+  frames, stop during connect/read, and BFE unavailable;
+- validate the full path in a disposable Windows 10 x64 VM.
+
+Do not expose a network listener or install experimental callout drivers on
+production machines during development.

@@ -41,6 +41,19 @@ public:
         return ERROR_SUCCESS;
     }
 
+    DWORD CopySnapshot(std::vector<uint8_t>& output, uint64_t* generation = nullptr) const noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
+        try {
+            output = policy_;
+        } catch (...) {
+            return ERROR_NOT_ENOUGH_MEMORY;
+        }
+        if (generation != nullptr) {
+            *generation = generation_;
+        }
+        return ERROR_SUCCESS;
+    }
+
     DWORD Clear() noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
         policy_.clear();
@@ -48,7 +61,7 @@ public:
     }
 
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::vector<uint8_t> policy_;
     uint64_t generation_ = 0;
 };
@@ -56,6 +69,11 @@ private:
 inline PolicyStore& GetPolicyStore() noexcept {
     static PolicyStore store;
     return store;
+}
+
+inline DWORD CopyPolicySnapshot(std::vector<uint8_t>& output,
+                                uint64_t* generation = nullptr) noexcept {
+    return GetPolicyStore().CopySnapshot(output, generation);
 }
 
 inline DWORD DispatchCommand(uint32_t command,
