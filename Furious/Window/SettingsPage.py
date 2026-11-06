@@ -504,16 +504,39 @@ class _TUNBackendSettingsCard(QFrame):
     """Present global TUN backends as a compact, explanatory choice grid."""
 
     Options = (
-        ('auto', _('Automatic (Recommended)'), _('Prefer a native TUN backend when the active node supports it; otherwise use Tun2socks.')),
-        ('tun2socks', _('Tun2socks'), _('Compatibility option for routing traffic through the external Tun2socks adapter.')),
-        ('xray', _('Xray-core Native TUN'), _('Use Xray-core native TUN. Available when the active node uses Xray-core.')),
-        ('hysteria2', _('Hysteria 2 Native TUN'), _('Use Hysteria 2 native TUN. Available when the active node uses Hysteria 2.')),
+        (
+            'auto',
+            _('Automatic (Recommended)'),
+            _(
+                'Prefer a native TUN backend when the active node supports it; '
+                'otherwise use Tun2socks.'
+            ),
+        ),
+        (
+            'tun2socks',
+            _('Tun2socks'),
+            _(
+                'Compatibility option for routing traffic through the external '
+                'Tun2socks adapter.'
+            ),
+        ),
+        (
+            'xray',
+            _('Xray-core Native TUN'),
+            _('Use Xray-core native TUN when the active node uses Xray-core.'),
+        ),
+        (
+            'hysteria2',
+            _('Hysteria 2 Native TUN'),
+            _('Use Hysteria 2 native TUN when the active node uses Hysteria 2.'),
+        ),
     )
 
     def __init__(self, title='', description='', parent=None):
         """Build a two-column selector with clear per-backend guidance."""
         super().__init__(parent)
         self.setObjectName('TUNBackendSettingsCard')
+        self.setFrameShape(QFrame.Shape.StyledPanel)
         self.iconFileName = 'diagram-3.svg'
         self._available = True
 
@@ -542,6 +565,7 @@ class _TUNBackendSettingsCard(QFrame):
         for index, (backend, label, helpText) in enumerate(self.Options):
             optionWidget = QFrame(optionsWidget)
             optionWidget.setObjectName('TUNBackendOption')
+            optionWidget.setFrameShape(QFrame.Shape.StyledPanel)
             optionLayout = QVBoxLayout(optionWidget)
             optionLayout.setContentsMargins(10, 8, 10, 8)
             optionLayout.setSpacing(3)
