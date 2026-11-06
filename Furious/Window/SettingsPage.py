@@ -500,29 +500,29 @@ class _ApplicationThemeSettingsCard(_SettingsCard):
             AppSettingsController().setApplicationTheme(preference)
 
 
-class _TUNBackendSettingsCard(QFrame):
+class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
     """Present global TUN backends as a compact, clearly selected choice grid."""
 
     Options = (
         (
             'auto',
-            _('Auto (Recommended)'),
-            _('Use native TUN when supported; otherwise use Tun2socks.'),
+            'Auto (Recommended)',
+            'Use native TUN when supported; otherwise use Tun2socks.',
         ),
         (
             'tun2socks',
-            _('Tun2socks'),
-            _('Compatibility mode using the Tun2socks adapter.'),
+            'Tun2socks',
+            'Compatibility mode using the Tun2socks adapter.',
         ),
         (
             'xray',
-            _('Xray-core Native TUN'),
-            _('Use Xray-core built-in TUN.'),
+            'Xray-core Native TUN',
+            'Use Xray-core built-in TUN.',
         ),
         (
             'hysteria2',
-            _('Hysteria 2 Native TUN'),
-            _('Use Hysteria 2 built-in TUN.'),
+            'Hysteria 2 Native TUN',
+            'Use Hysteria 2 built-in TUN.',
         ),
     )
 
@@ -567,7 +567,7 @@ class _TUNBackendSettingsCard(QFrame):
             optionLayout.setContentsMargins(10, 8, 10, 8)
             optionLayout.setSpacing(3)
 
-            radio = QRadioButton(label, optionWidget)
+            radio = QRadioButton(_(label), optionWidget)
             radio.setObjectName('TUNBackendOptionRadio')
             radio.setProperty('backend', backend)
             self.buttonGroup.addButton(radio, index)
@@ -652,6 +652,13 @@ class _TUNBackendSettingsCard(QFrame):
             )
 
         self.statusLabel.setText(message)
+
+    def retranslate(self):
+        """Refresh plain Qt radio labels when the application language changes."""
+        for backend, label, _helpText in self.Options:
+            radio = self.optionButtons.get(backend)
+            if radio is not None:
+                radio.setText(_(label))
 
     def setIconFileName(self, iconFileName):
         """Keep the settings-section icon suppression protocol compatible."""
