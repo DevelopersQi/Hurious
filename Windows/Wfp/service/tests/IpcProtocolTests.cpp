@@ -201,6 +201,8 @@ int main() {
 
     using furious::wfp::redirect::IsValidEndpointConfig;
     using furious::wfp::redirect::IsValidRedirectContext;
+    static_assert(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 76,
+                  "Redirect endpoint ABI v2 must remain 76 bytes");
     static_assert(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64,
                   "Redirect context ABI must remain 64 bytes");
     FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG endpoint = {};
@@ -212,6 +214,9 @@ int main() {
                      FURIOUS_WFP_REDIRECT_FLAG_TCP |
                      FURIOUS_WFP_REDIRECT_FLAG_UDP;
     endpoint.ProxyProcessId = 1234;
+    endpoint.ExcludedProcessCount = 2;
+    endpoint.ExcludedProcessIds[0] = 2345;
+    endpoint.ExcludedProcessIds[1] = 3456;
     endpoint.PolicyGeneration = 7;
     endpoint.TcpPortV4 = 10808;
     endpoint.UdpPortV4 = 10808;
@@ -223,6 +228,18 @@ int main() {
     CHECK(!IsValidEndpointConfig(invalidEndpoint));
     invalidEndpoint = endpoint;
     invalidEndpoint.TcpPortV4 = 0;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessIds[1] = invalidEndpoint.ExcludedProcessIds[0];
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessIds[0] = invalidEndpoint.ProxyProcessId;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessCount = FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS + 1;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessIds[2] = 4567;
     CHECK(!IsValidEndpointConfig(invalidEndpoint));
     invalidEndpoint = endpoint;
     invalidEndpoint.Flags |= 0x80000000u;
