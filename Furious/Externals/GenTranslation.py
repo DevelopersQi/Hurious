@@ -842,7 +842,8 @@ TRANSLATION = {
     "Refresh": {
         "source": [
             "Furious.Backends.Xray.AssetWindow",
-            "Furious.Widget.EndpointInfoWidget"
+            "Furious.Widget.EndpointInfoWidget",
+            "Furious.Qt.SystemNetworkInfo"
         ],
         "RU": "Обновить",
         "ZH": "刷新",
@@ -3048,7 +3049,8 @@ TRANSLATION = {
     },
     "Unknown": {
         "source": [
-            "Furious.Widget.EndpointInfoWidget"
+            "Furious.Widget.EndpointInfoWidget",
+            "Furious.Qt.SystemNetworkInfo"
         ],
         "RU": "Неизвестно",
         "ZH": "未知",
