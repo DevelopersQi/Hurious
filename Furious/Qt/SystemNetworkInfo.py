@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from Furious.Frozenlib.SystemNetwork import getPrimaryAdapterInfo
 from Furious.Qt import gettext as _
+from Furious.Qt.QtWidgets import AppQGroupBox
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton
@@ -28,14 +29,16 @@ from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton
 __all__ = ['SystemNetworkInfoWidget']
 
 
-class SystemNetworkInfoWidget(QGroupBox):
+class SystemNetworkInfoWidget(AppQGroupBox):
     """Show the host's active adapter, local IPv4 address, and gateway."""
 
     networkInfoChanged = QtCore.Signal(dict)
 
     def __init__(self, parent=None):
         """Create a compact, refreshable host-network summary."""
-        super().__init__(_('Detected System Network'), parent)
+        self._titleKey = 'Detected System Network'
+        self._refreshKey = 'Refresh'
+        super().__init__(_(self._titleKey), parent)
 
         self.infoLabel = QLabel(self)
         self.infoLabel.setWordWrap(True)
@@ -43,7 +46,7 @@ class SystemNetworkInfoWidget(QGroupBox):
             QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
         )
 
-        self.refreshButton = QPushButton(_('Refresh'), self)
+        self.refreshButton = QPushButton(_(self._refreshKey), self)
         self.refreshButton.clicked.connect(self.refresh)
 
         layout = QHBoxLayout(self)
@@ -57,11 +60,14 @@ class SystemNetworkInfoWidget(QGroupBox):
         """Return a copy of the latest detected host-network information."""
         return dict(self._info)
 
-    @QtCore.Slot()
-    def refresh(self):
-        """Refresh host-network information and notify the owning dialog."""
-        self._info = getPrimaryAdapterInfo()
+    def retranslate(self):
+        """Refresh all visible strings using their original translation keys."""
+        self.setTitle(_(self._titleKey))
+        self.refreshButton.setText(_(self._refreshKey))
+        self._updateInfoLabel()
 
+    def _updateInfoLabel(self):
+        """Render the latest host-network information in the active language."""
         name = self._info.get('name') or _('Unknown')
         address = self._info.get('ip') or _('Not detected')
         gateway = self._info.get('gateway') or _('Not detected')
@@ -75,4 +81,10 @@ class SystemNetworkInfoWidget(QGroupBox):
                 gateway=gateway,
             )
         )
+
+    @QtCore.Slot()
+    def refresh(self):
+        """Refresh host-network information and notify the owning dialog."""
+        self._info = getPrimaryAdapterInfo()
+        self._updateInfoLabel()
         self.networkInfoChanged.emit(self.info())
