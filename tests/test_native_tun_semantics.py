@@ -325,7 +325,9 @@ class XrayNativeTUNTest(unittest.TestCase):
         registry = PluginRegistry()
 
         factory = mock.Mock(factoryId='managed-tun-factory')
-        factory.prepareTUN.side_effect = TUNPreparationError('managed TUN failed')
+        factory.prepareTUNForBackend.side_effect = TUNPreparationError(
+            'managed TUN failed'
+        )
 
         registry.factoryForConfig = mock.Mock(return_value=factory)
 
