@@ -30,6 +30,7 @@ __all__ = [
     'getApplicationRoutingRules',
     'saveApplicationRoutingRules',
     'applicationRoutingRulesObject',
+    'xrayCoreBypassRoutingRule',
 ]
 
 registerAppSettings('XrayApplicationRoutingRules', default='[]')
@@ -158,7 +159,7 @@ def getApplicationRoutingRules():
 
         # Xray process matching accepts an executable name or an absolute path.
         # Reject glob-like values because Xray treats them as literal matches.
-        if any(token in process for token in ('*', '?', '\\n', '\\r')):
+        if any(token in process for token in ('*', '?', chr(10), chr(13))):
             continue
 
         seen.add(process.casefold())
@@ -196,7 +197,7 @@ def saveApplicationRoutingRules(rules):
             raise ValueError(f'application rule {index + 1} has an invalid process')
 
         process = process.strip().replace(chr(92), '/')
-        if not process or any(token in process for token in ('*', '?', '\\n', '\\r')):
+        if not process or _isProtectedApplicationProcess(process) or any(token in process for token in ('*', '?', chr(10), chr(13))):
             raise ValueError(f'application rule {index + 1} needs a valid EXE path or process name')
 
         key = process.casefold()
@@ -239,3 +240,13 @@ def applicationRoutingRulesObject():
         }
         for rule in getApplicationRoutingRules()
     ]
+
+
+def xrayCoreBypassRoutingRule():
+    """Keep Xray's own outbound sockets outside the TUN proxy-routing loop."""
+    return {
+        'type': 'field',
+        'process': ['self/'],
+        'outboundTag': 'direct',
+        'ruleTag': 'Furious-Xray-Core-Bypass',
+    }
