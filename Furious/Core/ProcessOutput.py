@@ -237,20 +237,39 @@ class ProcessOutputRedirector:
         sys.stdout = tmpFileStream
         sys.stderr = tmpFileStream
 
+        finished = threading.Event()
+
         def produceMsg():
-            """Forward output until the child process ends."""
+            """Forward output and flush the final bytes before child exit."""
             with open(temporaryFile, 'rb') as stream:
                 while True:
-                    for line in iter(stream.readline, b''):
-                        if line and not line.isspace():
+                    line = stream.readline()
+
+                    if line:
+                        if not line.isspace():
                             try:
                                 msgQueue.putMessage(line.decode('utf-8', 'replace'))
                             except (OSError, ValueError):
                                 pass
 
+                        continue
+
+                    if finished.is_set():
+                        return
+
                     time.sleep(MsgQueue.MSG_PRODUCE_THRESHOLD / 1000)
 
-        threading.Thread(target=produceMsg, daemon=True).start()
+        producer = threading.Thread(target=produceMsg, daemon=True)
+        producer.start()
 
-        with tmpFileStream:
-            entrypoint()
+        try:
+            with tmpFileStream:
+                entrypoint()
+        finally:
+            # The previous polling loop could leave the final stderr lines in
+            # the temporary file when a short-lived core exited before the
+            # producer's next 1-second poll. Close the writer, signal EOF, and
+            # join the producer so multiprocessing can flush every log line
+            # into MsgQueue before the process terminates.
+            finished.set()
+            producer.join()
