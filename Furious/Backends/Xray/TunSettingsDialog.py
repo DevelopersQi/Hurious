@@ -248,7 +248,9 @@ class XrayTunSettingsDialog(GuiEditorWidgetQDialog):
         self.networkInfoWidget = SystemNetworkInfoWidget(self)
         self.layout().insertRow(0, self.networkInfoWidget)
         networkNote = QLabel(
-            _('Xray gateway configures the virtual TUN interface, not the physical system gateway.')
+            _(
+                'Xray gateway configures the virtual TUN interface, not the physical system gateway.'
+            )
         )
         networkNote.setWordWrap(True)
         self.layout().insertRow(1, networkNote)
