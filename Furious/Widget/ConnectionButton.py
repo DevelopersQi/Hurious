@@ -81,7 +81,7 @@ class ConnectionButton(AppQPushButton):
         )
 
         if state is ConnectionState.Disconnected:
-            # Zero-selection remains intentionally clickable but is a no-op.
+            # With no explicit selection, connect the already activated profile.
             enabled = self._selectionCount <= 1
         elif state is ConnectionState.Connected:
             # Disconnect always targets the active connection, not selection.
