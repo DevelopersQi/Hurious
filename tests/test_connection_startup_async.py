@@ -227,7 +227,6 @@ class ConnectionStartupAsyncTest(TestCase):
         tunRuntime = object.__new__(
             importlib.import_module('Furious.Core.Tun2socks').Tun2socks
         )
-        tunRuntime.processId = 9876
 
         manager._leases = [
             mock.Mock(runtime=coreA),
@@ -237,7 +236,13 @@ class ConnectionStartupAsyncTest(TestCase):
             mock.Mock(runtime=tunRuntime),
         ]
 
-        self.assertEqual(manager.wfpExcludedProcessIds, (4321,))
+        with mock.patch.object(
+            type(tunRuntime),
+            'processId',
+            new_callable=mock.PropertyMock,
+            return_value=9876,
+        ):
+            self.assertEqual(manager.wfpExcludedProcessIds, (4321,))
 
         # The property is a live snapshot, not a cached PID list.
         coreA.processId = None
