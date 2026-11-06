@@ -209,7 +209,10 @@ class XrayCoreRuntimeFactory(CoreRuntimeFactory):
             inbounds = config.get('inbounds')
 
             if not isinstance(inbounds, list):
-                inbounds = []
+                raise TUNPreparationError(
+                    'Xray native TUN cannot be added because the configuration '
+                    'inbounds field is not a list'
+                )
 
             config['inbounds'] = [
                 inbound
