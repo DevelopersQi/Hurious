@@ -1,4 +1,64 @@
 TRANSLATION = {
+    "Auto (Recommended)": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "自动（推荐）",
+        "isReviewed": "True"
+    },
+    "Use native TUN when supported; otherwise use Tun2socks.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "优先使用核心原生 TUN；不支持时使用 Tun2socks。",
+        "isReviewed": "True"
+    },
+    "Compatibility mode using the Tun2socks adapter.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "兼容模式，使用 Tun2socks 虚拟网卡。",
+        "isReviewed": "True"
+    },
+    "Xray-core Native TUN": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "Xray-core 原生 TUN",
+        "isReviewed": "True"
+    },
+    "Use Xray-core built-in TUN.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "使用 Xray-core 内置 TUN。",
+        "isReviewed": "True"
+    },
+    "Hysteria 2 Native TUN": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "Hysteria 2 原生 TUN",
+        "isReviewed": "True"
+    },
+    "Use Hysteria 2 built-in TUN.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "使用 Hysteria 2 内置 TUN。",
+        "isReviewed": "True"
+    },
+    "Actual TUN backend: connecting…": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "实际 TUN 后端：正在连接…",
+        "isReviewed": "True"
+    },
+    "Actual TUN backend: not connected": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "实际 TUN 后端：未连接",
+        "isReviewed": "True"
+    },
+    "Actual TUN backend: {backend}": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "实际 TUN 后端：{backend}",
+        "isReviewed": "True"
+    },
+    "TUN is not active": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "TUN 未启用",
+        "isReviewed": "True"
+    },
+    "The selected TUN backend is not supported by this core. Select Auto or a compatible backend.": {
+        "source": ["Furious.Plugins.API", "Furious.Plugins.Registry"],
+        "ZH": "当前核心不支持所选的 TUN 后端。请选择“自动”或与当前核心兼容的后端。",
+        "isReviewed": "True"
+    },
     "Delete": {
         "source": [
             "Furious.Backends.Xray.AssetWindow",
