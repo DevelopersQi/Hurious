@@ -22,6 +22,7 @@ from __future__ import annotations
 from Furious.Controllers import (
     APPLICATION_THEME_SETTING,
     SYSTEM_PROXY_MODE_OPTIONS,
+    TUN_BACKEND_OPTIONS,
 )
 from Furious.Frozenlib import *
 from Furious.Plugins import (
@@ -499,6 +500,60 @@ class _ApplicationThemeSettingsCard(_SettingsCard):
             AppSettingsController().setApplicationTheme(preference)
 
 
+class _TUNBackendSettingsCard(_SettingsCard):
+    """Select the preferred implementation used by global TUN mode."""
+
+    Options = TUN_BACKEND_OPTIONS
+
+    _TranslatableOptions = (
+        _('Automatic (Recommended)'),
+        _('Tun2socks'),
+        _('Xray-core Native TUN'),
+        _('Hysteria 2 Native TUN'),
+    )
+
+    def __init__(self, title='', description='', parent=None):
+        """Initialize the global TUN implementation selector."""
+        self.comboBox = AppQComboBox()
+        self.comboBox.setObjectName('SettingsComboBox')
+        self.comboBox.setContentWidthAdjustable()
+        self.comboBox.setMinimumWidth(260)
+
+        for label, backend in self.Options:
+            self.comboBox.addItem(_(label), backend)
+
+        self.sync()
+        self.comboBox.currentIndexChanged.connect(self._selectionChanged)
+
+        super().__init__(
+            'diagram-3.svg',
+            self.comboBox,
+            title,
+            description,
+            parent=parent,
+        )
+
+    def sync(self, backend=None):
+        """Reflect the persisted backend without emitting a second change."""
+        blocker = QtCore.QSignalBlocker(self.comboBox)
+        selectedBackend = (
+            backend if isinstance(backend, str) else AppSettings.get('TUNBackend')
+        )
+        index = self.comboBox.findData(selectedBackend)
+
+        self.comboBox.setCurrentIndex(max(index, 0))
+
+        del blocker
+
+    @QtCore.Slot(int)
+    def _selectionChanged(self, _index: int):
+        """Persist the selected implementation for the next connection."""
+        backend = self.comboBox.currentData()
+
+        if isinstance(backend, str):
+            AppSettingsController().setTUNBackend(backend)
+
+
 class _SystemProxySettingsCard(_SettingsCard):
     """Select how Furious manages the operating-system proxy."""
 
@@ -651,9 +706,20 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self.tunModeCard.checkBox.setEnabled(self._tunModeAvailable)
         self.tunModeCard.titleLabel.setEnabled(self.tunModeCard.checkBox.isEnabled())
 
+        self.tunBackendCard = _TUNBackendSettingsCard(
+            _('TUN Backend'),
+            _(
+                'Choose how system traffic is routed. Automatic selects the '
+                'native backend when supported and otherwise uses Tun2socks.'
+            ),
+        )
+        self.tunBackendCard.comboBox.setEnabled(self._tunModeAvailable)
+        self.tunBackendCard.titleLabel.setEnabled(self._tunModeAvailable)
+
         AppSettingsController().tunModeChanged.connect(
             self.tunModeCard.checkBox.syncCheckedAnimated
         )
+        AppSettingsController().tunBackendChanged.connect(self.tunBackendCard.sync)
 
         (
             self.applicationThemeCard,
@@ -694,6 +760,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         )
 
         self.generalSection.addCard(self.tunModeCard)
+        self.generalSection.addCard(self.tunBackendCard)
         self.generalSection.addCard(self.applicationThemeCard)
         self.generalSection.addCard(self.languageCard)
         self.generalSection.addCard(self.monochromeCard)
