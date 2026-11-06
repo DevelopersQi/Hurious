@@ -145,12 +145,20 @@ class Hysteria2CoreRuntimeFactory(CoreRuntimeFactory):
     runtimeTypes = (Hysteria2,)
 
     def prepareTUN(self, config) -> bool:
-        """Preserve user TUN or replace it with Furious-managed native TUN."""
-        # Auto uses native Hysteria 2 TUN on desktop platforms. Linux
-        # keeps the established Tun2socks fallback; native Hysteria 2 TUN
-        # remains available through the global backend selector when elevated.
-        if PLATFORM == 'Linux':
+        """Apply the legacy Auto preference while preserving custom TUN data."""
+        # The per-core switch is hidden from the UI; retain its persisted
+        # value as the Auto default so existing user configurations behave
+        # consistently after upgrading.
+        if not isHysteria2TUNEnabled():
             return hasHysteria2TUNConfig(config)
+
+        # Linux native TUN requires elevation. Auto remains Tun2socks when
+        # the legacy preference is off; an enabled preference must fail
+        # clearly rather than silently changing the requested backend.
+        if PLATFORM == 'Linux' and not SystemRuntime.isAdmin():
+            raise TUNPreparationError(
+                'Hysteria 2 native TUN requires Linux superuser privileges'
+            )
 
         settings = getHysteria2TUNSettings()
         serverAddresses = resolveHysteria2ServerAddresses(config)
