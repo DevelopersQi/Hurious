@@ -136,6 +136,36 @@ class MsgQueue(multiprocessing.queues.Queue):
 
         return True
 
+    def drainPendingMessages(self) -> str:
+        """Flush queued child output before exit and return bounded diagnostics."""
+        if self._disposed:
+            return ''
+
+        messages = []
+        for _ in range(self.MAXIMUM_PENDING_MESSAGES):
+            message = self.getNoWait()
+            if not message:
+                break
+            if not message.isspace():
+                messages.append(message.rstrip())
+
+        if messages and callable(self.callback):
+            appendMany = getattr(self.callback, 'appendMany', None)
+            if callable(appendMany):
+                appendMany(messages)
+            else:
+                for message in messages:
+                    self.callback(message)
+
+        if not messages:
+            return ''
+
+        details = '\\n'.join(messages)
+        if len(details) > self.MAXIMUM_MESSAGE_CHARACTERS:
+            details = details[-self.MAXIMUM_MESSAGE_CHARACTERS:]
+
+        return details
+
     def processMsg(self):
         """Drain one bounded batch and adapt polling to recent activity."""
         if not callable(self.callback):
