@@ -102,9 +102,11 @@ inline DWORD CompilePolicy(const void* data, size_t bytes,
     // Different textual paths can resolve to the same WFP App ID (for example,
     // short-name aliases). Reject that ambiguity instead of installing two
     // competing rules for the same application identity.
-    for (size_t index = 1; index < candidate.size(); ++index) {
-        if (candidate[index - 1].AppId == candidate[index].AppId) {
-            return ERROR_DUP_NAME;
+    for (size_t index = 0; index < candidate.size(); ++index) {
+        for (size_t previous = 0; previous < index; ++previous) {
+            if (candidate[previous].AppId == candidate[index].AppId) {
+                return ERROR_DUP_NAME;
+            }
         }
     }
 
