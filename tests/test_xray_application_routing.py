@@ -106,6 +106,28 @@ class XrayApplicationRoutingRulesTest(TestCase):
                     {'process': r'C:\\Tools\\xray.exe', 'outboundTag': 'direct'},
                 ])
 
+
+    def test_xray_core_bypass_rule_is_first_class_direct_policy(self):
+        self.assertEqual(
+            Routing.xrayCoreBypassRoutingRule(),
+            {
+                'type': 'field',
+                'process': ['self/'],
+                'outboundTag': 'direct',
+                'ruleTag': 'Furious-Xray-Core-Bypass',
+            },
+        )
+
+    def test_newline_and_wildcard_process_selectors_are_rejected(self):
+        get_patch, set_patch = self.settings()
+        with get_patch, set_patch:
+            for process in ('browser\\n.exe', 'browser*.exe', 'browser?.exe'):
+                with self.subTest(process=process):
+                    with self.assertRaisesRegex(ValueError, 'valid EXE path'):
+                        Routing.saveApplicationRoutingRules([
+                            {'process': process, 'outboundTag': 'proxy'},
+                        ])
+
     def test_invalid_persisted_json_falls_back_to_empty_policy(self):
         self.saved = '{invalid'
         get_patch, _set_patch = self.settings()
