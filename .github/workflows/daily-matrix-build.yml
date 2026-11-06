@@ -580,8 +580,10 @@ jobs:
           # Some Windows PySide6 distributions intentionally omit Qt WebEngine.
           # The application must still import and use its non-WebEngine map fallback.
           from Furious.Widget.EndpointInfoWidget import EndpointInfoWidget
+          from Furious.Window.SettingsPage import SettingsPage
 
           print(f'Endpoint UI imported successfully: {EndpointInfoWidget.__name__}')
+          print(f'Settings UI imported successfully: {SettingsPage.__name__}')
           PY
         if: runner.os == 'Windows'
       - name: Test automatic system network detection
