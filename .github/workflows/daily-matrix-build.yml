@@ -382,6 +382,15 @@ jobs:
           check-latest: true
           cache: false
         if: matrix.id == 'windows10-amd64'
+      - name: Cache Windows native binding wheels
+        id: native-bindings-cache
+        if: matrix.id == 'windows7-amd64' || matrix.id == 'windows10-amd64'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bindings/wheels
+          # Immutable upstream revisions + Python ABI + architecture. Never restore
+          # an older binding cache when any input changes.
+          key: furious-native-bindings-windows-${{ runner.arch }}-py${{ matrix.python-version }}-xray-5b1573f-hysteria-99d4f04-hysteria2-f478b08-tun2socks-6b90d77-v1
       - name: Build Windows AMD64 bindings from source
         shell: pwsh
         env:
@@ -440,6 +449,9 @@ jobs:
             }
           )
 
+          if ('${{ steps.native-bindings-cache.outputs.cache-hit }}' -eq 'true') {
+            Write-Output 'Restored native binding wheels from the exact-input cache; skipping Go/CMake compilation.'
+          } else {
           foreach ($binding in $bindings) {
             if ($binding.Name -eq 'hysteria') {
               # Hysteria 1 embeds quic-go v0.34, which intentionally rejects Go 1.21+.
@@ -479,6 +491,8 @@ jobs:
             }
           }
 
+          }
+
           $wheels = @(
             Get-ChildItem -LiteralPath $wheelDirectory -Filter '*.whl' -File |
               Sort-Object Name
@@ -509,13 +523,20 @@ jobs:
             throw 'Missing pure-Python hysteria wheel'
           }
 
-          $wheelPaths = @($wheels.FullName)
-          python -m pip install `
-            --no-index `
-            --force-reinstall `
-            --no-deps `
-            $wheelPaths
         if: matrix.id == 'windows7-amd64' || matrix.id == 'windows10-amd64'
+      - name: Install cached or freshly built Windows binding wheels
+        if: matrix.id == 'windows7-amd64' || matrix.id == 'windows10-amd64'
+        shell: pwsh
+        run: |
+          $wheelDirectory = Join-Path $env:RUNNER_TEMP 'bindings/wheels'
+          $wheels = @(
+            Get-ChildItem -LiteralPath $wheelDirectory -Filter '*.whl' -File |
+              Sort-Object Name
+          )
+          if ($wheels.Count -ne 4) {
+            throw "Expected exactly 4 cached/built binding wheels; found $($wheels.Count)"
+          }
+          python -m pip install --no-index --force-reinstall --no-deps @($wheels.FullName)
       - name: Install supported binding wheels
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
