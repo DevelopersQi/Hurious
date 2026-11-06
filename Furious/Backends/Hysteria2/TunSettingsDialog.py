@@ -40,6 +40,33 @@ __all__ = ['Hysteria2TunSettingsDialog']
 logger = logging.getLogger(__name__)
 
 
+def _singleColumnFormLayout(containers):
+    """Lay out native TUN fields vertically with expandable input controls."""
+    layout = QFormLayout()
+    layout.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+    layout.setFieldGrowthPolicy(
+        QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+    )
+    layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+    layout.setHorizontalSpacing(12)
+    layout.setVerticalSpacing(10)
+
+    for container in containers:
+        widgets = container.widgets()
+        if len(widgets) == 2:
+            label, editor = widgets
+            editor.setMinimumWidth(0)
+            editor.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Fixed,
+            )
+            layout.addRow(label, editor)
+        elif len(widgets) == 1:
+            layout.addRow(widgets[0])
+
+    return layout
+
+
 def _nestedValue(config: dict, path: tuple[str, ...], default):
     """Return a nested settings value or *default*."""
     value = config
@@ -156,6 +183,10 @@ class GuiHysteria2TUNSettingsGroupBoxInterface(GuiEditorWidgetQGroupBox):
         """Initialize the interface settings group."""
         super().__init__(_('Interface'), **kwargs)
 
+    def setupPageLayout(self):
+        """Use the same responsive single-column layout for native TUN fields."""
+        return _singleColumnFormLayout(self._containers)
+
     def containerSequence(self):
         """Return interface-setting editors in display order."""
         return [
@@ -177,6 +208,10 @@ class GuiHysteria2TUNSettingsGroupBoxNetwork(GuiEditorWidgetQGroupBox):
     def __init__(self, **kwargs):
         """Initialize the network settings group."""
         super().__init__(_('Network'), **kwargs)
+
+    def setupPageLayout(self):
+        """Use the same responsive single-column layout as other TUN pages."""
+        return _singleColumnFormLayout(self._containers)
 
     def containerSequence(self):
         """Return address and route editors in display order."""
