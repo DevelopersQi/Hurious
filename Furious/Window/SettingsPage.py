@@ -1084,9 +1084,9 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
                 self._openRoutingEditor,
                 _('Custom Routing Rules'),
                 _(
-                    'Create routing profiles and configure domain, IP, port, '
-                    'protocol, and process rules. Select a profile in the routing '
-                    'selector to apply it.'
+                    'Create Xray routing profiles and configure domain, IP, port, protocol, '
+                    'and process rules. This feature currently supports Xray-core. '
+                    'Select a profile in the routing selector to apply it.'
                 ),
                 _('Configure'),
             )
