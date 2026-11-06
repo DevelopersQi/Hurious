@@ -121,7 +121,7 @@ class ConnectionController(QtCore.QObject):
         """Return the actual TUN backend only for an established connection."""
         if not self.isConnected():
             return None
-        return self._coreManager.activeTUNBackend
+        return getattr(self._coreManager, 'activeTUNBackend', None)
 
     @property
     def activeProfile(self):
