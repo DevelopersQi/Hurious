@@ -138,6 +138,27 @@ class XrayNativeTUNTest(unittest.TestCase):
         self.assertEqual(runtime, original)
         self.assertTrue(self.factory.usesApplicationTun2socks(runtime))
 
+    def testExplicitXrayBackendGeneratesNativeTUNWhenMissing(self):
+        """Generate the selected native Xray inbound on the runtime copy."""
+        runtime = self.configuration(nativeTUN=False)
+
+        with mock.patch.object(
+            XrayPluginModule,
+            'buildXrayTUNInbound',
+            return_value=copy.deepcopy(self.generatedTUN),
+        ):
+            handled = self.factory.prepareTUNForBackend(runtime, 'xray')
+
+        self.assertTrue(handled)
+        self.assertEqual(runtime['inbounds'], [self.httpInbound, self.generatedTUN])
+
+    def testExplicitXrayBackendRejectsMalformedInboundCollection(self):
+        """Do not discard malformed user configuration to force a TUN inbound."""
+        runtime = ConfigXray({'inbounds': 'invalid', 'outbounds': []})
+
+        with self.assertRaisesRegex(TUNPreparationError, 'inbounds field'):
+            self.factory.prepareTUNForBackend(runtime, 'xray')
+
     def testExplicitXrayBackendOverridesLegacyToggleAndPreservesCustomTUN(self):
         """Force native Xray without replacing an explicit user inbound."""
         original = self.configuration(nativeTUN=True)
@@ -169,6 +190,14 @@ class XrayNativeTUNTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TUNPreparationError, 'not supported'):
             self.factory.prepareTUNForBackend(runtime, 'hysteria2')
+
+    def testExplicitHysteria2BackendPreservesCustomTUN(self):
+        """Keep the user's Hysteria 2 TUN block unchanged when selected."""
+        runtime = self.configuration(nativeTUN=True)
+        snapshot = copy.deepcopy(runtime)
+
+        self.assertTrue(self.factory.prepareTUNForBackend(runtime, 'hysteria2'))
+        self.assertEqual(runtime, snapshot)
 
     def testExplicitHysteria2BackendOverridesLegacyToggle(self):
         """Prepare native Hysteria 2 when explicitly selected."""
