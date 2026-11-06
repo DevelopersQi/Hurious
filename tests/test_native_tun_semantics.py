@@ -77,6 +77,7 @@ class XrayNativeTUNTest(unittest.TestCase):
         runtime = original.deepcopy()
 
         with (
+            mock.patch.object(XrayPluginModule, 'PLATFORM', 'Windows'),
             mock.patch.object(
                 XrayPluginModule,
                 'isXrayTUNEnabled',
