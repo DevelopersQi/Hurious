@@ -2085,7 +2085,7 @@ TRANSLATION = {
             "Furious.Backends.Xray.TunSettingsDialog"
         ],
         "RU": "Gateway (через запятую)",
-        "ZH": "Gateway（以逗号分隔）",
+        "ZH": "网关（以逗号分隔）",
         "isReviewed": "True"
     },
     "DNS (separated by commas)": {
@@ -2101,7 +2101,7 @@ TRANSLATION = {
             "Furious.Backends.Xray.TunSettingsDialog"
         ],
         "RU": "AutoSystemRoutingTable (через запятую)",
-        "ZH": "AutoSystemRoutingTable（以逗号分隔）",
+        "ZH": "自动系统路由表（以逗号分隔）",
         "isReviewed": "True"
     },
     "TUN Documentation": {
