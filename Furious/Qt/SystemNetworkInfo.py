@@ -67,7 +67,9 @@ class SystemNetworkInfoWidget(QGroupBox):
         gateway = self._info.get('gateway') or _('Not detected')
 
         self.infoLabel.setText(
-            _('Adapter: {name}    IPv4: {address}    Default gateway: {gateway}').format(
+            _(
+                'Adapter: {name}    IPv4: {address}    Default gateway: {gateway}'
+            ).format(
                 name=name,
                 address=address,
                 gateway=gateway,
