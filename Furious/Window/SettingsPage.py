@@ -605,7 +605,6 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
 
             helpLabel = AppQLabel(
                 helpText,
-                translatable=False,
                 parent=optionWidget,
             )
             self._optionHelpLabels[backend] = helpLabel
