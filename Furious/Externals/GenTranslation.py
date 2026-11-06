@@ -1,4 +1,59 @@
 TRANSLATION = {
+    "Interface Name": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "网卡名称",
+        "isReviewed": "True"
+    },
+    "Interface Description": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "网卡描述",
+        "isReviewed": "True"
+    },
+    "User Level": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "用户级别",
+        "isReviewed": "True"
+    },
+    "Automatic Outbound Interface": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "自动出站网卡",
+        "isReviewed": "True"
+    },
+    "Timeout": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "超时时间",
+        "isReviewed": "True"
+    },
+    "IPv4 TUN Address": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "IPv4 虚拟网卡地址",
+        "isReviewed": "True"
+    },
+    "IPv6 TUN Address": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "IPv6 虚拟网卡地址",
+        "isReviewed": "True"
+    },
+    "IPv4 Routes": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "IPv4 路由",
+        "isReviewed": "True"
+    },
+    "IPv6 Routes": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "IPv6 路由",
+        "isReviewed": "True"
+    },
+    "IPv4 Excluded Routes": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "IPv4 排除路由",
+        "isReviewed": "True"
+    },
+    "IPv6 Excluded Routes": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog", "Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "IPv6 排除路由",
+        "isReviewed": "True"
+    },
     "Auto (Recommended)": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "自动（推荐）",
