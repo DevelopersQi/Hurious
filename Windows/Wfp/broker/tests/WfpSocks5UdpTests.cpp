@@ -724,6 +724,56 @@ void TestWfpUdpResponseInjectionCarriesRedirectMetadata() {
     assert(gWfpUdpSendCapture.redirectContext == redirectContext);
     assert(gWfpUdpSendCapture.controlLevel == IPPROTO_IP);
     closesocket(ingress);
+
+    // IPv6 return injection must carry both WFP metadata records at the
+    // IPv6 ancillary level and preserve the original client endpoint.
+    SOCKET ingress6 = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    assert(ingress6 != INVALID_SOCKET);
+    sockaddr_in6 destination6{};
+    destination6.sin6_family = AF_INET6;
+    destination6.sin6_addr.u.Byte[0] = 0x20;
+    destination6.sin6_addr.u.Byte[1] = 0x01;
+    destination6.sin6_addr.u.Byte[2] = 0x0D;
+    destination6.sin6_addr.u.Byte[3] = 0xB8;
+    destination6.sin6_addr.u.Byte[15] = 0x0A;
+    destination6.sin6_port = htons(53001);
+
+    auto context6 = MakeUdpRedirectContext(1001);
+    context6.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    std::memset(context6.OriginalAddress, 0, sizeof(context6.OriginalAddress));
+    context6.OriginalAddress[0] = 0x20;
+    context6.OriginalAddress[1] = 0x01;
+    context6.OriginalAddress[2] = 0x0D;
+    context6.OriginalAddress[3] = 0xB8;
+    context6.OriginalAddress[15] = 0x08;
+    const auto* context6Bytes =
+        reinterpret_cast<const std::uint8_t*>(&context6);
+    const std::vector<std::uint8_t> redirectContext6(
+        context6Bytes, context6Bytes + sizeof(context6));
+    const std::vector<std::uint8_t> redirectRecord6{0x61, 0x62, 0x63};
+    gWfpUdpSendCapture = WfpUdpSendCapture{};
+    bytesSent = 0;
+    const int result6 = SendWfpUdpMessage(ingress6, CaptureWfpUdpSendMessage,
+        reinterpret_cast<const sockaddr*>(&destination6), sizeof(destination6),
+        payload.data(), payload.size(), redirectRecord6, redirectContext6,
+        &bytesSent);
+    assert(result6 == 0);
+    assert(bytesSent == payload.size());
+    assert(gWfpUdpSendCapture.called);
+    assert(gWfpUdpSendCapture.destinationLength ==
+        static_cast<int>(sizeof(destination6)));
+    const auto* capturedDestination6 =
+        reinterpret_cast<const sockaddr_in6*>(&gWfpUdpSendCapture.destination);
+    assert(capturedDestination6->sin6_family == AF_INET6);
+    assert(capturedDestination6->sin6_port == destination6.sin6_port);
+    assert(std::memcmp(&capturedDestination6->sin6_addr,
+        &destination6.sin6_addr, sizeof(IN6_ADDR)) == 0);
+    assert(gWfpUdpSendCapture.payload ==
+        std::vector<std::uint8_t>(payload.begin(), payload.end()));
+    assert(gWfpUdpSendCapture.redirectRecord == redirectRecord6);
+    assert(gWfpUdpSendCapture.redirectContext == redirectContext6);
+    assert(gWfpUdpSendCapture.controlLevel == IPPROTO_IPV6);
+    closesocket(ingress6);
 }
 
 void TestAssociationSourcePinningAndExpiry() {
