@@ -126,4 +126,18 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME FuriousWfpUdpBrokerTests COMMAND FuriousWfpUdpBrokerTests)
     set_tests_properties(FuriousWfpUdpBrokerTests PROPERTIES TIMEOUT 20)
+
+    add_executable(FuriousWfpSocks5UdpTests
+        ../broker/tests/WfpSocks5UdpTests.cpp
+    )
+    target_compile_features(FuriousWfpSocks5UdpTests PRIVATE cxx_std_17)
+    target_compile_definitions(FuriousWfpSocks5UdpTests PRIVATE
+        WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
+    )
+    target_link_libraries(FuriousWfpSocks5UdpTests PRIVATE FuriousWfpTcpBroker)
+    if(MSVC)
+        target_compile_options(FuriousWfpSocks5UdpTests PRIVATE /W4 /WX /permissive- /UNDEBUG)
+    endif()
+    add_test(NAME FuriousWfpSocks5UdpTests COMMAND FuriousWfpSocks5UdpTests)
+    set_tests_properties(FuriousWfpSocks5UdpTests PROPERTIES TIMEOUT 10)
 endif()
