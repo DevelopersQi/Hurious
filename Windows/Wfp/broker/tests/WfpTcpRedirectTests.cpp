@@ -557,25 +557,25 @@ void TestWfpUdpFlowManager() {
     auto conflictingContext = context;
     conflictingContext.OriginalAddress[3] = 9;
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
-        sizeof(source), conflictingContext, record, now, duplicateId) ==
+        sizeof(source), conflictingContext, record, now + std::chrono::seconds(2), duplicateId) ==
         CreateResult::SourceEndpointConflict);
 
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&secondSource),
-        sizeof(secondSource), context, record, now, duplicateId) ==
+        sizeof(secondSource), context, record, now + std::chrono::seconds(3), duplicateId) ==
         CreateResult::PerProcessLimitReached);
 
     auto secondProcessContext = context;
     secondProcessContext.OriginalProcessId = 2002;
     std::uint64_t secondId = 0;
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&secondSource),
-        sizeof(secondSource), secondProcessContext, record, now, secondId) ==
+        sizeof(secondSource), secondProcessContext, record, now + std::chrono::seconds(4), secondId) ==
         CreateResult::Created);
     assert(manager.ActiveCount() == 2);
 
     auto thirdProcessContext = context;
     thirdProcessContext.OriginalProcessId = 3003;
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&thirdSource),
-        sizeof(thirdSource), thirdProcessContext, record, now, duplicateId) ==
+        sizeof(thirdSource), thirdProcessContext, record, now + std::chrono::seconds(5), duplicateId) ==
         CreateResult::FlowLimitReached);
 
     std::uint64_t touchedId = 0;
@@ -589,7 +589,7 @@ void TestWfpUdpFlowManager() {
     assert(snapshot.redirectRecord == record);
     assert(snapshot.sourceEndpoint.ss_family == AF_INET);
 
-    assert(manager.SweepExpired(now + std::chrono::seconds(10)) == 1);
+    assert(manager.SweepExpired(now + std::chrono::seconds(14)) == 1);
     assert(manager.ActiveCount() == 1);
     assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source), sizeof(source),
         now + std::chrono::seconds(19), touchedId) == TouchResult::Expired);
@@ -603,10 +603,10 @@ void TestWfpUdpFlowManager() {
     sockaddr_in invalidSource = source;
     invalidSource.sin_port = 0;
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&invalidSource),
-        sizeof(invalidSource), context, record, now, duplicateId) ==
+        sizeof(invalidSource), context, record, now + std::chrono::seconds(20), duplicateId) ==
         CreateResult::InvalidSource);
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
-        sizeof(source), context, {}, now, duplicateId) ==
+        sizeof(source), context, {}, now + std::chrono::seconds(20), duplicateId) ==
         CreateResult::MissingRedirectRecord);
 
     sockaddr_in6 source6{};
