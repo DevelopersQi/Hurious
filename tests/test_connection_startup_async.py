@@ -1077,6 +1077,89 @@ class ConnectionStartupAsyncTest(TestCase):
             self.assertIsNone(manager._activeStartOperation)
 
 
+    def testWfpTcpStartupNegotiatesUdpAddressFamiliesFromActualListeners(self):
+        """Start UDP only on the families the TCP broker really opened."""
+        manager = self._manager()
+        controller = manager._getWfpIpcController()
+        self.assertIsNotNone(controller)
+
+        backend = 7
+        generation = manager.wfpRuntimeSnapshot.generation
+        pending = (backend, generation, '127.0.0.1', 10808)
+        requestId = 501
+        udpRequestId = 502
+        manager._wfpPolicyReady = True
+        manager._wfpPolicyHasProxyRules = True
+        manager._wfpPolicyBackend = backend
+        manager._wfpUdpExpected = True
+        manager._wfpBrokerPending[requestId] = pending
+        manager._completeWfpBrokerStartup = mock.Mock()
+
+        result = mock.Mock(
+            broker_process_id=4321,
+            tcp_port_v4=41000,
+            tcp_port_v6=0,
+        )
+        with mock.patch.object(
+            controller, 'startUdpBroker', return_value=udpRequestId
+        ) as startUdp:
+            manager._onWfpIpcRequestFinished(
+                requestId, 'start-broker', result, None
+            )
+
+        startUdp.assert_called_once_with(
+            '127.0.0.1', 10808, True, False
+        )
+        self.assertEqual(manager._wfpUdpBrokerPending[udpRequestId], pending)
+        self.assertEqual(
+            manager._wfpTcpBrokerEndpoint,
+            (backend, 4321, 41000, 0),
+        )
+        manager._completeWfpBrokerStartup.assert_called_once_with()
+
+    def testWfpStopCompletionDoesNotEraseNewBrokerStartup(self):
+        """A delayed stop callback must not erase replacement start requests."""
+        manager = self._manager()
+        backend = 9
+        generation = manager.wfpRuntimeSnapshot.generation
+        pending = (backend, generation, '127.0.0.1', 10808)
+        manager._wfpBrokerPending = {601: pending}
+        manager._wfpUdpBrokerPending = {602: pending}
+        manager._wfpUdpExpected = True
+        manager._wfpTcpBrokerEndpoint = (backend, 4321, 41000, 0)
+
+        manager._onWfpIpcRequestFinished(
+            600, 'stop-broker', None, None
+        )
+
+        self.assertEqual(manager._wfpBrokerPending, {601: pending})
+        self.assertEqual(manager._wfpUdpBrokerPending, {602: pending})
+        self.assertTrue(manager._wfpUdpExpected)
+        self.assertEqual(
+            manager._wfpTcpBrokerEndpoint,
+            (backend, 4321, 41000, 0),
+        )
+
+    def testStaleWfpBrokerFailureDoesNotClearReplacementRequests(self):
+        """Ignore failures whose request IDs no longer belong to this startup."""
+        manager = self._manager()
+        backend = 11
+        generation = manager.wfpRuntimeSnapshot.generation
+        pending = (backend, generation, '127.0.0.1', 10808)
+        manager._wfpBrokerPending = {701: pending}
+        manager._wfpUdpBrokerPending = {702: pending}
+        manager._wfpPolicyBackend = backend
+        manager._wfpUdpExpected = True
+
+        manager._onWfpIpcRequestFinished(
+            700, 'start-broker', None, RuntimeError('stale failure')
+        )
+
+        self.assertEqual(manager._wfpBrokerPending, {701: pending})
+        self.assertEqual(manager._wfpUdpBrokerPending, {702: pending})
+        self.assertTrue(manager._wfpUdpExpected)
+
+
 if __name__ == '__main__':
     application()
     unittest.main()
