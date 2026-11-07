@@ -120,6 +120,7 @@ bool TcpBrokerServer::Start(
     bool enableIpv6,
     size_t workerCount,
     size_t maximumSessions) noexcept {
+    std::lock_guard<std::recursive_mutex> lifecycleLock(lifecycleMutex_);
     if (!stopping_.load() || socksAddress == nullptr ||
         !IsLoopbackSocksAddress(socksAddress) ||
         (!enableIpv4 && !enableIpv6) ||
@@ -327,6 +328,7 @@ void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
 }
 
 void TcpBrokerServer::Stop() noexcept {
+    std::lock_guard<std::recursive_mutex> lifecycleLock(lifecycleMutex_);
     if (stopping_.exchange(true) && !winsockStarted_) {
         return;
     }
@@ -375,12 +377,14 @@ void TcpBrokerServer::Stop() noexcept {
 }
 
 bool TcpBrokerServer::IsRunning() const noexcept {
+    std::lock_guard<std::recursive_mutex> lifecycleLock(lifecycleMutex_);
     return !stopping_.load();
 }
 
 bool TcpBrokerServer::IsConfiguredFor(
     const sockaddr* address,
     int addressLength) const noexcept {
+    std::lock_guard<std::recursive_mutex> lifecycleLock(lifecycleMutex_);
     if (stopping_.load() || address == nullptr) {
         return false;
     }
@@ -413,6 +417,7 @@ std::uint32_t TcpBrokerServer::ProcessId() const noexcept {
 }
 
 TcpBrokerListenerPorts TcpBrokerServer::ListenerPorts() const noexcept {
+    std::lock_guard<std::recursive_mutex> lifecycleLock(lifecycleMutex_);
     return ports_;
 }
 
