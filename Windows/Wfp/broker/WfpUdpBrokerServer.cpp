@@ -262,6 +262,13 @@ void UdpBrokerServer::Run() noexcept {
             if (events == 0) continue;
             const auto& target = targets[index];
             if (target.kind == PollKind::Ingress4 || target.kind == PollKind::Ingress6) {
+                // An invalid or failed ingress socket means the published
+                // endpoint can no longer receive redirected packets. Continuing
+                // would leave WFP redirecting traffic into a dead broker.
+                if ((events & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+                    stopping_.store(true);
+                    break;
+                }
                 Ingress& ingress = target.kind == PollKind::Ingress4 ? ipv4_ : ipv6_;
                 WfpUdpReceivedMessage message{};
                 int error = 0;
@@ -273,8 +280,14 @@ void UdpBrokerServer::Run() noexcept {
                         WfpUdpFlowRelayRegistry::Clock::now(), nullptr, &error);
                 }
             } else if (target.kind == PollKind::PendingControl) {
-                const bool readable = (events & (POLLRDNORM | POLLERR | POLLHUP)) != 0;
-                const bool writable = (events & (POLLWRNORM | POLLERR | POLLHUP)) != 0;
+                // POLLNVAL is not a readable/writable event, but it must drive
+                // the pending state machine into its socket-error cleanup path
+                // instead of leaving the flow allocated until its timeout.
+                const bool invalid = (events & POLLNVAL) != 0;
+                const bool readable = invalid ||
+                    (events & (POLLRDNORM | POLLERR | POLLHUP)) != 0;
+                const bool writable = invalid ||
+                    (events & (POLLWRNORM | POLLERR | POLLHUP)) != 0;
                 registry_->AdvancePendingFlow(target.flowId, readable, writable);
             } else if (target.kind == PollKind::RelayUdp) {
                 const auto relay = std::find_if(relays.begin(), relays.end(),
