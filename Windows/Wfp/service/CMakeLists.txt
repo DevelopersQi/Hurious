@@ -93,7 +93,9 @@ if(BUILD_TESTING)
     )
     target_link_libraries(FuriousWfpTcpBrokerTests PRIVATE FuriousWfpTcpBroker)
     if(MSVC)
-        target_compile_options(FuriousWfpTcpBrokerTests PRIVATE /W4 /WX /permissive-)
+        # Keep assertions active in Release CI builds; otherwise these
+        # regression executables would silently skip their checks under NDEBUG.
+        target_compile_options(FuriousWfpTcpBrokerTests PRIVATE /W4 /WX /permissive- /UNDEBUG)
     endif()
     add_test(NAME FuriousWfpTcpBrokerTests COMMAND FuriousWfpTcpBrokerTests)
     set_tests_properties(FuriousWfpTcpBrokerTests PROPERTIES TIMEOUT 15)
