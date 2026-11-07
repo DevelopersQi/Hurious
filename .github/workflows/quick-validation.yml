@@ -81,11 +81,79 @@ jobs:
           Write-Host "Built driver: $($driver.FullName)"
           Get-FileHash $driver.FullName -Algorithm SHA256
 
-      - name: Upload unsigned driver build
+      - name: Create ephemeral test certificate and sign WFP driver
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse |
+            Select-Object -First 1
+          if ($null -eq $driver) { throw 'FuriousWfpCallout.sys was not produced.' }
+
+          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $signTool = Get-ChildItem -LiteralPath $sdkRoot -Filter signtool.exe -Recurse |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $signTool) { throw "Windows SDK SignTool was not found below $sdkRoot" }
+
+          $output = Join-Path $env:RUNNER_TEMP 'furious-wfp-test-signed'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $certificatePath = Join-Path $output 'FuriousWfpCallout-TestCertificate.cer'
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'FuriousWfpCallout-TestCertificate.pfx'
+          $pfxPasswordText = [Guid]::NewGuid().ToString('N')
+          $pfxPassword = ConvertTo-SecureString $pfxPasswordText -AsPlainText -Force
+
+          $certificate = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject 'CN=Furious WFP Driver Test Signing' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -KeyExportPolicy Exportable `
+            -NotAfter (Get-Date).AddYears(5)
+
+          try {
+            Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $pfxPassword |
+              Out-Null
+            Export-Certificate -Cert $certificate -FilePath $certificatePath |
+              Out-Null
+
+            & $signTool.FullName sign /v /fd SHA256 /f $pfxPath /p $pfxPasswordText $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "SignTool signing failed with exit code $LASTEXITCODE" }
+
+            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\Root' |
+              Out-Null
+            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' |
+              Out-Null
+            & $signTool.FullName verify /pa /v $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "SignTool signature verification failed with exit code $LASTEXITCODE" }
+
+            Copy-Item -LiteralPath $driver.FullName -Destination (Join-Path $output 'FuriousWfpCallout.sys')
+            $hash = (Get-FileHash -LiteralPath (Join-Path $output 'FuriousWfpCallout.sys') -Algorithm SHA256).Hash
+            "$hash  FuriousWfpCallout.sys" |
+              Set-Content -LiteralPath (Join-Path $output 'FuriousWfpCallout.sha256') -Encoding ascii
+            @'
+          INTERNAL TEST BUILD ONLY
+          This driver is signed with an ephemeral, self-created test certificate.
+          It is not a production-signed Windows driver and is not suitable for retail distribution.
+          Loading requires Windows test-signing mode (TESTSIGNING) and a compatible test machine.
+          Secure Boot policy may prevent enabling TESTSIGNING. Do not weaken security on customer devices.
+          Import the included public certificate into the test machine's Trusted Root Certification Authorities
+          and Trusted Publishers stores when required by the test configuration.
+          This package does not enable TESTSIGNING, change Secure Boot, or install/start the driver.
+          '@ | Set-Content -LiteralPath (Join-Path $output 'README-test-signing.txt') -Encoding utf8
+          }
+          finally {
+            Remove-Item -LiteralPath $pfxPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload test-signed driver build
         uses: actions/upload-artifact@v7
         with:
-          name: furious-wfp-driver-windows10-x64-unsigned
-          path: Windows/Wfp/driver/**/FuriousWfpCallout.sys
+          name: furious-wfp-driver-windows10-x64-test-signed
+          path: ${{ runner.temp }}/furious-wfp-test-signed/
           if-no-files-found: error
           retention-days: 7
 
