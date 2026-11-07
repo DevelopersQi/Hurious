@@ -188,6 +188,9 @@ bool UdpBrokerServer::IsRunning() const noexcept {
 
 UdpBrokerListenerPorts UdpBrokerServer::ListenerPorts() const noexcept {
     std::lock_guard<std::mutex> lock(lifecycleMutex_);
+    // A fatal I/O-loop failure stops the broker before Stop() reaps its thread.
+    // Never expose stale listener ports while the redirect target is unavailable.
+    if (stopping_.load()) return UdpBrokerListenerPorts{};
     return ports_;
 }
 
