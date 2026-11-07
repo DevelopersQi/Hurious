@@ -360,7 +360,10 @@ SOCKET OpenSocks5Tunnel(
     const sockaddr* socksAddress,
     int socksAddressLength,
     const RedirectedTcpConnection& redirected,
-    int* errorCode) noexcept {
+    int* errorCode,
+    ActiveSocketRegister registerSocket,
+    ActiveSocketUnregister unregisterSocket,
+    void* callbackContext) noexcept {
     if (errorCode != nullptr) {
         *errorCode = 0;
     }
@@ -371,6 +374,7 @@ SOCKET OpenSocks5Tunnel(
     if (requiredAddressLength == 0 ||
         socksAddressLength < requiredAddressLength ||
         redirected.redirectRecords.empty() ||
+        ((registerSocket == nullptr) != (unregisterSocket == nullptr)) ||
         !furious::wfp::redirect::IsValidRedirectContext(redirected.context) ||
         redirected.context.Protocol != FURIOUS_WFP_REDIRECT_PROTOCOL_TCP) {
         if (errorCode != nullptr) {
@@ -384,6 +388,16 @@ SOCKET OpenSocks5Tunnel(
         if (errorCode != nullptr) {
             *errorCode = WSAGetLastError();
         }
+        return INVALID_SOCKET;
+    }
+
+    // Publish the socket before connect/handshake so Stop() can shutdown it
+    // from another thread. Registration is atomic with the server's stopping
+    // check; a late worker is rejected instead of escaping cancellation.
+    if (registerSocket != nullptr &&
+        !registerSocket(callbackContext, upstream)) {
+        closesocket(upstream);
+        if (errorCode != nullptr) *errorCode = WSA_OPERATION_ABORTED;
         return INVALID_SOCKET;
     }
 
@@ -431,6 +445,9 @@ SOCKET OpenSocks5Tunnel(
     }
 
     if (error != 0) {
+        if (unregisterSocket != nullptr) {
+            unregisterSocket(callbackContext, upstream);
+        }
         closesocket(upstream);
         if (errorCode != nullptr) {
             *errorCode = error;
