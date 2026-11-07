@@ -3,6 +3,7 @@
 #include "WfpSocks5UdpFlowRelay.h"
 #include "WfpUdpFlowManager.h"
 
+#include <deque>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -24,7 +25,8 @@ enum class WfpUdpFlowRelayRegistryResult {
     ReceiveFailed,
     UnexpectedDestination,
     ControlClosed,
-    ForwardFailed
+    ForwardFailed,
+    PendingQueueFull
 };
 
 struct WfpUdpRelaySocket final {
@@ -85,7 +87,15 @@ public:
 private:
     WfpUdpFlowManager flows_;
     std::unordered_map<std::uint64_t, std::unique_ptr<WfpSocks5UdpFlowRelay>> relays_;
-    std::unordered_map<std::uint64_t, std::vector<std::uint8_t>> pendingDatagrams_;
+    // During SOCKS5 negotiation retain a small, strictly bounded FIFO per flow.
+    // Global accounting prevents many simultaneous handshakes exhausting memory.
+    static constexpr std::size_t kMaximumPendingDatagramsPerFlow = 4;
+    static constexpr std::size_t kMaximumPendingDatagramBytes = 4 * 1024 * 1024;
+    std::unordered_map<std::uint64_t, std::deque<std::vector<std::uint8_t>>> pendingDatagrams_;
+    std::size_t pendingDatagramBytes_ = 0;
+    bool QueuePendingDatagram(std::uint64_t flowId,
+        const std::uint8_t* payload, std::size_t payloadLength) noexcept;
+    void DiscardPendingDatagrams(std::uint64_t flowId) noexcept;
     sockaddr_storage socksAddress_{};
     int socksAddressLength_ = 0;
     DWORD timeoutMilliseconds_ = 5000;

@@ -111,7 +111,12 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
             flows_.Remove(flowId);
             return WfpUdpFlowRelayRegistryResult::FlowNotFound;
         }
-        if (pendingDatagrams_.find(flowId) != pendingDatagrams_.end()) {
+        auto pending = pendingDatagrams_.find(flowId);
+        if (pending != pendingDatagrams_.end()) {
+            if (!QueuePendingDatagram(flowId, payload, message.payloadLength)) {
+                CloseFlow(flowId);
+                return WfpUdpFlowRelayRegistryResult::PendingQueueFull;
+            }
             if (outputFlowId) *outputFlowId = flowId;
             return WfpUdpFlowRelayRegistryResult::Pending;
         }
@@ -167,10 +172,9 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
             }
             try {
                 found = relays_.emplace(flowId, std::move(relay)).first;
-                std::vector<std::uint8_t> firstDatagram;
-                if (message.payloadLength != 0)
-                    firstDatagram.assign(payload, payload + message.payloadLength);
-                pendingDatagrams_.emplace(flowId, std::move(firstDatagram));
+                pendingDatagrams_.try_emplace(flowId);
+                if (!QueuePendingDatagram(flowId, payload, message.payloadLength))
+                    throw std::bad_alloc();
             } catch (...) {
                 // Erasing the relay closes its UDP and TCP resources.
                 relays_.erase(flowId);
@@ -215,14 +219,20 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
         return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
     }
 
-    const auto sent = relay->second->SendClientPayload(
-        pending->second.empty() ? nullptr : pending->second.data(),
-        pending->second.size(), errorCode);
-    if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
-        CloseFlow(flowId);
-        return sent == WfpSocks5UdpFlowRelayResult::ControlClosed
-            ? WfpUdpFlowRelayRegistryResult::ControlClosed
-            : WfpUdpFlowRelayRegistryResult::SendFailed;
+    // Preserve datagram order. If the local UDP socket cannot accept a queued
+    // datagram, fail this flow closed rather than silently dropping/reordering it.
+    while (!pending->second.empty()) {
+        const auto& datagram = pending->second.front();
+        const auto sent = relay->second->SendClientPayload(
+            datagram.empty() ? nullptr : datagram.data(), datagram.size(), errorCode);
+        if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
+            CloseFlow(flowId);
+            return sent == WfpSocks5UdpFlowRelayResult::ControlClosed
+                ? WfpUdpFlowRelayRegistryResult::ControlClosed
+                : WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
+        pendingDatagramBytes_ -= datagram.size();
+        pending->second.pop_front();
     }
     pendingDatagrams_.erase(pending);
     return WfpUdpFlowRelayRegistryResult::Ready;
@@ -305,7 +315,7 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
             continue;
         }
         const auto flowId = it->first;
-        pendingDatagrams_.erase(flowId);
+        DiscardPendingDatagrams(flowId);
         it->second->Close();
         it = relays_.erase(it);
         flows_.Remove(flowId);
@@ -314,8 +324,42 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
     return closed;
 }
 
+
+bool WfpUdpFlowRelayRegistry::QueuePendingDatagram(
+    std::uint64_t flowId, const std::uint8_t* payload,
+    std::size_t payloadLength) noexcept {
+    auto found = pendingDatagrams_.find(flowId);
+    if (found == pendingDatagrams_.end() ||
+        found->second.size() >= kMaximumPendingDatagramsPerFlow ||
+        payloadLength > 65507 ||
+        pendingDatagramBytes_ > kMaximumPendingDatagramBytes ||
+        payloadLength > kMaximumPendingDatagramBytes - pendingDatagramBytes_ ||
+        (payloadLength != 0 && payload == nullptr)) return false;
+    try {
+        std::vector<std::uint8_t> datagram;
+        if (payloadLength != 0) datagram.assign(payload, payload + payloadLength);
+        found->second.push_back(std::move(datagram));
+        pendingDatagramBytes_ += payloadLength;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void WfpUdpFlowRelayRegistry::DiscardPendingDatagrams(
+    std::uint64_t flowId) noexcept {
+    const auto found = pendingDatagrams_.find(flowId);
+    if (found == pendingDatagrams_.end()) return;
+    for (const auto& datagram : found->second) {
+        const auto size = datagram.size();
+        pendingDatagramBytes_ = size > pendingDatagramBytes_
+            ? 0 : pendingDatagramBytes_ - size;
+    }
+    pendingDatagrams_.erase(found);
+}
+
 void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
-    pendingDatagrams_.erase(flowId);
+    DiscardPendingDatagrams(flowId);
     const auto found = relays_.find(flowId);
     if (found != relays_.end()) {
         found->second->Close();
