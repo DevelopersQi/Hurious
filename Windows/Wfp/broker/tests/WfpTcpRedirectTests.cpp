@@ -4,6 +4,7 @@
 #include "../WfpSocks5UdpAssociationManager.h"
 #include "../WfpSocks5UdpSocket.h"
 #include "../WfpSocks5UdpRedirectRecord.h"
+#include "../WfpUdpFlowManager.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
@@ -508,6 +509,137 @@ void TestWfpUdpRedirectContextDecode() {
     assert(decoded.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V6);
 }
 
+void TestWfpUdpFlowManager() {
+    using namespace furious::wfp::broker;
+    using Clock = WfpUdpFlowManager::Clock;
+    using CreateResult = WfpUdpFlowCreateResult;
+    using TouchResult = WfpUdpFlowTouchResult;
+    const auto now = Clock::time_point{} + std::chrono::seconds(100);
+
+    sockaddr_in source{};
+    source.sin_family = AF_INET;
+    source.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    source.sin_port = htons(50000);
+    auto secondSource = source;
+    secondSource.sin_port = htons(50001);
+    auto thirdSource = source;
+    thirdSource.sin_port = htons(50002);
+
+    FURIOUS_WFP_REDIRECT_CONTEXT context{};
+    context.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    context.Size = static_cast<FURIOUS_WFP_U32>(sizeof(context));
+    context.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    context.OriginalPortNetworkOrder = htons(53);
+    context.OriginalAddress[0] = 8;
+    context.OriginalAddress[1] = 8;
+    context.OriginalAddress[2] = 8;
+    context.OriginalAddress[3] = 8;
+    context.OriginalProcessId = 1001;
+    context.PolicyGeneration = 7;
+    const std::vector<std::uint8_t> record{0x11, 0x22, 0x33};
+
+    WfpUdpFlowManager manager(2, 1, std::chrono::seconds(10));
+    assert(manager.MaximumFlows() == 2);
+    assert(manager.MaximumFlowsPerProcess() == 1);
+    std::uint64_t firstId = 0;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
+        sizeof(source), context, record, now, firstId) == CreateResult::Created);
+    assert(firstId != 0 && manager.ActiveCount() == 1);
+
+    std::uint64_t duplicateId = 0;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
+        sizeof(source), context, record, now + std::chrono::seconds(1), duplicateId) ==
+        CreateResult::ExistingFlow);
+    assert(duplicateId == firstId);
+
+    auto conflictingContext = context;
+    conflictingContext.OriginalAddress[3] = 9;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
+        sizeof(source), conflictingContext, record, now, duplicateId) ==
+        CreateResult::SourceEndpointConflict);
+
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&secondSource),
+        sizeof(secondSource), context, record, now, duplicateId) ==
+        CreateResult::PerProcessLimitReached);
+
+    auto secondProcessContext = context;
+    secondProcessContext.OriginalProcessId = 2002;
+    std::uint64_t secondId = 0;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&secondSource),
+        sizeof(secondSource), secondProcessContext, record, now, secondId) ==
+        CreateResult::Created);
+    assert(manager.ActiveCount() == 2);
+
+    auto thirdProcessContext = context;
+    thirdProcessContext.OriginalProcessId = 3003;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&thirdSource),
+        sizeof(thirdSource), thirdProcessContext, record, now, duplicateId) ==
+        CreateResult::FlowLimitReached);
+
+    std::uint64_t touchedId = 0;
+    assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        now + std::chrono::seconds(9), touchedId) == TouchResult::Found);
+    assert(touchedId == firstId);
+
+    WfpUdpFlowSnapshot snapshot{};
+    assert(manager.GetSnapshot(firstId, snapshot));
+    assert(snapshot.redirectContext.OriginalProcessId == 1001);
+    assert(snapshot.redirectRecord == record);
+    assert(snapshot.sourceEndpoint.ss_family == AF_INET);
+
+    assert(manager.SweepExpired(now + std::chrono::seconds(10)) == 1);
+    assert(manager.ActiveCount() == 1);
+    assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        now + std::chrono::seconds(19), touchedId) == TouchResult::Expired);
+    assert(manager.ActiveCount() == 0);
+
+    sockaddr_in invalidSource = source;
+    invalidSource.sin_port = 0;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&invalidSource),
+        sizeof(invalidSource), context, record, now, duplicateId) ==
+        CreateResult::InvalidSource);
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
+        sizeof(source), context, {}, now, duplicateId) ==
+        CreateResult::MissingRedirectRecord);
+
+    sockaddr_in6 source6{};
+    source6.sin6_family = AF_INET6;
+    source6.sin6_addr = in6addr_loopback;
+    source6.sin6_port = htons(50003);
+    auto context6 = context;
+    context6.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    for (std::size_t i = 0; i < sizeof(context6.OriginalAddress); ++i) {
+        context6.OriginalAddress[i] = static_cast<std::uint8_t>(i + 1);
+    }
+    context6.OriginalProcessId = 4004;
+    WfpUdpFlowManager ipv6Manager(4, 2, std::chrono::seconds(10));
+    std::uint64_t ipv6Id = 0;
+    assert(ipv6Manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source6),
+        sizeof(source6), context6, record, now, ipv6Id) == CreateResult::Created);
+    assert(ipv6Manager.ActiveCount() == 1);
+
+    WfpUdpFlowManager concurrent(8, 1, std::chrono::seconds(10));
+    std::atomic<int> created{0};
+    std::atomic<int> existing{0};
+    const auto registerSame = [&concurrent, &created, &existing, &source,
+        &context, &record, now]() {
+        std::uint64_t id = 0;
+        const auto result = concurrent.RegisterFirstDatagram(
+            reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+            context, record, now, id);
+        if (result == CreateResult::Created) created.fetch_add(1);
+        if (result == CreateResult::ExistingFlow) existing.fetch_add(1);
+    };
+    std::thread first(registerSame);
+    std::thread second(registerSame);
+    first.join();
+    second.join();
+    assert(created.load() == 1 && existing.load() == 1);
+    assert(concurrent.ActiveCount() == 1);
+}
+ 
 void TestWfpUdpMessageReceive() {
     using namespace furious::wfp::broker;
     WSADATA data{};
@@ -683,6 +815,7 @@ int main() {
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpSocketOwnership();
     TestWfpUdpRedirectContextDecode();
+    TestWfpUdpFlowManager();
     TestWfpUdpMessageReceive();
     TestWfpUdpRedirectRecordAncillaryData();
     TestSocks5UdpAssociateControlMessages();

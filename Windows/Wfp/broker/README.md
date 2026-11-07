@@ -75,3 +75,12 @@ The receive helper now captures the source endpoint, payload, redirect-record an
 
 
 The UDP ancillary context decoder validates the shared redirect ABI, exact structure size, magic/version, reserved fields, original endpoint fields, policy generation, and UDP protocol before exposing original destination and originating process metadata. TCP-tagged, malformed, or truncated contexts are rejected.
+
+
+## WFP UDP flow table
+
+- Create a flow only from the first redirected datagram carrying a non-empty WFP redirect record and a valid UDP redirect context.
+- Key the flow by the client's local source endpoint (IPv4 or IPv6, including IPv6 scope ID); retain the validated original destination, process ID, policy generation, and redirect record.
+- Reject invalid/non-unicast source and target endpoints, source-endpoint identity conflicts, missing metadata, and malformed context.
+- Enforce global and per-process flow ceilings with a synchronized registry and monotonic idle expiry.
+- Later datagrams can resolve the existing flow by source endpoint; the table does not yet forward packets or open upstream proxy sockets.
