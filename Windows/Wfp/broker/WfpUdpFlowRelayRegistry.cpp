@@ -589,13 +589,13 @@ void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
 }
 
 void WfpUdpFlowRelayRegistry::CloseAll() noexcept {
-    // Close socket owners first, then discard any orphaned queue state. This
-    // path must not allocate: it is also used during shutdown and recovery
-    // after an allocation failure in the I/O loop.
-    while (!relays_.empty()) {
-        const auto id = relays_.begin()->first;
-        CloseFlow(id);
+    // Shutdown is a bulk operation: close socket owners directly, then clear
+    // every flow/queue container once. Calling CloseFlow in this loop would
+    // rescan all surviving queues after each erase and make shutdown quadratic.
+    for (auto& item : relays_) {
+        if (item.second) item.second->Close();
     }
+    relays_.clear();
     pendingDatagrams_.clear();
     outboundDatagrams_.clear();
     pendingDatagramBytes_ = 0;
