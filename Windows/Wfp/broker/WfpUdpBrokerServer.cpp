@@ -206,14 +206,29 @@ void UdpBrokerServer::Run() noexcept {
         return;
     }
 
+    // Reuse poll snapshots across iterations. The relay count is bounded by
+    // the configured flow limit, and vector capacity is retained after clear(),
+    // avoiding repeated heap churn on every 100 ms poll cycle.
+    std::vector<WSAPOLLFD> descriptors;
+    std::vector<PollTarget> targets;
+    std::vector<WfpUdpRelaySocket> relays;
+    std::vector<WfpUdpRelaySocket> pendingTimeouts;
+    try {
+        descriptors.reserve(2 + 256);
+        targets.reserve(2 + 256);
+        relays.reserve(256);
+        pendingTimeouts.reserve(256);
+    } catch (...) {
+        stopping_.store(true);
+        registry_->CloseAll();
+        return;
+    }
+
     auto nextSweep = std::chrono::steady_clock::now();
     while (!stopping_.load()) {
-        std::vector<WSAPOLLFD> descriptors;
-        std::vector<PollTarget> targets;
-        std::vector<WfpUdpRelaySocket> relays;
+        descriptors.clear();
+        targets.clear();
         try {
-            descriptors.reserve(2 + 256);
-            targets.reserve(2 + 256);
             if (ipv4_.socket != INVALID_SOCKET) {
                 descriptors.push_back({ipv4_.socket, POLLRDNORM, 0});
                 targets.push_back({PollKind::Ingress4, ipv4_.socket, 0});
@@ -330,7 +345,6 @@ void UdpBrokerServer::Run() noexcept {
 
         // Advance pending handshakes even when the peer has sent no bytes;
         // this enforces each association's deadline without a per-flow timer.
-        std::vector<WfpUdpRelaySocket> pendingTimeouts;
         if (!registry_->GetRelaySockets(pendingTimeouts)) {
             // A failed snapshot means we cannot reliably enforce handshake
             // deadlines this iteration. Fail closed instead of silently
