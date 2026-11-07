@@ -284,6 +284,8 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
 WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvanceQueuedClientDatagrams(
     std::uint64_t flowId, int* errorCode) noexcept {
     if (errorCode) *errorCode = 0;
+    int localError = 0;
+    int* sendError = errorCode != nullptr ? errorCode : &localError;
     const auto relay = relays_.find(flowId);
     const auto queued = outboundDatagrams_.find(flowId);
     if (relay == relays_.end() || queued == outboundDatagrams_.end())
@@ -292,13 +294,13 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvanceQueuedClientDatagr
     while (!queued->second.empty()) {
         const auto& datagram = queued->second.front();
         const auto sent = relay->second->SendClientPayload(
-            datagram.empty() ? nullptr : datagram.data(), datagram.size(), errorCode);
+            datagram.empty() ? nullptr : datagram.data(), datagram.size(), sendError);
         if (sent == WfpSocks5UdpFlowRelayResult::ControlClosed) {
             CloseFlow(flowId);
             return WfpUdpFlowRelayRegistryResult::ControlClosed;
         }
         if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
-            errorCode != nullptr && *errorCode == WSAEWOULDBLOCK) {
+            *sendError == WSAEWOULDBLOCK) {
             return WfpUdpFlowRelayRegistryResult::Pending;
         }
         if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
