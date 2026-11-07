@@ -1080,8 +1080,9 @@ class ConnectionStartupAsyncTest(TestCase):
     def testWfpTcpStartupNegotiatesUdpAddressFamiliesFromActualListeners(self):
         """Start UDP only on the families the TCP broker really opened."""
         manager = self._manager()
-        controller = manager._getWfpIpcController()
-        self.assertIsNotNone(controller)
+        originalController = manager._wfpIpcController
+        controller = mock.Mock()
+        manager._wfpIpcController = controller
 
         backend = 7
         generation = manager.wfpRuntimeSnapshot.generation
@@ -1100,14 +1101,15 @@ class ConnectionStartupAsyncTest(TestCase):
             tcp_port_v4=41000,
             tcp_port_v6=0,
         )
-        with mock.patch.object(
-            controller, 'startUdpBroker', return_value=udpRequestId
-        ) as startUdp:
+        controller.startUdpBroker.return_value = udpRequestId
+        try:
             manager._onWfpIpcRequestFinished(
                 requestId, 'start-broker', result, None
             )
+        finally:
+            manager._wfpIpcController = originalController
 
-        startUdp.assert_called_once_with(
+        controller.startUdpBroker.assert_called_once_with(
             '127.0.0.1', 10808, True, False
         )
         self.assertEqual(manager._wfpUdpBrokerPending[udpRequestId], pending)
