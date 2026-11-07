@@ -48,6 +48,8 @@ private:
     void WorkerLoop() noexcept;
     void ProcessClient(SOCKET client) noexcept;
 
+    // Serialize Start/Stop and keep lifecycle-owned fields stable for readers.
+    mutable std::recursive_mutex lifecycleMutex_;
     std::atomic<bool> stopping_{true};
     SOCKET ipv4Listener_ = INVALID_SOCKET;
     SOCKET ipv6Listener_ = INVALID_SOCKET;
