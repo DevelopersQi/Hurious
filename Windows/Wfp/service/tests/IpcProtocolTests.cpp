@@ -268,8 +268,7 @@ int main() {
     tcpOnlyEndpoint.UdpPortV4 = 0;
     tcpOnlyEndpoint.UdpPortV6 = 0;
     CHECK(IsValidEndpointConfig(tcpOnlyEndpoint));
-    auto udpFlagOnlyEndpoint = tcpOnlyEndpoint;
-    udpFlagOnlyEndpoint.Flags |= FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    auto udpFlagOnlyEndpoint = endpoint;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
           ERROR_SERVICE_NOT_ACTIVE);
@@ -277,7 +276,7 @@ int main() {
     udpPortOnlyEndpoint.UdpPortV6 = 10809;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpPortOnlyEndpoint, sizeof(udpPortOnlyEndpoint)) ==
-          ERROR_SERVICE_NOT_ACTIVE);
+          ERROR_INVALID_PARAMETER);
 
     // Exited core PIDs must be removed from the redirect exclusion snapshot
     // before Windows can reuse those PIDs for unrelated applications.

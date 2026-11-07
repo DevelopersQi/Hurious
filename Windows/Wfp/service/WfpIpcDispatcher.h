@@ -225,6 +225,12 @@ inline DWORD StopBroker(furious::wfp::Engine* engine) noexcept {
         // Keep listeners alive if the driver may still redirect traffic to them.
         return clearStatus;
     }
+    if (clearStatus == ERROR_FILE_NOT_FOUND || clearStatus == ERROR_PATH_NOT_FOUND) {
+        std::lock_guard<std::mutex> lock(EndpointConfigMutex());
+        GetPolicyStore().Reapply(engine, false);
+        EndpointConfigSnapshot() = FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG{};
+        HasEndpointConfigSnapshot() = false;
+    }
     GetTcpBrokerServer().Stop();
     GetUdpBrokerServer().Stop();
     return ERROR_SUCCESS;
@@ -337,6 +343,10 @@ inline DWORD StartUdpBroker(const void* payload, size_t payloadSize) noexcept {
         std::memcpy(&ipv6->sin6_addr, request.SocksAddress, 16);
         addressLength = sizeof(sockaddr_in6);
     } else return ERROR_INVALID_PARAMETER;
+    std::lock_guard<std::mutex> endpointLock(EndpointConfigMutex());
+    if (HasEndpointConfigSnapshot() &&
+        (EndpointConfigSnapshot().Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0)
+        return ERROR_BUSY;
     auto& broker = GetUdpBrokerServer();
     if (broker.IsRunning()) return ERROR_ALREADY_EXISTS;
     const bool listenV4 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV4) != 0;
