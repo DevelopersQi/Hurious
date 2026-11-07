@@ -91,8 +91,8 @@ class _WfpIpcWorker:
 class WfpIpcController(QtCore.QObject):
     """Queue WFP control operations without blocking the application thread.
 
-    Endpoint activation remains caller-controlled. Broker startup only returns
-    verified listener ports and a process ID; it does not enable WFP redirection.
+    ConnectionManager coordinates endpoint activation after broker startup.
+    This controller only serializes asynchronous service commands.
     """
 
     requestFinished = QtCore.Signal(int, str, object, str)

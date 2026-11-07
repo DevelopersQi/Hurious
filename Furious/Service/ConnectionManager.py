@@ -67,6 +67,7 @@ import logging
 import tempfile
 import functools
 import sys
+import time
 
 __all__ = ['ConnectionManager', 'ConnectionStartOperation', 'ConnectionStartStage']
 
@@ -1121,6 +1122,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._activeStartOperation = None
         self._activeTUNBackend = None
         self._wfpRuntimeGeneration = 0
+        self._wfpPolicyGeneration = 0
         self._wfpIpcController = None
         self._wfpBrokerPending = {}
         self._wfpBrokerEndpoint = None
@@ -1174,9 +1176,37 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpIpcController.clearEndpointConfig()
         elif command == 'set-endpoint':
             logger.info('WFP TCP redirect endpoint configuration updated')
+        elif command == 'set-policy':
+            logger.info('WFP application routing policy updated')
+        elif command == 'clear-policy':
+            logger.info('WFP application routing policy cleared')
         elif command == 'stop-broker':
             self._wfpBrokerEndpoint = None
             logger.debug('WFP TCP broker stop request completed')
+
+    def _nextWfpPolicyGeneration(self):
+        """Return a process-restart-safe generation for WFP policy updates."""
+        self._wfpPolicyGeneration = max(
+            self._wfpPolicyGeneration + 1,
+            time.monotonic_ns(),
+        )
+        return self._wfpPolicyGeneration
+
+    def setWfpApplicationPolicy(self, rules, backend):
+        """Install application-specific WFP Direct/Proxy rules asynchronously."""
+        if sys.platform != 'win32':
+            return None
+        controller = self._getWfpIpcController()
+        generation = self._nextWfpPolicyGeneration()
+        return controller.setPolicy(rules, backend, generation)
+
+    def clearWfpApplicationPolicy(self):
+        """Remove application-specific WFP filters asynchronously."""
+        if sys.platform != 'win32':
+            return None
+        controller = self._getWfpIpcController()
+        self._nextWfpPolicyGeneration()
+        return controller.clearPolicy()
 
     def _startWfpBroker(self, configuration):
         """Start the TCP broker only for a supported socket-owning proxy core."""
