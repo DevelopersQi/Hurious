@@ -24,6 +24,7 @@ from Furious.Repository import *
 
 import json
 import logging
+import ntpath
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ __all__ = [
     'cleanRoutingRule',
     'customRoutingObjectFromSettings',
     'getApplicationRoutingRules',
+    'getWfpApplicationRoutingRules',
     'saveApplicationRoutingRules',
     'applicationRoutingRulesObject',
     'xrayCoreBypassRoutingRule',
@@ -181,6 +183,26 @@ def getApplicationRoutingRules():
         })
 
     return sorted(rules, key=lambda item: (item['priority'], item['name'].casefold()))
+
+
+def getWfpApplicationRoutingRules():
+    """Return enabled absolute-path rules in the native WFP policy shape."""
+    result = []
+    for rule in getApplicationRoutingRules():
+        imagePath = ntpath.normpath(str(rule.get('process', '')).strip())
+        if not ntpath.isabs(imagePath):
+            logger.warning(
+                f'skipping WFP application rule without an absolute EXE path: '
+                f'{rule.get("process", "")}'
+            )
+            continue
+        result.append({
+            'image_path': imagePath,
+            'action': rule.get('outboundTag', 'proxy'),
+            'priority': int(rule.get('priority', 100)),
+            'enabled': bool(rule.get('enabled', True)),
+        })
+    return result
 
 
 def saveApplicationRoutingRules(rules):

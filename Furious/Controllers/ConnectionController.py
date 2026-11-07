@@ -41,7 +41,6 @@ from enum import Enum
 import queue
 import logging
 import functools
-import ntpath
 
 __all__ = ['ConnectionController', 'ConnectionError', 'ConnectionState']
 
@@ -256,24 +255,9 @@ class ConnectionController(QtCore.QObject):
                 )
                 return None
 
-            from Furious.Backends.Xray.Routing import getApplicationRoutingRules
+            from Furious.Backends.Xray.Routing import getWfpApplicationRoutingRules
 
-            rules = []
-            for rule in getApplicationRoutingRules():
-                imagePath = ntpath.normpath(str(rule.get('process', '')).strip())
-                if not ntpath.isabs(imagePath):
-                    logger.warning(
-                        f'skipping WFP application rule without an absolute EXE path: '
-                        f'{rule.get("process", "")}'
-                    )
-                    continue
-                rules.append({
-                    'image_path': imagePath,
-                    'action': rule.get('outboundTag', 'proxy'),
-                    'priority': int(rule.get('priority', 100)),
-                    'enabled': bool(rule.get('enabled', True)),
-                })
-
+            rules = getWfpApplicationRoutingRules()
             return self._coreManager.setWfpApplicationPolicy(rules, backend)
         except Exception:
             logger.exception('failed to apply saved WFP application routing policy')

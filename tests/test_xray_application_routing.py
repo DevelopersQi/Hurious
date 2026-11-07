@@ -107,6 +107,42 @@ class XrayApplicationRoutingRulesTest(TestCase):
                 ])
 
 
+    def test_wfp_policy_uses_only_absolute_executable_paths(self):
+        self.saved = json.dumps([
+            {
+                'name': 'Browser',
+                'process': r'C:\Apps\Browser\browser.exe',
+                'outboundTag': 'proxy',
+                'priority': 20,
+                'enabled': True,
+            },
+            {
+                'name': 'Legacy name-only rule',
+                'process': 'legacy.exe',
+                'outboundTag': 'direct',
+                'priority': 10,
+                'enabled': True,
+            },
+            {
+                'name': 'Disabled application',
+                'process': r'C:\Apps\Disabled.exe',
+                'outboundTag': 'direct',
+                'priority': 30,
+                'enabled': False,
+            },
+        ])
+        get_patch, _set_patch = self.settings()
+        with get_patch:
+            self.assertEqual(
+                Routing.getWfpApplicationRoutingRules(),
+                [{
+                    'image_path': r'C:\Apps\Browser\browser.exe',
+                    'action': 'proxy',
+                    'priority': 20,
+                    'enabled': True,
+                }],
+            )
+
     def test_xray_core_bypass_rule_is_first_class_direct_policy(self):
         self.assertEqual(
             Routing.xrayCoreBypassRoutingRule(),
