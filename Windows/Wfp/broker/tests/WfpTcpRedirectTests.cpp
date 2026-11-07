@@ -5,6 +5,7 @@
 #include "../WfpSocks5UdpSocket.h"
 #include "../WfpSocks5UdpRedirectRecord.h"
 #include "../WfpUdpFlowManager.h"
+#include "../WfpSocks5UdpAssociationClient.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
@@ -509,6 +510,84 @@ void TestWfpUdpRedirectContextDecode() {
     assert(decoded.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V6);
 }
 
+void TestSocks5UdpAssociationClientHandshake() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        assert(listener != INVALID_SOCKET);
+        sockaddr_in serverAddress{};
+        serverAddress.sin_family = AF_INET;
+        serverAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        serverAddress.sin_port = 0;
+        assert(bind(listener, reinterpret_cast<const sockaddr*>(&serverAddress),
+            sizeof(serverAddress)) == 0);
+        assert(listen(listener, 1) == 0);
+        int serverAddressLength = sizeof(serverAddress);
+        assert(getsockname(listener, reinterpret_cast<sockaddr*>(&serverAddress),
+            &serverAddressLength) == 0);
+
+        Socks5UdpSocket localUdp;
+        int socketError = 0;
+        assert(localUdp.Open(Socks5UdpEndpointFamily::Ipv4, &socketError) ==
+            Socks5UdpSocketOpenResult::Opened);
+        std::atomic<std::uint16_t> requestedPort{0};
+        std::thread fakeSocksServer([&]() {
+            SOCKET accepted = accept(listener, nullptr, nullptr);
+            assert(accepted != INVALID_SOCKET);
+            DWORD timeout = 5000;
+            setsockopt(accepted, SOL_SOCKET, SO_RCVTIMEO,
+                reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+            std::uint8_t greeting[3]{};
+            assert(recv(accepted, reinterpret_cast<char*>(greeting),
+                sizeof(greeting), MSG_WAITALL) == static_cast<int>(sizeof(greeting)));
+            assert(greeting[0] == 0x05 && greeting[1] == 0x01 && greeting[2] == 0x00);
+            const std::uint8_t greetingReply[] = {0x05, 0x00};
+            assert(send(accepted, reinterpret_cast<const char*>(greetingReply),
+                sizeof(greetingReply), 0) == static_cast<int>(sizeof(greetingReply)));
+
+            std::uint8_t request[10]{};
+            assert(recv(accepted, reinterpret_cast<char*>(request),
+                sizeof(request), MSG_WAITALL) == static_cast<int>(sizeof(request)));
+            assert(request[0] == 0x05 && request[1] == 0x03 &&
+                request[2] == 0x00 && request[3] == 0x01);
+            assert(request[4] == 127 && request[5] == 0 &&
+                request[6] == 0 && request[7] == 1);
+            requestedPort.store(static_cast<std::uint16_t>(
+                (static_cast<std::uint16_t>(request[8]) << 8) | request[9]));
+
+            const std::uint8_t associateReply[] = {
+                0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0x43, 0x21
+            };
+            assert(send(accepted, reinterpret_cast<const char*>(associateReply),
+                sizeof(associateReply), 0) == static_cast<int>(sizeof(associateReply)));
+            char closeProbe = 0;
+            (void)recv(accepted, &closeProbe, 1, 0);
+            closesocket(accepted);
+        });
+
+        Socks5UdpAssociationClient client;
+        const auto result = client.Open(
+            reinterpret_cast<const sockaddr*>(&serverAddress), sizeof(serverAddress),
+            localUdp, 5000, &socketError);
+        assert(result == Socks5UdpAssociationClientOpenResult::Opened);
+        assert(socketError == 0 && client.IsOpen() && client.IsControlAlive());
+        assert(client.RelayAddress() != nullptr);
+        const auto* relay = reinterpret_cast<const sockaddr_in*>(client.RelayAddress());
+        assert(relay->sin_family == AF_INET);
+        assert(relay->sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+        assert(ntohs(relay->sin_port) == 0x4321);
+        assert(requestedPort.load() == localUdp.LocalPort());
+
+        client.Close();
+        assert(!client.IsOpen() && client.ControlSocket() == INVALID_SOCKET);
+        fakeSocksServer.join();
+        closesocket(listener);
+    }
+    WSACleanup();
+}
+
 void TestWfpUdpFlowManager() {
     using namespace furious::wfp::broker;
     using Clock = WfpUdpFlowManager::Clock;
@@ -875,6 +954,7 @@ int main() {
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpSocketOwnership();
     TestSocks5UdpAssociateReplyParser();
+    TestSocks5UdpAssociationClientHandshake();
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpMessageReceive();

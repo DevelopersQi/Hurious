@@ -87,3 +87,13 @@ The UDP ancillary context decoder validates the shared redirect ABI, exact struc
 
 
 The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, IPv6, or domain endpoint, nonzero port, reply status, reserved byte, and exact message length. It returns a non-owning address view for the upcoming upstream association client.
+
+
+## Upstream SOCKS5 UDP association client
+
+- Opens a loopback-only TCP control connection to the selected local SOCKS5 core.
+- Negotiates no-auth SOCKS5 and sends UDP ASSOCIATE with the broker-owned UDP socket's loopback address and ephemeral port.
+- Parses the server relay endpoint and substitutes the local SOCKS server address when the server reports an unspecified bind address.
+- Rejects non-loopback relay endpoints and address-family mismatches to prevent accidental external relay targets.
+- Keeps the TCP control socket open for the UDP association lifetime, supports cancellation registration, and detects peer closure without blocking.
+- A fake local SOCKS5 server test validates the handshake, advertised UDP port, relay endpoint selection, and control-channel teardown.
