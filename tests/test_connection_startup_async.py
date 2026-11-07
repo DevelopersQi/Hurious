@@ -217,8 +217,12 @@ class ConnectionStartupAsyncTest(TestCase):
         manager = self._manager()
 
         class _PidRuntime:
-            def __init__(self, processId):
+            def __init__(self, processId, running=True):
                 self.processId = processId
+                self.running = running
+
+            def isRunning(self):
+                return self.running
 
         coreA = _PidRuntime(4321)
         coreB = _PidRuntime(4321)
