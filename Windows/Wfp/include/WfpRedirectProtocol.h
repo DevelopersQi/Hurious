@@ -186,8 +186,38 @@ inline bool IsValidRedirectContext(
         }
     }
     if (value.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V4) {
+        const FURIOUS_WFP_U8 firstOctet = value.OriginalAddress[0];
+        // Loopback, unspecified, multicast and class-E/broadcast destinations
+        // are never valid proxy targets for an application redirect.
+        if (firstOctet == 0 || firstOctet == 127 || firstOctet >= 224) {
+            return false;
+        }
         for (size_t i = 4; i < sizeof(value.OriginalAddress); ++i) {
             if (value.OriginalAddress[i] != 0) {
+                return false;
+            }
+        }
+    } else {
+        bool unspecified = true;
+        bool loopback = true;
+        for (size_t i = 0; i < sizeof(value.OriginalAddress); ++i) {
+            if (value.OriginalAddress[i] != 0) unspecified = false;
+            if (i < 15 && value.OriginalAddress[i] != 0) loopback = false;
+        }
+        if (unspecified || loopback || value.OriginalAddress[0] == 0xFF ||
+            (value.OriginalAddress[0] == 0xFE &&
+             (value.OriginalAddress[1] & 0xC0) == 0x80)) {
+            // The redirect context intentionally has no IPv6 scope-id field.
+            // Link-local destinations therefore cannot be reconstructed safely.
+            return false;
+        }
+        static const FURIOUS_WFP_U8 mappedPrefix[12] = {
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF
+        };
+        if (memcmp(value.OriginalAddress, mappedPrefix, sizeof(mappedPrefix)) == 0) {
+            const FURIOUS_WFP_U8 mappedFirstOctet = value.OriginalAddress[12];
+            if (mappedFirstOctet == 0 || mappedFirstOctet == 127 ||
+                mappedFirstOctet >= 224) {
                 return false;
             }
         }

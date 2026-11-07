@@ -360,6 +360,21 @@ int main() {
     invalidContext = redirectContext;
     invalidContext.Reserved[2] = 1;
     CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.OriginalAddress[0] = 224;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    invalidContext.OriginalAddress[0] = 0xFE;
+    invalidContext.OriginalAddress[1] = 0x80;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    invalidContext.OriginalAddress[0] = 0xFF;
+    invalidContext.OriginalAddress[1] = 0x02;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
 
     return 0;
 }

@@ -465,16 +465,22 @@ static VOID NTAPI FuriousClassify(
             FuriousBlock(classifyOut);
             return;
         }
-        // Do not capture loopback traffic from unrelated applications.
-        // Localhost services are commonly used for IPC and developer tooling;
-        // redirecting these connections would break them or create proxy loops.
-        if ((RtlUlongByteSwap(remote->sin_addr.S_un.S_addr) & 0xFF000000u) ==
-            0x7F000000u) {
+        // Do not capture unspecified, loopback, multicast or class-E/broadcast
+        // destinations. These are local-network/control traffic, not safe
+        // unicast proxy targets; redirecting them would blackhole UDP flows.
+        {
+            const ULONG destinationHostOrder =
+                RtlUlongByteSwap(remote->sin_addr.S_un.S_addr);
+            const UCHAR destinationFirstOctet =
+                (UCHAR)(destinationHostOrder >> 24);
+            if (destinationFirstOctet == 0 || destinationFirstOctet == 127 ||
+                destinationFirstOctet >= 224) {
             FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-            FuriousContinue(classifyOut);
-            return;
+                FuriousContinue(classifyOut);
+                return;
+            }
         }
         redirectContext->OriginalPortNetworkOrder = remote->sin_port;
         RtlCopyMemory(redirectContext->OriginalAddress,
@@ -502,22 +508,28 @@ static VOID NTAPI FuriousClassify(
         {
             const UCHAR* address = remote->sin6_addr.u.Byte;
             IN6_ADDR loopbackAddress = { 0 };
-            BOOLEAN isLoopback = FALSE;
+            BOOLEAN isUnroutable = FALSE;
+            BOOLEAN isUnspecified = TRUE;
             loopbackAddress.u.Byte[15] = 1;
+            for (ULONG addressIndex = 0; addressIndex < 16; ++addressIndex) {
+                if (address[addressIndex] != 0) isUnspecified = FALSE;
+            }
             if (RtlCompareMemory(address, &loopbackAddress,
-                                 sizeof(loopbackAddress)) == sizeof(loopbackAddress)) {
-                isLoopback = TRUE;
+                                 sizeof(loopbackAddress)) == sizeof(loopbackAddress) ||
+                isUnspecified || address[0] == 0xFF ||
+                (address[0] == 0xFE && (address[1] & 0xC0) == 0x80)) {
+                isUnroutable = TRUE;
             } else {
                 static const UCHAR mappedPrefix[12] = {
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF
                 };
                 if (RtlCompareMemory(address, mappedPrefix, sizeof(mappedPrefix)) ==
                         sizeof(mappedPrefix) &&
-                    (address[12] == 127)) {
-                    isLoopback = TRUE;
+                    (address[12] == 0 || address[12] == 127 || address[12] >= 224)) {
+                    isUnroutable = TRUE;
                 }
             }
-            if (isLoopback) {
+            if (isUnroutable) {
                 FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
                 FwpsReleaseClassifyHandle0(classifyHandle);
                 ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
