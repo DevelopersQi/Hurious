@@ -216,7 +216,8 @@ WfpUdpFlowTouchResult WfpUdpFlowManager::Touch(
         if (!SameSourceEndpoint(entry.sourceEndpoint, entry.sourceEndpointLength,
                 sourceEndpoint, sourceEndpointLength)) continue;
         if (IsExpired(entry, now)) {
-            entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
+            // Preserve the ID so the owner can close the relay before Remove().
+            flowId = entry.id;
             return WfpUdpFlowTouchResult::Expired;
         }
         entry.lastActivity = now;

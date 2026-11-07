@@ -1011,6 +1011,8 @@ void TestWfpUdpFlowManager() {
     assert(manager.ActiveCount() == 1);
     assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source), sizeof(source),
         now + std::chrono::seconds(19), touchedId) == TouchResult::Expired);
+    assert(touchedId == firstId && manager.ActiveCount() == 1);
+    assert(manager.Remove(touchedId));
     assert(manager.ActiveCount() == 0);
 
     sockaddr_in oversizedSource = source;
