@@ -10,8 +10,9 @@ Socks5UdpParseResult ParseSocks5UdpDatagram(
     if (datagram == nullptr) {
         return Socks5UdpParseResult::NullDatagram;
     }
-    // RSV(2) + FRAG(1) + ATYP(1) + minimum IPv4 address(4) + PORT(2).
-    if (datagramLength < 10) {
+    // The fixed SOCKS5 UDP prefix is RSV(2) + FRAG(1) + ATYP(1).
+    // Address- and port-specific truncation is checked after ATYP decoding.
+    if (datagramLength < 4) {
         return Socks5UdpParseResult::Truncated;
     }
     if (datagram[0] != 0 || datagram[1] != 0) {
