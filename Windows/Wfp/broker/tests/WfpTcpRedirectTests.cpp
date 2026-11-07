@@ -1,4 +1,5 @@
 #include "../WfpTcpRedirect.h"
+#include "../WfpSocks5Udp.h"
 
 #include <cassert>
 #include <cstdint>
@@ -164,11 +165,13 @@ void TestTunnelRejectsUnpairedCancellationCallbacks() {
 
 } // namespace
 
+void TestSocks5UdpParser();
 void TestBrokerServerLifecycle();
 void TestBrokerConcurrentStartStopIsSerialized();
 void TestBrokerStopsWhileAcceptingConnections();
 
 int main() {
+    TestSocks5UdpParser();
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
