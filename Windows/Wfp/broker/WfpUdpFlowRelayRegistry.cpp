@@ -282,16 +282,18 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
                 }
                 while (!pending->second.empty()) {
                     auto& next = pending->second.front();
-                    outbound.first->second.push_back(std::move(next));
-                    const auto size = outbound.first->second.back().size();
-                    // Moving a datagram between queues must preserve exact
-                    // global accounting. A mismatch indicates corrupted state;
-                    // close the flow instead of masking an underflow.
+                    const auto size = next.size();
+                    // Validate accounting before moving from the source queue.
+                    // Otherwise a mismatch could leave a moved-from datagram in
+                    // pendingDatagrams_ and make CloseFlow unable to reconcile
+                    // the global pending-byte counter.
                     if (size > pendingDatagramBytes_ ||
+                        outboundDatagramBytes_ > kMaximumPendingDatagramBytes ||
                         size > kMaximumPendingDatagramBytes - outboundDatagramBytes_) {
                         CloseFlow(flowId);
                         return WfpUdpFlowRelayRegistryResult::SendFailed;
                     }
+                    outbound.first->second.push_back(std::move(next));
                     pendingDatagramBytes_ -= size;
                     outboundDatagramBytes_ += size;
                     pending->second.pop_front();
