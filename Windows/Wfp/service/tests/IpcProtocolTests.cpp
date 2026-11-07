@@ -229,6 +229,24 @@ int main() {
     endpoint.TcpPortV6 = 10809;
     endpoint.UdpPortV6 = 10809;
     CHECK(IsValidEndpointConfig(endpoint));
+
+    // Exited core PIDs must be removed from the redirect exclusion snapshot
+    // before Windows can reuse those PIDs for unrelated applications.
+    auto exclusions = endpoint;
+    CHECK(FuriousWfpRemoveExcludedProcessId(&exclusions, 2345));
+    CHECK(exclusions.ExcludedProcessCount == 1);
+    CHECK(exclusions.ExcludedProcessIds[0] == 3456);
+    CHECK(exclusions.ExcludedProcessIds[1] == 0);
+    CHECK(FuriousWfpRemoveExcludedProcessId(&exclusions, 3456));
+    CHECK(exclusions.ExcludedProcessCount == 0);
+    CHECK(exclusions.ExcludedProcessIds[0] == 0);
+    CHECK(!FuriousWfpRemoveExcludedProcessId(&exclusions, 3456));
+    CHECK(!FuriousWfpRemoveExcludedProcessId(&exclusions, 0));
+    CHECK(!FuriousWfpRemoveExcludedProcessId(nullptr, 3456));
+    exclusions = endpoint;
+    exclusions.ExcludedProcessCount = FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS + 1;
+    CHECK(!FuriousWfpRemoveExcludedProcessId(&exclusions, 2345));
+
     auto invalidEndpoint = endpoint;
     invalidEndpoint.ProxyProcessId = 0;
     CHECK(!IsValidEndpointConfig(invalidEndpoint));
