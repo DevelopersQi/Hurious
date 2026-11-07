@@ -26,7 +26,6 @@ public:
 
 private:
     HANDLE handle_ = nullptr;
-    std::vector<GUID> applicationFilterKeys_;
 };
 
 } // namespace furious::wfp

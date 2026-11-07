@@ -78,6 +78,7 @@ DWORD EnsureCallout(HANDLE engine, const GUID& key, const GUID& layer,
         const_cast<wchar_t*>(L"Furious WFP connect redirection callout");
     callout.providerKey = const_cast<GUID*>(&kProviderKey);
     callout.applicableLayer = layer;
+    callout.flags = FWPM_CALLOUT_FLAG_PERSISTENT;
     DWORD status = FwpmCalloutAdd0(engine, &callout, nullptr, nullptr);
     if (status != FWP_E_ALREADY_EXISTS) {
         return status;
@@ -122,7 +123,8 @@ bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
         app.conditionValue.byteBlob == nullptr || app.conditionValue.byteBlob->size == 0 ||
         std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) != 0 ||
         protocol.matchType != FWP_MATCH_EQUAL || protocol.conditionValue.type != FWP_UINT8 ||
-        protocol.conditionValue.uint8 != 6) return false;
+        (protocol.conditionValue.uint8 != 6 && protocol.conditionValue.uint8 != 17) ||
+        (filter->flags & FWPM_FILTER_FLAG_PERSISTENT) == 0) return false;
     if (filter->action.type == FWP_ACTION_PERMIT) return true;
     if (filter->action.type != FWP_ACTION_CALLOUT_TERMINATING) return false;
     const GUID& callout = v4 ? kConnectRedirectV4CalloutKey : kConnectRedirectV6CalloutKey;
@@ -141,9 +143,37 @@ DWORD DeleteApplicationFilter(HANDLE engine, const GUID& key) {
     return status == FWP_E_FILTER_NOT_FOUND ? ERROR_SUCCESS : status;
 }
 
+DWORD EnumerateApplicationFilterKeys(HANDLE engine, std::vector<GUID>* output) {
+    if (output == nullptr) return ERROR_INVALID_PARAMETER;
+    HANDLE enumeration = nullptr;
+    DWORD status = FwpmFilterCreateEnumHandle0(engine, nullptr, &enumeration);
+    if (status != ERROR_SUCCESS) return status;
+    for (;;) {
+        FWPM_FILTER0** entries = nullptr;
+        UINT32 count = 0;
+        status = FwpmFilterEnum0(engine, enumeration, 128, &entries, &count);
+        if (status != ERROR_SUCCESS) {
+            if (entries != nullptr) FwpmFreeMemory0(reinterpret_cast<void**>(&entries));
+            break;
+        }
+        try {
+            for (UINT32 index = 0; index < count; ++index) {
+                if (IsOwnedApplicationFilter(entries[index])) {
+                    output->push_back(entries[index]->filterKey);
+                }
+            }
+        } catch (...) {
+            status = ERROR_NOT_ENOUGH_MEMORY;
+        }
+        if (entries != nullptr) FwpmFreeMemory0(reinterpret_cast<void**>(&entries));
+        if (status != ERROR_SUCCESS || count < 128) break;
+    }
+    const DWORD destroyStatus = FwpmFilterDestroyEnumHandle0(engine, enumeration);
+    return status == ERROR_SUCCESS ? destroyStatus : status;
+}
 DWORD AddApplicationRuleFilter(HANDLE engine,
     const furious::wfp::policy::CompiledApplicationRule& rule,
-    const GUID& layer, const GUID& calloutKey, GUID* createdKey) {
+    const GUID& layer, const GUID& calloutKey, UINT8 protocol, GUID* createdKey) {
     if (createdKey == nullptr || rule.AppId.empty() ||
         rule.AppId.size() > (std::numeric_limits<UINT32>::max)()) return ERROR_INVALID_PARAMETER;
     FWPM_FILTER0 filter = {};
@@ -154,6 +184,7 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     filter.providerKey = const_cast<GUID*>(&kProviderKey);
     filter.layerKey = layer;
     filter.subLayerKey = kSublayerKey;
+    filter.flags = FWPM_FILTER_FLAG_PERSISTENT;
     UINT64 weight = 0x100000000ULL - static_cast<UINT64>(rule.Priority);
     filter.weight.type = FWP_UINT64;
     filter.weight.uint64 = &weight;
@@ -175,7 +206,7 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     conditions[1].fieldKey = FWPM_CONDITION_IP_PROTOCOL;
     conditions[1].matchType = FWP_MATCH_EQUAL;
     conditions[1].conditionValue.type = FWP_UINT8;
-    conditions[1].conditionValue.uint8 = 6;
+    conditions[1].conditionValue.uint8 = protocol;
     filter.numFilterConditions = static_cast<UINT32>(_countof(conditions));
     filter.filterCondition = conditions;
     const DWORD status = FwpmFilterAdd0(engine, &filter, nullptr, nullptr);
@@ -314,16 +345,15 @@ DWORD Engine::InstallRedirectFilters() {
 DWORD Engine::ApplyApplicationPolicy(
     const std::vector<furious::wfp::policy::CompiledApplicationRule>& rules) {
     if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
-    std::vector<GUID> candidateKeys;
-    try {
-        candidateKeys.reserve(rules.size() * 2);
-    } catch (...) {
-        return ERROR_NOT_ENOUGH_MEMORY;
-    }
+    if (rules.size() > FURIOUS_WFP_MAX_RULES) return ERROR_INVALID_PARAMETER;
 
-    DWORD status = FwpmTransactionBegin0(handle_, 0);
+    std::vector<GUID> existingKeys;
+    DWORD status = EnumerateApplicationFilterKeys(handle_, &existingKeys);
     if (status != ERROR_SUCCESS) return status;
-    for (const GUID& key : applicationFilterKeys_) {
+
+    DWORD beginStatus = FwpmTransactionBegin0(handle_, 0);
+    if (beginStatus != ERROR_SUCCESS) return beginStatus;
+    for (const GUID& key : existingKeys) {
         status = DeleteApplicationFilter(handle_, key);
         if (status != ERROR_SUCCESS) break;
     }
@@ -336,35 +366,33 @@ DWORD Engine::ApplyApplicationPolicy(
             kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
     }
 
+    const UINT8 protocols[] = { 6, 17 };
     for (const auto& rule : rules) {
         if (status != ERROR_SUCCESS) break;
-        GUID key = {};
-        status = AddApplicationRuleFilter(handle_, rule,
-            FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, kConnectRedirectV4CalloutKey, &key);
-        if (status == ERROR_SUCCESS) {
-            try { candidateKeys.push_back(key); }
-            catch (...) { status = ERROR_NOT_ENOUGH_MEMORY; }
-        }
-        if (status == ERROR_SUCCESS) {
+        for (const UINT8 protocol : protocols) {
+            GUID key = {};
             status = AddApplicationRuleFilter(handle_, rule,
-                FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, kConnectRedirectV6CalloutKey, &key);
-        }
-        if (status == ERROR_SUCCESS) {
-            try { candidateKeys.push_back(key); }
-            catch (...) { status = ERROR_NOT_ENOUGH_MEMORY; }
+                FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, kConnectRedirectV4CalloutKey,
+                protocol, &key);
+            if (status != ERROR_SUCCESS) break;
+            status = AddApplicationRuleFilter(handle_, rule,
+                FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, kConnectRedirectV6CalloutKey,
+                protocol, &key);
+            if (status != ERROR_SUCCESS) break;
         }
     }
 
-    status = CommitOrAbort(handle_, status);
-    if (status == ERROR_SUCCESS) applicationFilterKeys_.swap(candidateKeys);
-    return status;
+    return CommitOrAbort(handle_, status);
 }
 
 DWORD Engine::RemoveRedirectFilters() {
     if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
-    DWORD status = FwpmTransactionBegin0(handle_, 0);
+    std::vector<GUID> applicationKeys;
+    DWORD status = EnumerateApplicationFilterKeys(handle_, &applicationKeys);
     if (status != ERROR_SUCCESS) return status;
-    for (const GUID& key : applicationFilterKeys_) {
+    status = FwpmTransactionBegin0(handle_, 0);
+    if (status != ERROR_SUCCESS) return status;
+    for (const GUID& key : applicationKeys) {
         status = DeleteApplicationFilter(handle_, key);
         if (status != ERROR_SUCCESS) break;
     }
@@ -397,7 +425,6 @@ DWORD Engine::RemoveRedirectFilters() {
         }
     }
     status = CommitOrAbort(handle_, status);
-    if (status == ERROR_SUCCESS) applicationFilterKeys_.clear();
     return status;
 }
 
@@ -462,7 +489,6 @@ void Engine::Close() noexcept {
         FwpmEngineClose0(handle_);
         handle_ = nullptr;
     }
-    applicationFilterKeys_.clear();
 }
 
 } // namespace furious::wfp

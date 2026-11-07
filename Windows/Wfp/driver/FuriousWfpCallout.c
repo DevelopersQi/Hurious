@@ -258,6 +258,20 @@ static FURIOUS_WFP_REDIRECT_CONTEXT* FuriousAllocateRedirectContext(void)
 #endif
 }
 
+static VOID FuriousBlock(FWPS_CLASSIFY_OUT0* classifyOut)
+{
+    if (classifyOut == NULL) return;
+    classifyOut->actionType = FWP_ACTION_BLOCK;
+    classifyOut->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+}
+
+static VOID FuriousContinue(FWPS_CLASSIFY_OUT0* classifyOut)
+{
+    if (classifyOut == NULL) return;
+    classifyOut->actionType = FWP_ACTION_CONTINUE;
+    classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+}
+
 static VOID NTAPI FuriousClassify(
     const FWPS_INCOMING_VALUES0* inFixedValues,
     const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
@@ -294,14 +308,14 @@ static VOID NTAPI FuriousClassify(
     // would silently bypass every connection that has not been redirected yet.
     if (!FWPS_IS_METADATA_FIELD_PRESENT(
             inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID)) {
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
 
     KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
     if (!gEndpointConfigValid) {
         KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
     RtlCopyMemory(&endpoint, &gEndpointConfig, sizeof(endpoint));
@@ -323,7 +337,7 @@ static VOID NTAPI FuriousClassify(
 
     isV4 = inFixedValues->layerId == FWPS_LAYER_ALE_CONNECT_REDIRECT_V4;
     if (!isV4 && inFixedValues->layerId != FWPS_LAYER_ALE_CONNECT_REDIRECT_V6) {
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
 
@@ -339,25 +353,25 @@ static VOID NTAPI FuriousClassify(
 
     if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_TCP) {
         if ((endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) == 0) {
-            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            FuriousBlock(classifyOut);
             return;
         }
         targetPort = isV4 ? endpoint.TcpPortV4 : endpoint.TcpPortV6;
     } else if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
         if ((endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) == 0) {
-            classifyOut->actionType = FWP_ACTION_CONTINUE;
+            FuriousBlock(classifyOut);
             return;
         }
         targetPort = isV4 ? endpoint.UdpPortV4 : endpoint.UdpPortV6;
     } else {
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
 
     if (targetPort == 0 ||
         (isV4 && (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV4) == 0) ||
         (!isV4 && (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV6) == 0)) {
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
 
@@ -379,7 +393,7 @@ static VOID NTAPI FuriousClassify(
 
     redirectContext = FuriousAllocateRedirectContext();
     if (redirectContext == NULL) {
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
     RtlZeroMemory(redirectContext, sizeof(*redirectContext));
@@ -395,7 +409,7 @@ static VOID NTAPI FuriousClassify(
     status = FwpsAcquireClassifyHandle0((VOID*)classifyContext, 0, &classifyHandle);
     if (!NT_SUCCESS(status)) {
         ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        FuriousBlock(classifyOut);
         return;
     }
 
@@ -404,6 +418,7 @@ static VOID NTAPI FuriousClassify(
     if (!NT_SUCCESS(status) || connectRequest == NULL) {
         FwpsReleaseClassifyHandle0(classifyHandle);
         ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+        FuriousBlock(classifyOut);
         return;
     }
 
@@ -414,8 +429,7 @@ static VOID NTAPI FuriousClassify(
             FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-            classifyOut->actionType = FWP_ACTION_CONTINUE;
-            classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+            FuriousBlock(classifyOut);
             return;
         }
         // Do not capture loopback traffic from unrelated applications.
@@ -423,11 +437,11 @@ static VOID NTAPI FuriousClassify(
         // redirecting these connections would break them or create proxy loops.
         if ((RtlUlongByteSwap(remote->sin_addr.S_un.S_addr) & 0xFF000000u) ==
             0x7F000000u) {
-            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+            status = FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-            classifyOut->actionType = FWP_ACTION_CONTINUE;
-            classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+            if (NT_SUCCESS(status)) FuriousContinue(classifyOut);
+            else FuriousBlock(classifyOut);
             return;
         }
         redirectContext->OriginalPortNetworkOrder = remote->sin_port;
@@ -446,8 +460,7 @@ static VOID NTAPI FuriousClassify(
             FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-            classifyOut->actionType = FWP_ACTION_CONTINUE;
-            classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+            FuriousBlock(classifyOut);
             return;
         }
         // Preserve IPv6 loopback and IPv4-mapped 127/8 destinations.
@@ -473,11 +486,11 @@ static VOID NTAPI FuriousClassify(
                 }
             }
             if (isLoopback) {
-                FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+                status = FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
                 FwpsReleaseClassifyHandle0(classifyHandle);
                 ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-                classifyOut->actionType = FWP_ACTION_CONTINUE;
-                classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
+                if (NT_SUCCESS(status)) FuriousContinue(classifyOut);
+                else FuriousBlock(classifyOut);
                 return;
             }
         }
@@ -506,8 +519,13 @@ static VOID NTAPI FuriousClassify(
     connectRequest->localRedirectContext = redirectContext;
     connectRequest->localRedirectContextSize = sizeof(*redirectContext);
 
-    FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+    status = FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
     FwpsReleaseClassifyHandle0(classifyHandle);
+    if (!NT_SUCCESS(status)) {
+        ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+        FuriousBlock(classifyOut);
+        return;
+    }
     classifyOut->actionType = FWP_ACTION_PERMIT;
     classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
 }
