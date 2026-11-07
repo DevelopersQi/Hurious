@@ -1234,11 +1234,12 @@ void TestWfpUdpRedirectRecordAncillaryData() {
 
     // Ancillary metadata must use the protocol level matching the actual
     // redirected socket family; accepting cross-family control data is unsafe.
-    header->cmsg_level = IPPROTO_IPV6;
+    // Keep the control message at IPPROTO_IP and change only the peer family.
+    sourceAddress.sin_family = AF_INET6;
     assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
         WfpUdpRedirectRecordResult::InvalidMessage);
     assert(extractedRecord.empty());
-    header->cmsg_level = IPPROTO_IP;
+    sourceAddress.sin_family = AF_INET;
 
     header->cmsg_len = 0;
     assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
