@@ -307,6 +307,70 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
         WfpUdpFlowCreateResult::InvalidContext);
 }
 
+
+void TestUdpFlowManagerIpv6ScopeIdentity() {
+    WfpUdpFlowManager manager(4, 4, std::chrono::seconds(30));
+    FURIOUS_WFP_REDIRECT_CONTEXT context{};
+    context.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    context.Size = sizeof(context);
+    context.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    context.OriginalPortNetworkOrder = htons(443);
+    const std::array<std::uint8_t, 16> destination{
+        0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 9
+    };
+    std::memcpy(context.OriginalAddress, destination.data(), destination.size());
+    context.OriginalProcessId = 2201;
+    context.PolicyGeneration = 3;
+    const std::vector<std::uint8_t> record{0xA1, 0xB2};
+
+    sockaddr_in6 source{};
+    source.sin6_family = AF_INET6;
+    source.sin6_addr = in6addr_loopback;
+    source.sin6_port = htons(53001);
+    source.sin6_scope_id = 7;
+
+    std::uint64_t firstFlow = 0;
+    const auto now = WfpUdpFlowManager::Clock::now();
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        context, record, now, firstFlow) == WfpUdpFlowCreateResult::Created);
+    assert(firstFlow != 0);
+
+    std::uint64_t touchedFlow = 0;
+    assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source),
+        sizeof(source), now + std::chrono::milliseconds(1), touchedFlow) ==
+        WfpUdpFlowTouchResult::Found);
+    assert(touchedFlow == firstFlow);
+
+    // IPv6 scope is part of the source endpoint identity. A packet arriving
+    // on another scope must not inherit the first flow's relay association.
+    auto otherScope = source;
+    otherScope.sin6_scope_id = 8;
+    assert(manager.Touch(reinterpret_cast<const sockaddr*>(&otherScope),
+        sizeof(otherScope), now + std::chrono::milliseconds(2), touchedFlow) ==
+        WfpUdpFlowTouchResult::NotFound);
+
+    std::uint64_t secondFlow = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&otherScope), sizeof(otherScope),
+        context, record, now + std::chrono::milliseconds(2), secondFlow) ==
+        WfpUdpFlowCreateResult::Created);
+    assert(secondFlow != 0 && secondFlow != firstFlow);
+    assert(manager.ActiveCount() == 2);
+
+    WfpUdpFlowSnapshot snapshot{};
+    assert(manager.GetSnapshot(secondFlow, snapshot));
+    const auto* saved = reinterpret_cast<const sockaddr_in6*>(&snapshot.sourceEndpoint);
+    assert(saved->sin6_scope_id == otherScope.sin6_scope_id);
+
+    assert(manager.Remove(firstFlow));
+    assert(manager.Remove(secondFlow));
+    assert(manager.ActiveCount() == 0);
+}
+
 struct WfpUdpSendCapture final {
     bool called = false;
     sockaddr_storage destination{};
@@ -1152,6 +1216,7 @@ int main() {
     TestAssociateControlMessages();
     TestRedirectContextDecodeRequiresValidUdpMetadata();
     TestUdpFlowManagerIdentityLimitsAndExpiry();
+    TestUdpFlowManagerIpv6ScopeIdentity();
     TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay();
     TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams();
     TestWfpUdpResponseInjectionCarriesRedirectMetadata();
