@@ -1372,7 +1372,10 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             )
             return
 
-        labels = [f'{name}  (PID {pid})' for name, pid, _path in processes]
+        labels = [
+            f'{name}  (PID {pid})  —  {path}'
+            for name, pid, path in processes
+        ]
         selected, accepted = QInputDialog.getItem(
             self, _('Select Running Application'), _('Application'), labels, 0, False,
         )
