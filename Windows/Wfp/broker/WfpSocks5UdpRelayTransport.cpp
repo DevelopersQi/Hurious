@@ -50,7 +50,8 @@ Socks5UdpRelayIoResult SendSocks5UdpToRelay(
     const std::uint8_t* payload,
     std::size_t payloadLength,
     std::size_t maximumDatagramLength,
-    int* errorCode) noexcept {
+    int* errorCode,
+    Socks5UdpSendToFunction sendFunction) noexcept {
     if (errorCode != nullptr) *errorCode = 0;
     if (socket == INVALID_SOCKET ||
         !IsValidSocketAddress(relayAddress, relayAddressLength) ||
@@ -74,7 +75,8 @@ Socks5UdpRelayIoResult SendSocks5UdpToRelay(
             }
             return Socks5UdpRelayIoResult::InvalidArgument;
         }
-        const int sent = sendto(socket,
+        const auto sender = sendFunction != nullptr ? sendFunction : sendto;
+        const int sent = sender(socket,
             reinterpret_cast<const char*>(datagram.data()),
             static_cast<int>(datagram.size()), 0,
             relayAddress, relayAddressLength);

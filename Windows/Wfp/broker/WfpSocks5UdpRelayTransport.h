@@ -7,6 +7,9 @@
 
 namespace furious::wfp::broker {
 
+using Socks5UdpSendToFunction = int (WSAAPI *)(
+    SOCKET, const char*, int, int, const sockaddr*, int);
+
 enum class Socks5UdpRelayIoResult {
     Sent,
     SendWouldBlock,
@@ -32,7 +35,8 @@ Socks5UdpRelayIoResult SendSocks5UdpToRelay(
     const std::uint8_t* payload,
     std::size_t payloadLength,
     std::size_t maximumDatagramLength,
-    int* errorCode = nullptr) noexcept;
+    int* errorCode = nullptr,
+    Socks5UdpSendToFunction sendFunction = nullptr) noexcept;
 
 // Receives one datagram, accepts only the exact negotiated relay endpoint,
 // and returns a non-owning parsed view into the caller-provided buffer.

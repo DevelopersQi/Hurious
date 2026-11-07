@@ -25,6 +25,65 @@
 using namespace furious::wfp::broker;
 
 namespace {
+int g_fakeSendResult = SOCKET_ERROR;
+int g_fakeSendError = WSAEWOULDBLOCK;
+int g_fakeSendCalls = 0;
+std::vector<std::uint8_t> g_fakeSentDatagram;
+
+int WSAAPI FakeUdpSendTo(SOCKET, const char* buffer, int length, int,
+    const sockaddr*, int) {
+    ++g_fakeSendCalls;
+    g_fakeSentDatagram.assign(reinterpret_cast<const std::uint8_t*>(buffer),
+        reinterpret_cast<const std::uint8_t*>(buffer) + length);
+    if (g_fakeSendResult == SOCKET_ERROR) WSASetLastError(g_fakeSendError);
+    return g_fakeSendResult == -2 ? length : g_fakeSendResult;
+}
+
+void TestUdpRelaySendWouldBlockIsExplicitAndRetryable() {
+    sockaddr_in relay{};
+    relay.sin_family = AF_INET;
+    relay.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    relay.sin_port = htons(1080);
+    const std::array<std::uint8_t, 4> target{{203, 0, 113, 7}};
+    const std::array<std::uint8_t, 3> payload{{'u', 'd', 'p'}};
+    int error = 0;
+
+    g_fakeSendCalls = 0;
+    g_fakeSentDatagram.clear();
+    g_fakeSendResult = SOCKET_ERROR;
+    g_fakeSendError = WSAEWOULDBLOCK;
+    auto result = SendSocks5UdpToRelay(1,
+        reinterpret_cast<const sockaddr*>(&relay), sizeof(relay),
+        Socks5UdpAddressType::Ipv4, target.data(), target.size(), 443,
+        payload.data(), payload.size(), kMaximumSocks5UdpDatagramSize,
+        &error, &FakeUdpSendTo);
+    assert(result == Socks5UdpRelayIoResult::SendWouldBlock);
+    assert(error == WSAEWOULDBLOCK && g_fakeSendCalls == 1);
+    assert(g_fakeSentDatagram.size() == 10 + payload.size());
+
+    // A later writable notification retries the same logical payload; a
+    // successful retry must not be reported as a socket failure.
+    g_fakeSendResult = -2;
+    error = -1;
+    result = SendSocks5UdpToRelay(1,
+        reinterpret_cast<const sockaddr*>(&relay), sizeof(relay),
+        Socks5UdpAddressType::Ipv4, target.data(), target.size(), 443,
+        payload.data(), payload.size(), kMaximumSocks5UdpDatagramSize,
+        &error, &FakeUdpSendTo);
+    assert(result == Socks5UdpRelayIoResult::Sent);
+    assert(error == 0 && g_fakeSendCalls == 2);
+
+    g_fakeSendResult = SOCKET_ERROR;
+    g_fakeSendError = WSAECONNRESET;
+    result = SendSocks5UdpToRelay(1,
+        reinterpret_cast<const sockaddr*>(&relay), sizeof(relay),
+        Socks5UdpAddressType::Ipv4, target.data(), target.size(), 443,
+        payload.data(), payload.size(), kMaximumSocks5UdpDatagramSize,
+        &error, &FakeUdpSendTo);
+    assert(result == Socks5UdpRelayIoResult::SocketError);
+    assert(error == WSAECONNRESET && g_fakeSendCalls == 3);
+}
+
 bool ReceiveExactSocket(SOCKET socket, std::uint8_t* output, std::size_t length);
 bool SendAllSocket(SOCKET socket, const std::uint8_t* input, std::size_t length);
 
@@ -1646,6 +1705,7 @@ void TestRegistryRejectsPendingUdpQueueOverflow() {
 int main() {
     WSADATA winsockData{};
     assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
+    TestUdpRelaySendWouldBlockIsExplicitAndRetryable();
     TestDatagramRoundTrips();
     TestDatagramRejectsMalformedInput();
     TestAssociateControlMessages();
