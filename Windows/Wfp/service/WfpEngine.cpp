@@ -360,7 +360,8 @@ DWORD Engine::InstallRedirectFilters() {
 }
 
 DWORD Engine::ApplyApplicationPolicy(
-    const std::vector<furious::wfp::policy::CompiledApplicationRule>& rules) {
+    const std::vector<furious::wfp::policy::CompiledApplicationRule>& rules,
+    bool includeUdp) {
     if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
     if (rules.size() > FURIOUS_WFP_MAX_RULES) return ERROR_INVALID_PARAMETER;
 
@@ -383,11 +384,14 @@ DWORD Engine::ApplyApplicationPolicy(
             kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
     }
 
-    // Only TCP is enabled until a separate UDP relay is implemented and tested.
-    const UINT8 protocols[] = { 6 };
+    // UDP filters are opt-in: IPC enables them only after the UDP broker is
+    // running and its actual listener ports have been validated.
+    const UINT8 protocols[] = { 6, 17 };
+    const size_t protocolCount = includeUdp ? 2u : 1u;
     for (const auto& rule : rules) {
         if (status != ERROR_SUCCESS) break;
-        for (const UINT8 protocol : protocols) {
+        for (size_t protocolIndex = 0; protocolIndex < protocolCount; ++protocolIndex) {
+            const UINT8 protocol = protocols[protocolIndex];
             GUID key = {};
             status = AddApplicationRuleFilter(handle_, rule,
                 FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, kConnectRedirectV4CalloutKey,

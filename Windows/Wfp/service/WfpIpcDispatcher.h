@@ -19,7 +19,8 @@ namespace furious::wfp::ipc {
 
 class PolicyStore final {
 public:
-    DWORD Set(const void* data, size_t size, furious::wfp::Engine* engine = nullptr) noexcept {
+    DWORD Set(const void* data, size_t size, furious::wfp::Engine* engine = nullptr,
+              bool includeUdp = false) noexcept {
         if (furious::wfp::policy::ValidatePolicy(data, size) !=
             furious::wfp::policy::ValidationResult::Valid) {
             return ERROR_INVALID_DATA;
@@ -48,13 +49,21 @@ public:
             return ERROR_REVISION_MISMATCH;
         }
         if (engine != nullptr) {
-            const DWORD applyStatus = engine->ApplyApplicationPolicy(compiledCandidate);
+            const DWORD applyStatus = engine->ApplyApplicationPolicy(compiledCandidate, includeUdp);
             if (applyStatus != ERROR_SUCCESS) return applyStatus;
         }
         policy_.swap(candidate);
         compiledPolicy_.swap(compiledCandidate);
         generation_ = header.PolicyGeneration;
         return ERROR_SUCCESS;
+    }
+
+    DWORD Reapply(furious::wfp::Engine* engine, bool includeUdp) const noexcept {
+        if (engine == nullptr) return ERROR_INVALID_HANDLE;
+        std::vector<furious::wfp::policy::CompiledApplicationRule> snapshot;
+        const DWORD copyStatus = CopyCompiledSnapshot(snapshot);
+        if (copyStatus != ERROR_SUCCESS) return copyStatus;
+        return engine->ApplyApplicationPolicy(snapshot, includeUdp);
     }
 
     DWORD CopySnapshot(std::vector<uint8_t>& output, uint64_t* generation = nullptr) const noexcept {
@@ -123,8 +132,93 @@ inline furious::wfp::broker::UdpBrokerServer& GetUdpBrokerServer() noexcept {
     static furious::wfp::broker::UdpBrokerServer server;
     return server;
 }
-inline DWORD StopBroker() noexcept {
-    const DWORD clearStatus = furious::wfp::driver::ClearEndpointConfig();
+inline std::mutex& EndpointConfigMutex() noexcept {
+    static std::mutex mutex;
+    return mutex;
+}
+inline FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG& EndpointConfigSnapshot() noexcept {
+    static FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG config = {};
+    return config;
+}
+inline bool& HasEndpointConfigSnapshot() noexcept {
+    static bool configured = false;
+    return configured;
+}
+inline bool IsUdpEndpointConfigured() noexcept {
+    std::lock_guard<std::mutex> lock(EndpointConfigMutex());
+    return HasEndpointConfigSnapshot() &&
+        (EndpointConfigSnapshot().Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+}
+inline bool UdpBrokerMatchesEndpoint(
+    const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG& config,
+    const furious::wfp::broker::UdpBrokerListenerPorts& ports) noexcept {
+    const bool v4 = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV4) != 0;
+    const bool v6 = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV6) != 0;
+    const bool udp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    return udp &&
+        ((v4 && config.UdpPortV4 != 0 && config.UdpPortV4 == ports.ipv4) ||
+         (!v4 && config.UdpPortV4 == 0 && ports.ipv4 == 0)) &&
+        ((v6 && config.UdpPortV6 != 0 && config.UdpPortV6 == ports.ipv6) ||
+         (!v6 && config.UdpPortV6 == 0 && ports.ipv6 == 0));
+}
+inline DWORD SetEndpointConfig(
+    const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG& config,
+    furious::wfp::Engine* engine) noexcept {
+    if (!furious::wfp::redirect::IsValidEndpointConfig(config))
+        return ERROR_INVALID_PARAMETER;
+    const bool enableUdp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    if (enableUdp) {
+        if (engine == nullptr) return ERROR_INVALID_HANDLE;
+        auto& broker = GetUdpBrokerServer();
+        if (!broker.IsRunning()) return ERROR_SERVICE_NOT_ACTIVE;
+        if (!UdpBrokerMatchesEndpoint(config, broker.ListenerPorts()))
+            return ERROR_INVALID_PARAMETER;
+        bool serviceExcluded = config.ProxyProcessId == GetCurrentProcessId();
+        for (FURIOUS_WFP_U32 i = 0; i < config.ExcludedProcessCount; ++i)
+            serviceExcluded = serviceExcluded ||
+                config.ExcludedProcessIds[i] == GetCurrentProcessId();
+        if (!serviceExcluded) return ERROR_INVALID_PARAMETER;
+    }
+
+    std::lock_guard<std::mutex> lock(EndpointConfigMutex());
+    const bool hadPrevious = HasEndpointConfigSnapshot();
+    const auto previous = EndpointConfigSnapshot();
+    DWORD status = furious::wfp::driver::SetEndpointConfig(config);
+    if (status != ERROR_SUCCESS) return status;
+    if (engine != nullptr) {
+        status = GetPolicyStore().Reapply(engine, enableUdp);
+        if (status != ERROR_SUCCESS) {
+            const DWORD rollback = hadPrevious
+                ? furious::wfp::driver::SetEndpointConfig(previous)
+                : furious::wfp::driver::ClearEndpointConfig();
+            return rollback == ERROR_SUCCESS ? status : rollback;
+        }
+    }
+    EndpointConfigSnapshot() = config;
+    HasEndpointConfigSnapshot() = true;
+    return ERROR_SUCCESS;
+}
+inline DWORD ClearEndpointConfig(furious::wfp::Engine* engine) noexcept {
+    std::lock_guard<std::mutex> lock(EndpointConfigMutex());
+    const bool hadPrevious = HasEndpointConfigSnapshot();
+    const auto previous = EndpointConfigSnapshot();
+    const bool previousUdp = hadPrevious &&
+        (previous.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    if (engine != nullptr) {
+        const DWORD applyStatus = GetPolicyStore().Reapply(engine, false);
+        if (applyStatus != ERROR_SUCCESS) return applyStatus;
+    }
+    const DWORD status = furious::wfp::driver::ClearEndpointConfig();
+    if (status != ERROR_SUCCESS) {
+        if (engine != nullptr && previousUdp) GetPolicyStore().Reapply(engine, true);
+        return status;
+    }
+    EndpointConfigSnapshot() = FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG{};
+    HasEndpointConfigSnapshot() = false;
+    return ERROR_SUCCESS;
+}
+inline DWORD StopBroker(furious::wfp::Engine* engine) noexcept {
+    const DWORD clearStatus = ClearEndpointConfig(engine);
     if (clearStatus != ERROR_SUCCESS &&
         clearStatus != ERROR_FILE_NOT_FOUND &&
         clearStatus != ERROR_PATH_NOT_FOUND) {
@@ -135,8 +229,33 @@ inline DWORD StopBroker() noexcept {
     GetUdpBrokerServer().Stop();
     return ERROR_SUCCESS;
 }
-inline DWORD StopUdpBroker() noexcept {
-    // UDP endpoint configuration and redirect filters remain deliberately disabled.
+inline DWORD StopUdpBroker(furious::wfp::Engine* engine) noexcept {
+    std::lock_guard<std::mutex> lock(EndpointConfigMutex());
+    const bool configured = HasEndpointConfigSnapshot();
+    const auto previous = EndpointConfigSnapshot();
+    const bool udpEnabled = configured &&
+        (previous.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    if (udpEnabled) {
+        if (engine == nullptr) return ERROR_INVALID_HANDLE;
+        DWORD status = GetPolicyStore().Reapply(engine, false);
+        if (status != ERROR_SUCCESS) return status;
+        auto tcpOnly = previous;
+        tcpOnly.Flags &= ~FURIOUS_WFP_REDIRECT_FLAG_UDP;
+        tcpOnly.UdpPortV4 = 0;
+        tcpOnly.UdpPortV6 = 0;
+        const bool tcpEnabled = (tcpOnly.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) != 0;
+        status = tcpEnabled ? furious::wfp::driver::SetEndpointConfig(tcpOnly)
+                            : furious::wfp::driver::ClearEndpointConfig();
+        if (status != ERROR_SUCCESS) {
+            GetPolicyStore().Reapply(engine, true);
+            return status;
+        }
+        if (tcpEnabled) EndpointConfigSnapshot() = tcpOnly;
+        else {
+            EndpointConfigSnapshot() = FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG{};
+            HasEndpointConfigSnapshot() = false;
+        }
+    }
     GetUdpBrokerServer().Stop();
     return ERROR_SUCCESS;
 }
@@ -231,9 +350,9 @@ inline DWORD DispatchCommand(uint32_t command,
                              furious::wfp::Engine* engine = nullptr) noexcept {
     switch (command) {
     case FURIOUS_WFP_IPC_COMMAND_START_BROKER: return StartBroker(payload, payloadSize);
-    case FURIOUS_WFP_IPC_COMMAND_STOP_BROKER: return payloadSize == 0 ? StopBroker() : ERROR_INVALID_PARAMETER;
+    case FURIOUS_WFP_IPC_COMMAND_STOP_BROKER: return payloadSize == 0 ? StopBroker(engine) : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER: return StartUdpBroker(payload, payloadSize);
-    case FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER: return payloadSize == 0 ? StopUdpBroker() : ERROR_INVALID_PARAMETER;
+    case FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER: return payloadSize == 0 ? StopUdpBroker(engine) : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_STATUS:
         return payloadSize == 0 ? ERROR_SUCCESS : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_DRIVER_STATUS: {
@@ -250,25 +369,18 @@ inline DWORD DispatchCommand(uint32_t command,
         }
         FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG config = {};
         std::memcpy(&config, payload, sizeof(config));
-        // The kernel ABI reserves UDP endpoint fields for forward compatibility,
-        // but the service has no UDP relay yet. Reject UDP at the IPC boundary
-        // so an accidental caller cannot configure an unusable redirect target.
-        if ((config.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0 ||
-            config.UdpPortV4 != 0 || config.UdpPortV6 != 0) {
-            return ERROR_NOT_SUPPORTED;
-        }
-        return furious::wfp::driver::SetEndpointConfig(config);
+        return SetEndpointConfig(config, engine);
     }
     case FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG:
         if (payloadSize != 0) {
             return ERROR_INVALID_PARAMETER;
         }
-        return furious::wfp::driver::ClearEndpointConfig();
+        return ClearEndpointConfig(engine);
     case FURIOUS_WFP_IPC_COMMAND_SET_POLICY:
         if (payload == nullptr || payloadSize == 0) {
             return ERROR_INVALID_DATA;
         }
-        return GetPolicyStore().Set(payload, payloadSize, engine);
+        return GetPolicyStore().Set(payload, payloadSize, engine, IsUdpEndpointConfigured());
     case FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY:
         if (payloadSize != 0) {
             return ERROR_INVALID_PARAMETER;

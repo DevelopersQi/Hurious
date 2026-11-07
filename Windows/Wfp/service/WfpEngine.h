@@ -19,7 +19,8 @@ public:
     DWORD EnsureProviderAndSublayer();
     DWORD InstallRedirectFilters();
     DWORD ApplyApplicationPolicy(
-        const std::vector<furious::wfp::policy::CompiledApplicationRule>& rules);
+        const std::vector<furious::wfp::policy::CompiledApplicationRule>& rules,
+        bool includeUdp = false);
     DWORD RemoveRedirectFilters();
     DWORD RemoveProviderAndSublayer();
     void Close() noexcept;

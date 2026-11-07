@@ -232,6 +232,12 @@ int main() {
     endpoint.TcpPortV6 = 10809;
     endpoint.UdpPortV6 = 10809;
     CHECK(IsValidEndpointConfig(endpoint));
+    CHECK(furious::wfp::ipc::UdpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 10809}));
+    CHECK(!furious::wfp::ipc::UdpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 10810}));
+    CHECK(!furious::wfp::ipc::UdpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 0}));
 
     // The user-mode validator must enforce the same minimum family/transport
     // requirements as the kernel before an endpoint reaches the driver.
@@ -253,10 +259,10 @@ int main() {
     noTransportEndpoint.UdpPortV6 = 0;
     CHECK(!IsValidEndpointConfig(noTransportEndpoint));
 
-    // UDP redirect is deliberately unavailable until a UDP relay is implemented.
-    // Reject both the protocol flag and stale/nonzero UDP ports at the IPC boundary.
+    // UDP endpoint activation is rejected until a live broker with matching
+    // listener ports is running; this prevents redirecting into a dead port.
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
-                          &endpoint, sizeof(endpoint)) == ERROR_NOT_SUPPORTED);
+                          &endpoint, sizeof(endpoint)) == ERROR_SERVICE_NOT_ACTIVE);
     auto tcpOnlyEndpoint = endpoint;
     tcpOnlyEndpoint.Flags &= ~FURIOUS_WFP_REDIRECT_FLAG_UDP;
     tcpOnlyEndpoint.UdpPortV4 = 0;
@@ -266,12 +272,12 @@ int main() {
     udpFlagOnlyEndpoint.Flags |= FURIOUS_WFP_REDIRECT_FLAG_UDP;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
-          ERROR_NOT_SUPPORTED);
+          ERROR_SERVICE_NOT_ACTIVE);
     auto udpPortOnlyEndpoint = tcpOnlyEndpoint;
     udpPortOnlyEndpoint.UdpPortV6 = 10809;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpPortOnlyEndpoint, sizeof(udpPortOnlyEndpoint)) ==
-          ERROR_NOT_SUPPORTED);
+          ERROR_SERVICE_NOT_ACTIVE);
 
     // Exited core PIDs must be removed from the redirect exclusion snapshot
     // before Windows can reuse those PIDs for unrelated applications.
