@@ -198,6 +198,13 @@ inline DWORD DispatchCommand(uint32_t command,
         }
         FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG config = {};
         std::memcpy(&config, payload, sizeof(config));
+        // The kernel ABI reserves UDP endpoint fields for forward compatibility,
+        // but the service has no UDP relay yet. Reject UDP at the IPC boundary
+        // so an accidental caller cannot configure an unusable redirect target.
+        if ((config.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0 ||
+            config.UdpPortV4 != 0 || config.UdpPortV6 != 0) {
+            return ERROR_NOT_SUPPORTED;
+        }
         return furious::wfp::driver::SetEndpointConfig(config);
     }
     case FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG:
