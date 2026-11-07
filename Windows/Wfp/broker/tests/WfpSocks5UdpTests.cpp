@@ -1101,7 +1101,28 @@ void TestRegistryCloseAllCancelsPendingHandshake() {
         std::chrono::seconds(2);
     while (!acceptedAndReadGreeting.load() &&
            std::chrono::steady_clock::now() < acceptDeadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::vector<WfpUdpRelaySocket> relays;
+        assert(registry.GetRelaySockets(relays));
+        const auto relay = std::find_if(relays.begin(), relays.end(),
+            [flowId](const WfpUdpRelaySocket& item) {
+                return item.flowId == flowId;
+            });
+        if (relay == relays.end()) break;
+
+        WSAPOLLFD descriptor{};
+        descriptor.fd = relay->controlSocket;
+        if (relay->wantsRead) descriptor.events |= POLLRDNORM;
+        if (relay->wantsWrite) descriptor.events |= POLLWRNORM;
+        const int ready = WSAPoll(&descriptor, 1, 50);
+        if (ready == SOCKET_ERROR) break;
+        if (ready > 0) {
+            const bool readable = (descriptor.revents &
+                (POLLRDNORM | POLLERR | POLLHUP)) != 0;
+            const bool writable = (descriptor.revents &
+                (POLLWRNORM | POLLERR | POLLHUP)) != 0;
+            assert(registry.AdvancePendingFlow(flowId, readable, writable) ==
+                WfpUdpFlowRelayRegistryResult::Pending);
+        }
     }
     assert(acceptedAndReadGreeting.load());
     assert(registry.ActiveCount() == 1);
