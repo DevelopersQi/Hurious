@@ -2,12 +2,17 @@
 #include "../WfpSocks5UdpControl.h"
 #include "../WfpSocks5UdpAssociation.h"
 #include "../WfpSocks5UdpAssociationManager.h"
+#include "../WfpSocks5UdpAssociationClient.h"
+#include "../WfpSocks5UdpSocket.h"
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <array>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <vector>
+#include <thread>
 
 using namespace furious::wfp::broker;
 
@@ -182,6 +187,124 @@ void TestAssociationSourcePinningAndExpiry() {
     assert(!association.IsActive(now));
 }
 
+
+bool ReceiveExactSocket(SOCKET socket, std::uint8_t* output, std::size_t length) {
+    std::size_t offset = 0;
+    while (offset < length) {
+        const int received = recv(socket,
+            reinterpret_cast<char*>(output + offset),
+            static_cast<int>(length - offset), 0);
+        if (received <= 0) return false;
+        offset += static_cast<std::size_t>(received);
+    }
+    return true;
+}
+
+bool SendAllSocket(SOCKET socket, const std::uint8_t* input, std::size_t length) {
+    std::size_t offset = 0;
+    while (offset < length) {
+        const int sent = send(socket,
+            reinterpret_cast<const char*>(input + offset),
+            static_cast<int>(length - offset), 0);
+        if (sent <= 0) return false;
+        offset += static_cast<std::size_t>(sent);
+    }
+    return true;
+}
+
+void TestNonblockingSocks5UdpHandshake() {
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(listener != INVALID_SOCKET);
+    sockaddr_in bindAddress{};
+    bindAddress.sin_family = AF_INET;
+    bindAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    bindAddress.sin_port = 0;
+    assert(bind(listener, reinterpret_cast<const sockaddr*>(&bindAddress),
+        sizeof(bindAddress)) == 0);
+    assert(listen(listener, 1) == 0);
+    int bindLength = sizeof(bindAddress);
+    assert(getsockname(listener, reinterpret_cast<sockaddr*>(&bindAddress),
+        &bindLength) == 0);
+
+    std::thread fakeSocksServer([listener]() {
+        fd_set readable;
+        FD_ZERO(&readable);
+        FD_SET(listener, &readable);
+        timeval acceptTimeout{5, 0};
+        if (select(0, &readable, nullptr, nullptr, &acceptTimeout) <= 0) return;
+        SOCKET peer = accept(listener, nullptr, nullptr);
+        if (peer == INVALID_SOCKET) return;
+
+        std::array<std::uint8_t, 3> greeting{};
+        if (ReceiveExactSocket(peer, greeting.data(), greeting.size())) {
+            const std::array<std::uint8_t, 2> methodReply{5, 0};
+            if (greeting == std::array<std::uint8_t, 3>{5, 1, 0} &&
+                SendAllSocket(peer, methodReply.data(), methodReply.size())) {
+                std::array<std::uint8_t, 10> associateRequest{};
+                if (ReceiveExactSocket(peer, associateRequest.data(),
+                        associateRequest.size())) {
+                    const std::array<std::uint8_t, 10> associateReply{
+                        5, 0, 0, 1, 127, 0, 0, 1, 0xA0, 0x01
+                    };
+                    if (associateRequest[0] == 5 &&
+                        associateRequest[1] == 3 &&
+                        associateRequest[2] == 0) {
+                        SendAllSocket(peer, associateReply.data(),
+                            associateReply.size());
+                    }
+                }
+            }
+        }
+        std::uint8_t sink = 0;
+        while (recv(peer, reinterpret_cast<char*>(&sink), 1, 0) > 0) {}
+        closesocket(peer);
+    });
+
+    Socks5UdpSocket udpSocket;
+    assert(udpSocket.Open(Socks5UdpEndpointFamily::Ipv4) ==
+        Socks5UdpSocketOpenResult::Opened);
+    Socks5UdpAssociationClient association;
+    const auto begin = association.BeginOpen(
+        reinterpret_cast<const sockaddr*>(&bindAddress), sizeof(bindAddress),
+        udpSocket, 4000);
+    assert(begin == Socks5UdpAssociationAsyncResult::Pending);
+
+    auto result = Socks5UdpAssociationAsyncResult::Pending;
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(4);
+    while (result == Socks5UdpAssociationAsyncResult::Pending &&
+           std::chrono::steady_clock::now() < deadline) {
+        WSAPOLLFD descriptor{};
+        descriptor.fd = association.ControlSocket();
+        if (association.WantsRead()) descriptor.events |= POLLRDNORM;
+        if (association.WantsWrite()) descriptor.events |= POLLWRNORM;
+        const int ready = WSAPoll(&descriptor, 1, 100);
+        if (ready == SOCKET_ERROR) break;
+        if (ready == 0) {
+            result = association.Advance(false, false);
+            continue;
+        }
+        const bool readable = (descriptor.revents &
+            (POLLRDNORM | POLLERR | POLLHUP)) != 0;
+        const bool writable = (descriptor.revents &
+            (POLLWRNORM | POLLERR | POLLHUP)) != 0;
+        result = association.Advance(readable, writable);
+    }
+
+    assert(result == Socks5UdpAssociationAsyncResult::Ready);
+    assert(association.IsOpen());
+    assert(association.RelayAddress() != nullptr);
+    assert(association.RelayAddress()->sa_family == AF_INET);
+    const auto* relay = reinterpret_cast<const sockaddr_in*>(
+        association.RelayAddress());
+    assert(ntohs(relay->sin_port) == 40961);
+
+    association.Close();
+    fakeSocksServer.join();
+    udpSocket.Close();
+    closesocket(listener);
+}
+
 void TestAssociationManagerQuotasAndCleanup() {
     using Clock = Socks5UdpAssociation::Clock;
     const auto now = Clock::now();
@@ -211,10 +334,14 @@ void TestAssociationManagerQuotasAndCleanup() {
 }
 
 int main() {
+    WSADATA winsockData{};
+    assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
     TestDatagramRoundTrips();
     TestDatagramRejectsMalformedInput();
     TestAssociateControlMessages();
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
+    TestNonblockingSocks5UdpHandshake();
+    WSACleanup();
     return 0;
 }
