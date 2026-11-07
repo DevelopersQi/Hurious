@@ -1613,6 +1613,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 return False
 
         attempt.commit()
+        if not proxyModeOnly:
+            self._startWfpBroker(attempt.runtimeConfiguration)
 
         return True
 
