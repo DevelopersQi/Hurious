@@ -230,7 +230,12 @@ class ConnectionController(QtCore.QObject):
 
     def applyWfpApplicationRoutingPolicy(self):
         """Apply saved absolute-path application rules to the active Windows core."""
-        if PLATFORM != 'Windows' or not self.isConnected():
+        if PLATFORM != 'Windows':
+            return None
+        if not self.isConnected():
+            # Remove stale filters while disconnected; the saved policy is
+            # reapplied after the next successful connection.
+            self._coreManager.clearWfpApplicationPolicy()
             return None
 
         if SystemRuntime.isTUNMode():
