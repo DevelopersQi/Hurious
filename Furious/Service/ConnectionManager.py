@@ -50,13 +50,8 @@ from Furious.Frozenlib.SystemNetwork import resolvePrimaryAdapterInterfaceName
 from Furious.Service.RuntimeLease import RuntimeEventRouter, RuntimeLease
 from Furious.Service.WfpRuntimeSnapshot import WfpRuntimeSnapshot
 from Furious.Service.WfpIpcController import WfpIpcController
-from Furious.Service.WfpIpcClient import (
-    REDIRECT_FLAG_IPV4,
-    REDIRECT_FLAG_IPV6,
-    REDIRECT_FLAG_TCP,
-    pack_application_routing_policy,
-    pack_endpoint_config,
-)
+from Furious.Service.WfpIpcClient import pack_application_routing_policy
+from Furious.Service.WfpEndpointConfig import build_endpoint_config
 
 from typing import Callable, Tuple, Union
 from dataclasses import dataclass, field
@@ -1391,27 +1386,13 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpBrokerEndpoint = None
             return None
 
-        flags = REDIRECT_FLAG_TCP
-        if tcpPortV4:
-            flags |= REDIRECT_FLAG_IPV4
-        if tcpPortV6:
-            flags |= REDIRECT_FLAG_IPV6
-        if not (flags & (REDIRECT_FLAG_IPV4 | REDIRECT_FLAG_IPV6)):
-            self._wfpEndpointPending.clear()
-            self._wfpIpcController.clearEndpointConfig()
-            self._wfpIpcController.stopBroker()
-            self._wfpBrokerEndpoint = None
-            return None
-
         try:
-            payload = pack_endpoint_config(
-                backend=backend,
-                flags=flags,
-                proxy_process_id=brokerPid,
-                policy_generation=snapshot.generation,
-                tcp_port_v4=tcpPortV4,
-                tcp_port_v6=tcpPortV6,
-                excluded_process_ids=snapshot.excluded_process_ids,
+            payload = build_endpoint_config(
+                snapshot,
+                backend,
+                brokerPid,
+                tcpPortV4,
+                tcpPortV6,
             )
         except (TypeError, ValueError) as error:
             logger.error(f'WFP endpoint configuration rejected locally: {error}')
