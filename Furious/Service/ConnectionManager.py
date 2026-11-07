@@ -1231,11 +1231,6 @@ class ConnectionManager(Mixins.CleanupOnExit):
         items = [dict(rule) for rule in rules]
         generation = self._nextWfpPolicyGeneration()
         pack_application_routing_policy(items, backend, generation)
-        controller = self._getWfpIpcController()
-        requestId = controller.setPolicy(items, backend, generation)
-        if requestId is None:
-            return None
-
         hasProxyRules = any(
             bool(item.get('enabled', True))
             and (
@@ -1244,19 +1239,25 @@ class ConnectionManager(Mixins.CleanupOnExit):
             )
             for item in items
         )
+
+        controller = self._getWfpIpcController()
+        # Disable the old endpoint before replacing the policy filters. This
+        # prevents a new Proxy policy from briefly using an old backend.
+        self._wfpBrokerEndpoint = None
+        self._wfpBrokerPending.clear()
+        self._wfpEndpointPending.clear()
+        controller.clearEndpointConfig()
+        controller.stopBroker()
+
+        requestId = controller.setPolicy(items, backend, generation)
+        if requestId is None:
+            return None
+
         self._wfpPolicyHasProxyRules = hasProxyRules
         self._wfpPolicyBackend = int(backend) if hasProxyRules else 0
 
         if hasProxyRules and self._wfpActiveConfiguration is not None:
             self._startWfpBroker(self._wfpActiveConfiguration)
-        else:
-            # Invalidate in-flight broker replies before queueing endpoint
-            # cleanup, so an old completion cannot re-enable a stale listener.
-            self._wfpBrokerEndpoint = None
-            self._wfpBrokerPending.clear()
-            self._wfpEndpointPending.clear()
-            controller.clearEndpointConfig()
-            controller.stopBroker()
 
         return requestId
 
@@ -1272,10 +1273,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
-        requestId = controller.clearPolicy()
         controller.clearEndpointConfig()
         controller.stopBroker()
-        return requestId
+        return controller.clearPolicy()
 
     def _startWfpBroker(self, configuration):
         """Start the TCP broker only for a supported socket-owning proxy core."""
