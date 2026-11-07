@@ -188,6 +188,20 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
     (void)now;
     const auto found = relays_.find(flowId);
     if (found == relays_.end()) return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+
+    // Do not forward a response for a flow whose idle lease has already
+    // expired. Touch before receiving/forwarding so late upstream traffic
+    // cannot resurrect an expired flow after its relay should be closed.
+    std::uint64_t touchedFlowId = 0;
+    const auto touchResult = flows_.Touch(
+        found->second->OriginalClient(),
+        found->second->OriginalClientLength(), now, touchedFlowId);
+    if (touchResult != WfpUdpFlowTouchResult::Found ||
+        touchedFlowId != flowId) {
+        CloseFlow(flowId);
+        return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+    }
+
     Socks5UdpDatagramView response{};
     std::size_t received = 0;
     const auto result = found->second->ReceiveUpstreamResponse(
@@ -215,8 +229,6 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
         CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ForwardFailed;
     }
-    flows_.Touch(found->second->OriginalClient(),
-        found->second->OriginalClientLength(), now, flowId);
     return WfpUdpFlowRelayRegistryResult::Ready;
 }
 
