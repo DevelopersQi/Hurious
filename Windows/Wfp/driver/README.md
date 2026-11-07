@@ -35,9 +35,19 @@ package, or tested Windows 10 x64 installation flow.
 
 The root `packages.config` pins the Windows SDK and WDK NuGet packages to
 10.0.28000.2526. `Directory.Build.props` imports the x64 WDK build integration.
-The `windows-wfp-driver-build` workflow job builds the Release x64 `.sys`
-against the Windows 10 target and uploads the unsigned binary as a short-lived
-CI artifact.
+The `Quick validation` workflow builds the Release x64 `.sys` against the
+Windows 10 target, signs a copy with an ephemeral self-created test certificate,
+verifies the embedded Authenticode signature and signer thumbprint, and uploads
+a short-lived `furious-wfp-driver-windows10-x64-test-signed` artifact. The
+artifact contains the signed `.sys`, public `.cer`, SHA-256 manifest, and
+test-only instructions. It does not contain an INF/CAT or installer, and it
+does not install or start the driver.
+
+The certificate is not chained to a Microsoft production root. Loading the
+test driver requires a compatible disposable Windows 10 x64 test machine with
+TESTSIGNING enabled and the public certificate trusted in the appropriate
+stores; Secure Boot policy may prevent enabling TESTSIGNING. This test artifact
+is not a retail driver package and must never be presented as production-signed.
 
 A successful compiler run proves only that the driver source builds. It does
 not prove that the driver loads, registers with the kernel WFP runtime, survives
