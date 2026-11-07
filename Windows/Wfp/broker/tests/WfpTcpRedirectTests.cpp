@@ -184,7 +184,7 @@ void TestSocks5UdpParser() {
     const std::vector<std::uint8_t> ipv6 = {
         0x00, 0x00, 0x00, 0x04,
         0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 1, 0x13, 0x88, 0x7F
+        0, 0, 0, 0, 0, 0, 0, 1, 0x13, 0x88, 0x7F
     };
     assert(ParseSocks5UdpDatagram(ipv6.data(), ipv6.size(), view) ==
         Socks5UdpParseResult::Valid);
