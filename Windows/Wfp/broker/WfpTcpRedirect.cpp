@@ -201,6 +201,7 @@ int SendNonblocking(
     size_t size,
     DWORD timeoutMilliseconds) noexcept {
     size_t offset = 0;
+    const ULONGLONG deadline = GetTickCount64() + timeoutMilliseconds;
     while (offset < size) {
         const int sent = send(
             socket, data + offset,
@@ -220,12 +221,17 @@ int SendNonblocking(
                 return error;
             }
 
+            const ULONGLONG now = GetTickCount64();
+            if (now >= deadline) {
+                return WSAETIMEDOUT;
+            }
+            const ULONGLONG remaining = deadline - now;
             fd_set writable;
             FD_ZERO(&writable);
             FD_SET(socket, &writable);
             timeval timeout{
-                static_cast<long>(timeoutMilliseconds / 1000u),
-                static_cast<long>((timeoutMilliseconds % 1000u) * 1000u)
+                static_cast<long>(remaining / 1000u),
+                static_cast<long>((remaining % 1000u) * 1000u)
             };
             const int ready = select(0, nullptr, &writable, nullptr, &timeout);
             if (ready == 0) {
