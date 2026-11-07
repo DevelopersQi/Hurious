@@ -180,8 +180,14 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
 
     const auto forwarded = found->second->ForwardUpstreamResponse(
         ingress, sendMessage, response);
-    if (forwarded != WfpSocks5UdpFlowRelayResult::Ready)
+    if (forwarded == WfpSocks5UdpFlowRelayResult::ControlClosed) {
+        CloseFlow(flowId);
+        return WfpUdpFlowRelayRegistryResult::ControlClosed;
+    }
+    if (forwarded != WfpSocks5UdpFlowRelayResult::Ready) {
+        CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ForwardFailed;
+    }
     flows_.Touch(found->second->OriginalClient(),
         found->second->OriginalClientLength(), now, flowId);
     return WfpUdpFlowRelayRegistryResult::Ready;
