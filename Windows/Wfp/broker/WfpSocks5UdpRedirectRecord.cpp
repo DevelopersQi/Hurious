@@ -22,6 +22,16 @@ WfpUdpRedirectRecordResult ExtractControlData(
     }
 
     bool found = false;
+    int expectedLevel = 0;
+    if (message.name != nullptr) {
+        if (message.name->sa_family == AF_INET) {
+            expectedLevel = IPPROTO_IP;
+        } else if (message.name->sa_family == AF_INET6) {
+            expectedLevel = IPPROTO_IPV6;
+        } else {
+            return WfpUdpRedirectRecordResult::InvalidMessage;
+        }
+    }
     WSAMSG* mutableMessage = const_cast<WSAMSG*>(&message);
     const char* controlBegin = message.Control.buf;
     const char* controlEnd = controlBegin + message.Control.len;
@@ -40,10 +50,14 @@ WfpUdpRedirectRecordResult ExtractControlData(
             output.clear();
             return WfpUdpRedirectRecordResult::InvalidMessage;
         }
-        if (control->cmsg_type != messageType ||
+        if (control->cmsg_type != messageType) {
+            continue;
+        }
+        if ((expectedLevel != 0 && control->cmsg_level != expectedLevel) ||
             (control->cmsg_level != IPPROTO_IP &&
              control->cmsg_level != IPPROTO_IPV6)) {
-            continue;
+            output.clear();
+            return WfpUdpRedirectRecordResult::InvalidMessage;
         }
         if (found) {
             output.clear();

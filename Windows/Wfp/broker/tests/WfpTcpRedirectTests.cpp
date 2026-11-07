@@ -1204,6 +1204,10 @@ void TestWfpUdpRedirectRecordAncillaryData() {
     const std::size_t controlLength =
         WSA_CMSG_SPACE(sizeof(record)) + WSA_CMSG_SPACE(sizeof(context));
     std::vector<char> controlBuffer(controlLength);
+    sockaddr_in sourceAddress{};
+    sourceAddress.sin_family = AF_INET;
+    message.name = reinterpret_cast<sockaddr*>(&sourceAddress);
+    message.namelen = sizeof(sourceAddress);
     message.Control.buf = controlBuffer.data();
     message.Control.len = static_cast<ULONG>(controlBuffer.size());
     WSACMSGHDR* header = WSA_CMSG_FIRSTHDR(&message);
@@ -1227,6 +1231,14 @@ void TestWfpUdpRedirectRecordAncillaryData() {
         WfpUdpRedirectRecordResult::Present);
     assert(extractedContext.size() == sizeof(context));
     assert(std::memcmp(extractedContext.data(), context, sizeof(context)) == 0);
+
+    // Ancillary metadata must use the protocol level matching the actual
+    // redirected socket family; accepting cross-family control data is unsafe.
+    header->cmsg_level = IPPROTO_IPV6;
+    assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
+        WfpUdpRedirectRecordResult::InvalidMessage);
+    assert(extractedRecord.empty());
+    header->cmsg_level = IPPROTO_IP;
 
     header->cmsg_len = 0;
     assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
