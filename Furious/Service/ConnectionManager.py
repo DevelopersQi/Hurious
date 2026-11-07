@@ -1139,12 +1139,21 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Log asynchronous WFP control-plane results without affecting proxy state."""
         if error:
             logger.warning(f'WFP IPC {command} request failed: {error}')
+            if command == 'start-broker':
+                self._wfpBrokerPending.pop(requestId, None)
+                self._wfpBrokerEndpoint = None
+                if self._wfpIpcController is not None:
+                    self._wfpIpcController.clearEndpointConfig()
         elif command == 'status':
             logger.debug('WFP service status request completed')
         elif command == 'start-broker' and result is not None:
-            backend = self._wfpBrokerPending.pop(requestId, None)
-            if backend is None:
-                logger.warning('WFP TCP broker started without a matching runtime request')
+            pending = self._wfpBrokerPending.pop(requestId, None)
+            if pending is None:
+                logger.debug('ignoring a stale WFP TCP broker start response')
+                return
+            backend, requestedGeneration = pending
+            if requestedGeneration != self.wfpRuntimeSnapshot.generation:
+                logger.debug('ignoring WFP TCP broker response for a stale runtime generation')
                 return
             self._wfpBrokerEndpoint = (
                 backend,
@@ -1200,7 +1209,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
             controller.queryStatus()
             requestId = controller.startBroker(host, int(port))
             if requestId is not None:
-                self._wfpBrokerPending[requestId] = backend
+                self._wfpBrokerPending[requestId] = (
+                    backend, self.wfpRuntimeSnapshot.generation
+                )
             return requestId
         except Exception as error:
             logger.warning(f'WFP TCP broker start could not be queued: {error}')
