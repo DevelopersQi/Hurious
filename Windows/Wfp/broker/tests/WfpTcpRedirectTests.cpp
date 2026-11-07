@@ -1113,6 +1113,150 @@ void TestSocks5UdpFlowRelayBridge() {
     WSACleanup();
 }
 
+
+void TestWfpUdpRegistryAsyncFlowStartup() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        SOCKET relayUdp = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        assert(listener != INVALID_SOCKET && relayUdp != INVALID_SOCKET);
+        sockaddr_in tcpAddress{};
+        tcpAddress.sin_family = AF_INET;
+        tcpAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        assert(bind(listener, reinterpret_cast<const sockaddr*>(&tcpAddress),
+            sizeof(tcpAddress)) == 0);
+        assert(listen(listener, 1) == 0);
+        int tcpLength = sizeof(tcpAddress);
+        assert(getsockname(listener, reinterpret_cast<sockaddr*>(&tcpAddress),
+            &tcpLength) == 0);
+        sockaddr_in udpAddress{};
+        udpAddress.sin_family = AF_INET;
+        udpAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        assert(bind(relayUdp, reinterpret_cast<const sockaddr*>(&udpAddress),
+            sizeof(udpAddress)) == 0);
+        int udpLength = sizeof(udpAddress);
+        assert(getsockname(relayUdp, reinterpret_cast<sockaddr*>(&udpAddress),
+            &udpLength) == 0);
+        DWORD timeout = 5000;
+        setsockopt(relayUdp, SOL_SOCKET, SO_RCVTIMEO,
+            reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+
+        std::atomic<bool> receivedExpectedDatagram{false};
+        std::thread fakeSocksServer([&]() {
+            SOCKET accepted = accept(listener, nullptr, nullptr);
+            assert(accepted != INVALID_SOCKET);
+            std::uint8_t greeting[3]{};
+            assert(recv(accepted, reinterpret_cast<char*>(greeting),
+                sizeof(greeting), MSG_WAITALL) == static_cast<int>(sizeof(greeting)));
+            const std::uint8_t method[] = {5, 0};
+            assert(send(accepted, reinterpret_cast<const char*>(method),
+                sizeof(method), 0) == static_cast<int>(sizeof(method)));
+            std::uint8_t request[10]{};
+            assert(recv(accepted, reinterpret_cast<char*>(request),
+                sizeof(request), MSG_WAITALL) == static_cast<int>(sizeof(request)));
+            const std::uint8_t reply[] = {5, 0, 0, 1, 127, 0, 0, 1,
+                static_cast<std::uint8_t>(ntohs(udpAddress.sin_port) >> 8),
+                static_cast<std::uint8_t>(ntohs(udpAddress.sin_port))};
+            assert(send(accepted, reinterpret_cast<const char*>(reply),
+                sizeof(reply), 0) == static_cast<int>(sizeof(reply)));
+
+            std::uint8_t datagram[64]{};
+            sockaddr_in source{};
+            int sourceLength = sizeof(source);
+            const int count = recvfrom(relayUdp, reinterpret_cast<char*>(datagram),
+                sizeof(datagram), 0, reinterpret_cast<sockaddr*>(&source), &sourceLength);
+            if (count == 13 && datagram[0] == 0 && datagram[1] == 0 &&
+                datagram[2] == 0 && datagram[3] == 1 &&
+                datagram[4] == 8 && datagram[5] == 8 &&
+                datagram[6] == 8 && datagram[7] == 8 &&
+                datagram[8] == 0 && datagram[9] == 53 &&
+                datagram[10] == 1 && datagram[11] == 2 && datagram[12] == 3) {
+                receivedExpectedDatagram.store(true);
+            }
+            char probe = 0;
+            (void)recv(accepted, &probe, 1, 0);
+            closesocket(accepted);
+        });
+
+        WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(10));
+        assert(registry.Configure(reinterpret_cast<const sockaddr*>(&tcpAddress),
+            sizeof(tcpAddress), 5000));
+        WfpUdpReceivedMessage message{};
+        auto* source = reinterpret_cast<sockaddr_in*>(&message.sourceAddress);
+        source->sin_family = AF_INET;
+        source->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        source->sin_port = htons(53001);
+        message.sourceAddressLength = sizeof(sockaddr_in);
+        const std::uint8_t payload[] = {1, 2, 3};
+        message.payloadLength = sizeof(payload);
+        const std::uint8_t redirectRecord[] = {0x11, 0x22, 0x33};
+        message.redirectRecord.assign(redirectRecord,
+            redirectRecord + sizeof(redirectRecord));
+        FURIOUS_WFP_REDIRECT_CONTEXT context{};
+        context.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+        context.Size = sizeof(context);
+        context.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+        context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+        context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+        context.OriginalPortNetworkOrder = htons(53);
+        context.OriginalAddress[0] = 8;
+        context.OriginalAddress[1] = 8;
+        context.OriginalAddress[2] = 8;
+        context.OriginalAddress[3] = 8;
+        context.OriginalProcessId = 321;
+        context.PolicyGeneration = 1;
+        const auto* contextBytes = reinterpret_cast<const std::uint8_t*>(&context);
+        message.redirectContext.assign(contextBytes, contextBytes + sizeof(context));
+
+        std::uint64_t flowId = 0;
+        assert(registry.ProcessClientDatagram(message, payload,
+            WfpUdpFlowRelayRegistry::Clock::now(), &flowId) ==
+            WfpUdpFlowRelayRegistryResult::Pending);
+        assert(flowId != 0 && registry.ActiveCount() == 1);
+        std::vector<WfpUdpRelaySocket> sockets;
+        assert(registry.GetRelaySockets(sockets) && sockets.size() == 1);
+        assert(sockets[0].handshaking && sockets[0].controlSocket != INVALID_SOCKET);
+
+        auto result = WfpUdpFlowRelayRegistryResult::Pending;
+        const ULONGLONG deadline = GetTickCount64() + 6000;
+        while (result == WfpUdpFlowRelayRegistryResult::Pending &&
+            GetTickCount64() < deadline) {
+            assert(registry.GetRelaySockets(sockets) && sockets.size() == 1);
+            fd_set reads, writes;
+            FD_ZERO(&reads);
+            FD_ZERO(&writes);
+            if (sockets[0].wantsRead) FD_SET(sockets[0].controlSocket, &reads);
+            if (sockets[0].wantsWrite) FD_SET(sockets[0].controlSocket, &writes);
+            timeval wait{0, 100000};
+            const int ready = select(0,
+                reads.fd_count ? &reads : nullptr,
+                writes.fd_count ? &writes : nullptr, nullptr, &wait);
+            assert(ready != SOCKET_ERROR);
+            const bool readable = ready > 0 &&
+                FD_ISSET(sockets[0].controlSocket, &reads);
+            const bool writable = ready > 0 &&
+                FD_ISSET(sockets[0].controlSocket, &writes);
+            result = registry.AdvancePendingFlow(flowId, readable, writable);
+            assert(result == WfpUdpFlowRelayRegistryResult::Pending ||
+                result == WfpUdpFlowRelayRegistryResult::Ready);
+        }
+        assert(result == WfpUdpFlowRelayRegistryResult::Ready);
+        assert(registry.GetRelaySockets(sockets) && sockets.size() == 1);
+        assert(!sockets[0].handshaking);
+        for (int wait = 0; wait < 100 && !receivedExpectedDatagram.load(); ++wait)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(receivedExpectedDatagram.load());
+
+        registry.CloseAll();
+        fakeSocksServer.join();
+        closesocket(relayUdp);
+        closesocket(listener);
+    }
+    WSACleanup();
+}
+
 void TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata() {
     using namespace furious::wfp::broker;
     WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(10));
@@ -1592,6 +1736,7 @@ int main() {
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata();
+    TestWfpUdpRegistryAsyncFlowStartup();
     TestWfpUdpMessageReceive();
     TestWfpUdpRedirectRecordAncillaryData();
     TestSocks5UdpAssociateControlMessages();
