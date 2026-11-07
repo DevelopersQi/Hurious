@@ -442,13 +442,14 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
     // the allocating ID snapshot, whose failure previously looked identical
     // to "nothing expired" and could indefinitely defer cleanup under pressure.
     std::size_t closed = 0;
+    bool queuesChanged = false;
     std::uint64_t expiredFlowId = 0;
     std::size_t scanIndex = 0;
-    // CloseFlowResources releases sockets and queues; RemoveAt then removes
-    // the exact flow entry. Keeping scanIndex at that position visits the last
-    // entry swapped into it, so the sweep remains O(n) without skipping flows.
+    // Close resources and remove identities in-place. Defer the global queue
+    // accounting scan until the batch is complete to keep a mass expiry linear.
     while (flows_.FindExpiredFrom(now, scanIndex, expiredFlowId)) {
-        CloseFlowResources(expiredFlowId);
+        CloseFlowResources(expiredFlowId, false);
+        queuesChanged = true;
         if (!flows_.RemoveAt(scanIndex, expiredFlowId)) {
             // Prefer the identity-based fallback if the scan index became
             // stale. Resources are already closed, so retaining the Flow
@@ -457,24 +458,34 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
         }
         ++closed;
     }
+    if (queuesChanged) RecalculateQueueByteCounts();
     return closed;
 }
 
 std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
     std::size_t closed = 0;
+    bool queuesChanged = false;
     for (auto it = relays_.begin(); it != relays_.end();) {
         // During SOCKS5 negotiation, readable bytes are protocol replies, not
         // proof that the reserved control channel has been closed.
-        if (pendingDatagrams_.find(it->first) != pendingDatagrams_.end() ||
-            it->second->IsControlAlive()) {
+        if (pendingDatagrams_.find(it->first) != pendingDatagrams_.end() &&
+            it->second && it->second->IsControlAlive()) {
+            ++it;
+            continue;
+        }
+        if (pendingDatagrams_.find(it->first) == pendingDatagrams_.end() &&
+            it->second && it->second->IsControlAlive()) {
             ++it;
             continue;
         }
         const auto flowId = it->first;
         ++it; // Erasing the current element does not invalidate other iterators.
-        CloseFlow(flowId);
+        CloseFlowResources(flowId, false);
+        flows_.Remove(flowId);
+        queuesChanged = true;
         ++closed;
     }
+    if (queuesChanged) RecalculateQueueByteCounts();
     return closed;
 }
 
@@ -573,13 +584,13 @@ void WfpUdpFlowRelayRegistry::DiscardOutboundDatagrams(
     RecalculateQueueByteCounts();
 }
 
-void WfpUdpFlowRelayRegistry::CloseFlowResources(std::uint64_t flowId) noexcept {
-    // Remove both queues before rebuilding the shared byte counters. Calling
-    // the individual discard helpers here would scan every surviving queue
-    // twice for one flow teardown.
+void WfpUdpFlowRelayRegistry::CloseFlowResources(
+    std::uint64_t flowId, bool recalculateQueueBytes) noexcept {
+    // Remove both queues before rebuilding the shared byte counters. Batch
+    // sweeps pass false and recalculate once after all expired flows are gone.
     const bool removedPending = pendingDatagrams_.erase(flowId) != 0;
     const bool removedOutbound = outboundDatagrams_.erase(flowId) != 0;
-    if (removedPending || removedOutbound)
+    if (recalculateQueueBytes && (removedPending || removedOutbound))
         RecalculateQueueByteCounts();
 
     const auto found = relays_.find(flowId);

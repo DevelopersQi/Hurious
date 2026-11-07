@@ -88,7 +88,7 @@ public:
     bool GetRelaySockets(std::vector<WfpUdpRelaySocket>& output) const noexcept;
 
 private:
-    void CloseFlowResources(std::uint64_t flowId) noexcept;
+    void CloseFlowResources(std::uint64_t flowId, bool recalculateQueueBytes = true) noexcept;
     WfpUdpFlowManager flows_;
     std::unordered_map<std::uint64_t, std::unique_ptr<WfpSocks5UdpFlowRelay>> relays_;
     // During SOCKS5 negotiation retain a small, strictly bounded FIFO per flow.
