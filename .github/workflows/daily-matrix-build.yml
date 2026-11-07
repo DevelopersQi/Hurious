@@ -715,7 +715,7 @@ jobs:
         if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
         shell: pwsh
         run: |
-          cmake -S Windows/Wfp/service -B build/wfp-service -A x64 -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake -S Windows/Wfp/service -B build/wfp-service -G 'Visual Studio 18 2026' -A x64 -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           cmake --build build/wfp-service --config Release --parallel
           ctest --test-dir build/wfp-service -C Release --output-on-failure
           $service = Get-ChildItem build/wfp-service -Filter FuriousWfpService.exe -Recurse | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
