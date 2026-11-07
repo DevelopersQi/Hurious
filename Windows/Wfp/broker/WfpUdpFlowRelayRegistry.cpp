@@ -111,6 +111,10 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
             flows_.Remove(flowId);
             return WfpUdpFlowRelayRegistryResult::FlowNotFound;
         }
+        if (pendingDatagrams_.find(flowId) != pendingDatagrams_.end()) {
+            if (outputFlowId) *outputFlowId = flowId;
+            return WfpUdpFlowRelayRegistryResult::Pending;
+        }
     } else {
         if (message.redirectRecord.empty() || message.redirectContext.empty())
             return WfpUdpFlowRelayRegistryResult::MissingRedirectMetadata;
@@ -150,24 +154,31 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
                 flows_.Remove(flowId);
                 return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
             }
-            const auto opened = relay->Open(
+            const auto opened = relay->BeginOpen(
                 reinterpret_cast<const sockaddr*>(&socksAddress_), socksAddressLength_,
                 reinterpret_cast<const sockaddr*>(&snapshot.sourceEndpoint),
                 snapshot.sourceEndpointLength, snapshot.redirectContext,
                 snapshot.redirectRecord, timeoutMilliseconds_, errorCode,
                 registerSocket_, unregisterSocket_, callbackContext_);
-            if (opened != WfpSocks5UdpFlowRelayResult::Ready) {
+            if (opened != WfpSocks5UdpFlowRelayResult::Pending) {
                 relay->Close();
                 flows_.Remove(flowId);
                 return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
             }
             try {
                 found = relays_.emplace(flowId, std::move(relay)).first;
+                std::vector<std::uint8_t> firstDatagram;
+                if (message.payloadLength != 0)
+                    firstDatagram.assign(payload, payload + message.payloadLength);
+                pendingDatagrams_.emplace(flowId, std::move(firstDatagram));
             } catch (...) {
-                // The unique_ptr closes the relay if map insertion fails.
+                // Erasing the relay closes its UDP and TCP resources.
+                relays_.erase(flowId);
                 flows_.Remove(flowId);
                 return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
             }
+            if (outputFlowId) *outputFlowId = flowId;
+            return WfpUdpFlowRelayRegistryResult::Pending;
         }
     }
 
@@ -184,6 +195,36 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
         return WfpUdpFlowRelayRegistryResult::SendFailed;
     }
     if (outputFlowId) *outputFlowId = flowId;
+    return WfpUdpFlowRelayRegistryResult::Ready;
+}
+
+
+WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
+    std::uint64_t flowId, bool readable, bool writable, int* errorCode) noexcept {
+    if (errorCode) *errorCode = 0;
+    const auto relay = relays_.find(flowId);
+    const auto pending = pendingDatagrams_.find(flowId);
+    if (relay == relays_.end() || pending == pendingDatagrams_.end())
+        return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+
+    const auto advanced = relay->second->AdvanceOpen(readable, writable, errorCode);
+    if (advanced == WfpSocks5UdpFlowRelayResult::Pending)
+        return WfpUdpFlowRelayRegistryResult::Pending;
+    if (advanced != WfpSocks5UdpFlowRelayResult::Ready) {
+        CloseFlow(flowId);
+        return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
+    }
+
+    const auto sent = relay->second->SendClientPayload(
+        pending->second.empty() ? nullptr : pending->second.data(),
+        pending->second.size(), errorCode);
+    if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
+        CloseFlow(flowId);
+        return sent == WfpSocks5UdpFlowRelayResult::ControlClosed
+            ? WfpUdpFlowRelayRegistryResult::ControlClosed
+            : WfpUdpFlowRelayRegistryResult::SendFailed;
+    }
+    pendingDatagrams_.erase(pending);
     return WfpUdpFlowRelayRegistryResult::Ready;
 }
 
@@ -258,6 +299,7 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
             continue;
         }
         const auto flowId = it->first;
+        pendingDatagrams_.erase(flowId);
         it->second->Close();
         it = relays_.erase(it);
         flows_.Remove(flowId);
@@ -267,6 +309,7 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
 }
 
 void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
+    pendingDatagrams_.erase(flowId);
     const auto found = relays_.find(flowId);
     if (found != relays_.end()) {
         found->second->Close();
@@ -296,7 +339,8 @@ bool WfpUdpFlowRelayRegistry::GetRelaySockets(
         output.reserve(relays_.size());
         for (const auto& item : relays_) {
             output.push_back({item.first, item.second->UdpSocket(),
-                item.second->ControlSocket()});
+                item.second->ControlSocket(),
+                pendingDatagrams_.find(item.first) != pendingDatagrams_.end()});
         }
     } catch (...) {
         output.clear();

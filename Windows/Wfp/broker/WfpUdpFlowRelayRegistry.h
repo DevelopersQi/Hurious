@@ -11,6 +11,7 @@ namespace furious::wfp::broker {
 
 enum class WfpUdpFlowRelayRegistryResult {
     Ready,
+    Pending,
     NotConfigured,
     InvalidMessage,
     MissingRedirectMetadata,
@@ -30,6 +31,7 @@ struct WfpUdpRelaySocket final {
     std::uint64_t flowId = 0;
     SOCKET socket = INVALID_SOCKET;
     SOCKET controlSocket = INVALID_SOCKET;
+    bool handshaking = false;
 };
 
 // Single-I/O-thread owner for UDP flow state and per-flow SOCKS5 relay sockets.
@@ -59,6 +61,10 @@ public:
         const std::uint8_t* payload, TimePoint now,
         std::uint64_t* flowId = nullptr, int* errorCode = nullptr) noexcept;
 
+    WfpUdpFlowRelayRegistryResult AdvancePendingFlow(
+        std::uint64_t flowId, bool readable, bool writable,
+        int* errorCode = nullptr) noexcept;
+
     WfpUdpFlowRelayRegistryResult HandleUpstreamResponse(
         std::uint64_t flowId, SOCKET redirectedIngressSocket,
         LPFN_WSASENDMSG sendMessage, std::uint8_t* buffer,
@@ -76,6 +82,7 @@ private:
 
     WfpUdpFlowManager flows_;
     std::unordered_map<std::uint64_t, std::unique_ptr<WfpSocks5UdpFlowRelay>> relays_;
+    std::unordered_map<std::uint64_t, std::vector<std::uint8_t>> pendingDatagrams_;
     sockaddr_storage socksAddress_{};
     int socksAddressLength_ = 0;
     DWORD timeoutMilliseconds_ = 5000;
