@@ -45,5 +45,4 @@ void TestBrokerServerLifecycle() {
         4));
     assert(server.IsRunning());
     server.Stop();
-    return 0;
 }
