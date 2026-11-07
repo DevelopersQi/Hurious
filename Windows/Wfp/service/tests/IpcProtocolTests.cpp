@@ -272,6 +272,13 @@ int main() {
     tcpOnlyEndpoint.UdpPortV4 = 0;
     tcpOnlyEndpoint.UdpPortV6 = 0;
     CHECK(IsValidEndpointConfig(tcpOnlyEndpoint));
+    auto udpOnlyEndpoint = endpoint;
+    udpOnlyEndpoint.Flags = FURIOUS_WFP_REDIRECT_FLAG_IPV4 |
+                            FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    udpOnlyEndpoint.TcpPortV4 = 0;
+    udpOnlyEndpoint.TcpPortV6 = 0;
+    udpOnlyEndpoint.UdpPortV6 = 0;
+    CHECK(IsValidEndpointConfig(udpOnlyEndpoint));
     auto udpFlagOnlyEndpoint = endpoint;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
@@ -336,6 +343,12 @@ int main() {
     redirectContext.RulePriority = 10;
     redirectContext.PolicyGeneration = 7;
     CHECK(IsValidRedirectContext(redirectContext));
+    auto udpRedirectContext = redirectContext;
+    udpRedirectContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    CHECK(IsValidRedirectContext(udpRedirectContext));
+    auto invalidTransportContext = redirectContext;
+    invalidTransportContext.Protocol = 1;
+    CHECK(!IsValidRedirectContext(invalidTransportContext));
     auto invalidContext = redirectContext;
     invalidContext.AddressFamily = 5;
     CHECK(!IsValidRedirectContext(invalidContext));
