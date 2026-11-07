@@ -468,13 +468,12 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
     for (auto it = relays_.begin(); it != relays_.end();) {
         // During SOCKS5 negotiation, readable bytes are protocol replies, not
         // proof that the reserved control channel has been closed.
-        if (pendingDatagrams_.find(it->first) != pendingDatagrams_.end() &&
-            it->second && it->second->IsControlAlive()) {
-            ++it;
-            continue;
-        }
-        if (pendingDatagrams_.find(it->first) == pendingDatagrams_.end() &&
-            it->second && it->second->IsControlAlive()) {
+        const bool handshaking =
+            pendingDatagrams_.find(it->first) != pendingDatagrams_.end();
+        // A readable SOCKS5 control socket during negotiation contains the
+        // expected handshake reply; it must not be mistaken for a closed
+        // lifetime channel. Ready flows, by contrast, require a live channel.
+        if (it->second && (handshaking || it->second->IsControlAlive())) {
             ++it;
             continue;
         }
