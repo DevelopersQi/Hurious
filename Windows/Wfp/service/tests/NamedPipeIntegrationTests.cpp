@@ -97,6 +97,45 @@ int main() {
         return Fail("Named-pipe STATUS exchange failed", stopEvent, server, worker);
     }
 
+    FURIOUS_WFP_BROKER_START_REQUEST udpBrokerRequest = {};
+    udpBrokerRequest.Size = sizeof(udpBrokerRequest);
+    udpBrokerRequest.AbiVersion = FURIOUS_WFP_BROKER_ABI_VERSION;
+    udpBrokerRequest.SocksAddressFamily = FURIOUS_WFP_BROKER_FAMILY_IPV4;
+    udpBrokerRequest.Flags = FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV4;
+    udpBrokerRequest.SocksPort = 10808;
+    udpBrokerRequest.SocksAddress[0] = 127;
+    udpBrokerRequest.SocksAddress[3] = 1;
+    const auto startUdpRequest = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER, 0x1234567Bu,
+        &udpBrokerRequest, sizeof(udpBrokerRequest));
+    response = {};
+    if (!Exchange(startUdpRequest.data(), static_cast<DWORD>(startUdpRequest.size()), &response) ||
+        response.Win32Status != ERROR_SUCCESS ||
+        response.BrokerProcessId == 0 || response.UdpPortV4 == 0 ||
+        response.UdpPortV6 != 0) {
+        return Fail("Named-pipe START_UDP_BROKER exchange failed", stopEvent, server, worker);
+    }
+
+    const auto duplicateUdpStart = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER, 0x1234567Cu,
+        &udpBrokerRequest, sizeof(udpBrokerRequest));
+    response = {};
+    if (!Exchange(duplicateUdpStart.data(), static_cast<DWORD>(duplicateUdpStart.size()), &response) ||
+        response.Win32Status != ERROR_ALREADY_EXISTS ||
+        response.UdpPortV4 == 0) {
+        return Fail("Duplicate UDP broker start was not rejected safely", stopEvent, server, worker);
+    }
+
+    const auto stopUdpRequest = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER, 0x1234567Du);
+    response = {};
+    if (!Exchange(stopUdpRequest.data(), static_cast<DWORD>(stopUdpRequest.size()), &response) ||
+        response.Win32Status != ERROR_SUCCESS ||
+        response.UdpPortV4 != 0 || response.UdpPortV6 != 0 ||
+        response.BrokerProcessId != 0) {
+        return Fail("Named-pipe STOP_UDP_BROKER exchange failed", stopEvent, server, worker);
+    }
+
     FURIOUS_WFP_POLICY_HEADER policyHeader = {};
     policyHeader.Size = sizeof(policyHeader);
     policyHeader.AbiVersion = FURIOUS_WFP_POLICY_ABI_VERSION;
