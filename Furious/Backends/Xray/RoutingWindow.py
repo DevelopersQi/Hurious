@@ -1267,7 +1267,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             _('Rules are evaluated from top to bottom. The first matching app rule wins.')
         ))
         layout.addWidget(AppQLabel(
-            _('On Windows, full executable paths are applied through WFP application routing. Proxy rules currently cover TCP; UDP support is not enabled yet.')
+            _('On Windows with system TUN mode disabled, full executable paths use WFP application routing. Proxy rules currently cover TCP; UDP support is not enabled yet. Xray Native TUN uses its own application rules.')
         ))
         layout.addLayout(top)
         layout.addWidget(self.table, 1)

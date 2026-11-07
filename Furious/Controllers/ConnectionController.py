@@ -234,6 +234,12 @@ class ConnectionController(QtCore.QObject):
         if PLATFORM != 'Windows' or not self.isConnected():
             return None
 
+        if SystemRuntime.isTUNMode():
+            # WFP ALE redirect rules cannot make Direct traffic bypass an
+            # already-installed full-tunnel route. Keep TUN routing authoritative.
+            self._coreManager.clearWfpApplicationPolicy()
+            return None
+
         profile = self._activeProfile
         try:
             factory = getPluginRegistry().factoryForConfig(profile)

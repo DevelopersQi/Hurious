@@ -1280,7 +1280,12 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
     def _startWfpBroker(self, configuration):
         """Start the TCP broker only for a supported socket-owning proxy core."""
-        if sys.platform != 'win32' or not self._wfpPolicyHasProxyRules:
+        if sys.platform != 'win32':
+            return None
+        if SystemRuntime.isTUNMode():
+            self.clearWfpApplicationPolicy()
+            return None
+        if not self._wfpPolicyHasProxyRules:
             return None
 
         try:
