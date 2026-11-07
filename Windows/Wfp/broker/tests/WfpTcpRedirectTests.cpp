@@ -2,6 +2,7 @@
 #include "../WfpSocks5Udp.h"
 #include "../WfpSocks5UdpAssociation.h"
 #include "../WfpSocks5UdpAssociationManager.h"
+#include "../WfpSocks5UdpSocket.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 
@@ -379,6 +380,52 @@ void TestSocks5UdpAssociationManagerLimitsAndExpiry() {
         OpenResult::InvalidParameters);
 }
 
+void TestSocks5UdpSocketOwnership() {
+    using namespace furious::wfp::broker;
+    WSADATA winsockData{};
+    assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
+    {
+        Socks5UdpSocket ipv4;
+        int error = 0;
+        assert(ipv4.Open(Socks5UdpEndpointFamily::Ipv4, &error) ==
+            Socks5UdpSocketOpenResult::Opened);
+        assert(error == 0 && ipv4.IsOpen() && ipv4.NativeHandle() != INVALID_SOCKET);
+        assert(ipv4.LocalPort() != 0);
+        assert(ipv4.Family() == Socks5UdpEndpointFamily::Ipv4);
+        sockaddr_in bound4{};
+        int bound4Length = sizeof(bound4);
+        assert(getsockname(ipv4.NativeHandle(),
+            reinterpret_cast<sockaddr*>(&bound4), &bound4Length) == 0);
+        assert(bound4.sin_family == AF_INET && ntohs(bound4.sin_port) == ipv4.LocalPort());
+        assert(ipv4.Open(Socks5UdpEndpointFamily::Ipv4, &error) ==
+            Socks5UdpSocketOpenResult::AlreadyOpen);
+        ipv4.Close();
+        ipv4.Close();
+        assert(!ipv4.IsOpen() && ipv4.NativeHandle() == INVALID_SOCKET &&
+            ipv4.LocalPort() == 0);
+        assert(ipv4.Open(static_cast<Socks5UdpEndpointFamily>(0xFF), &error) ==
+            Socks5UdpSocketOpenResult::UnsupportedAddressFamily);
+        assert(error == WSAEAFNOSUPPORT && !ipv4.IsOpen());
+
+        Socks5UdpSocket ipv6;
+        const auto ipv6Result = ipv6.Open(Socks5UdpEndpointFamily::Ipv6, &error);
+        if (ipv6Result == Socks5UdpSocketOpenResult::Opened) {
+            assert(ipv6.LocalPort() != 0 && ipv6.IsOpen());
+            sockaddr_in6 bound6{};
+            int bound6Length = sizeof(bound6);
+            assert(getsockname(ipv6.NativeHandle(),
+                reinterpret_cast<sockaddr*>(&bound6), &bound6Length) == 0);
+            assert(bound6.sin6_family == AF_INET6 &&
+                ntohs(bound6.sin6_port) == ipv6.LocalPort());
+        } else {
+            assert(!ipv6.IsOpen() && ipv6.LocalPort() == 0);
+            assert(error == WSAEAFNOSUPPORT || error == WSAEPROTONOSUPPORT ||
+                error == WSAEADDRNOTAVAIL || error == WSAENOPROTOOPT);
+        }
+    }
+    WSACleanup();
+}
+
 void TestSocks5UdpAssociateControlMessages() {
     using namespace furious::wfp::broker;
     Socks5UdpAssociateRequestView view{};
@@ -437,6 +484,7 @@ int main() {
     TestSocks5UdpParser();
     TestSocks5UdpAssociationLifecycle();
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
+    TestSocks5UdpSocketOwnership();
     TestSocks5UdpAssociateControlMessages();
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();

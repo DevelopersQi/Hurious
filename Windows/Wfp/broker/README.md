@@ -49,3 +49,12 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 - Reclaim idle associations through an explicit monotonic-clock sweep, and remove an association immediately when its control session closes.
 - Enforce per-association datagram-size limits through the existing association state guard.
 - This manager is currently a tested policy primitive only. It is not yet connected to TCP control-session handling or UDP sockets, and UDP remains disabled at the IPC/WFP boundary.
+
+
+## UDP socket ownership primitive
+
+- Each future association can own a dedicated IPv4 or IPv6 UDP socket, bound to the matching wildcard address and an OS-assigned ephemeral port.
+- Socket ownership is RAII-based; close is idempotent and failure paths close partially initialized sockets.
+- Sockets are nonblocking, use exclusive address binding, and request bounded 64 KiB send/receive buffers.
+- The hosting service owns Winsock initialization. The socket wrapper intentionally does not call WSAStartup or WSACleanup.
+- This is a socket lifecycle primitive only: no datagram receive/send loop, DNS resolution, remote endpoint forwarding, or WFP UDP filter is enabled yet.
