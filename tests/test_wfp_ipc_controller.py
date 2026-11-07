@@ -160,9 +160,10 @@ class WfpIpcWorkerTest(unittest.TestCase):
         worker = _WfpIpcWorker(BlockingClient, on_complete)
         self.assertTrue(worker.submit(1, "status"))
         self.assertTrue(started.wait(2))
-        worker.close()
-        self.assertFalse(worker.submit(2, "status"))
         release.set()
+        worker.close()
+        self.assertFalse(worker._thread.is_alive())
+        self.assertFalse(worker.submit(2, "status"))
 
         self.assertTrue(done.wait(2))
         self.assertEqual(completed, [(1, "status", "status-ok", "")])
