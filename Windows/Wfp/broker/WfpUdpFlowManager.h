@@ -13,6 +13,7 @@ namespace furious::wfp::broker {
 enum class WfpUdpFlowCreateResult {
     Created,
     ExistingFlow,
+    ExpiredFlow,
     InvalidSource,
     InvalidContext,
     MissingRedirectRecord,

@@ -998,6 +998,13 @@ void TestWfpUdpFlowManager() {
     assert(snapshot.redirectRecord == record);
     assert(snapshot.sourceEndpoint.ss_family == AF_INET);
 
+    std::uint64_t expiredRegistrationId = 0;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
+        sizeof(source), context, record, now + std::chrono::seconds(20),
+        expiredRegistrationId) == CreateResult::ExpiredFlow);
+    assert(expiredRegistrationId == firstId);
+    assert(manager.ActiveCount() == 2); // Expired resources remain owned until swept.
+
     std::vector<std::uint64_t> expiredFlowIds;
     assert(manager.SweepExpired(now + std::chrono::seconds(14), expiredFlowIds) == 1);
     assert(expiredFlowIds.size() == 1 && expiredFlowIds[0] == secondId);

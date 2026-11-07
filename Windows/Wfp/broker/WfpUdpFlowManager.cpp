@@ -159,17 +159,16 @@ WfpUdpFlowCreateResult WfpUdpFlowManager::RegisterFirstDatagram(
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    for (std::size_t i = 0; i < entries_.size();) {
-        if (IsExpired(entries_[i], now)) {
-            entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
-        } else {
-            ++i;
-        }
-    }
+    // Expired entries are retained until the resource owner receives their
+    // IDs through SweepExpired() and closes the associated sockets.
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         auto& entry = entries_[i];
         if (!SameSourceEndpoint(entry.sourceEndpoint, entry.sourceEndpointLength,
                 sourceEndpoint, sourceEndpointLength)) continue;
+        if (IsExpired(entry, now)) {
+            flowId = entry.id;
+            return WfpUdpFlowCreateResult::ExpiredFlow;
+        }
         if (SameFlowIdentity(entry, redirectContext, redirectRecord)) {
             entry.lastActivity = now;
             flowId = entry.id;
