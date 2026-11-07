@@ -276,6 +276,11 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
     // datagram, fail this flow closed rather than silently dropping/reordering it.
     while (!pending->second.empty()) {
         const auto& datagram = pending->second.front();
+        // Detect corrupted global accounting before the datagram can be sent.
+        if (datagram.size() > pendingDatagramBytes_) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
         const auto sent = relay->second->SendClientPayload(
             datagram.empty() ? nullptr : datagram.data(), datagram.size(), ioErrorCode);
         if (sent == WfpSocks5UdpFlowRelayResult::SendWouldBlock) {
@@ -342,6 +347,11 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvanceQueuedClientDatagr
 
     while (!queued->second.empty()) {
         const auto& datagram = queued->second.front();
+        // Do not emit a datagram if its queue accounting is already invalid.
+        if (datagram.size() > outboundDatagramBytes_) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
         const auto sent = relay->second->SendClientPayload(
             datagram.empty() ? nullptr : datagram.data(), datagram.size(), sendError);
         if (sent == WfpSocks5UdpFlowRelayResult::ControlClosed) {
@@ -460,11 +470,8 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
             continue;
         }
         const auto flowId = it->first;
-        DiscardPendingDatagrams(flowId);
-        DiscardOutboundDatagrams(flowId);
-        it->second->Close();
-        it = relays_.erase(it);
-        flows_.Remove(flowId);
+        ++it; // Erasing the current element does not invalidate other iterators.
+        CloseFlow(flowId);
         ++closed;
     }
     return closed;
