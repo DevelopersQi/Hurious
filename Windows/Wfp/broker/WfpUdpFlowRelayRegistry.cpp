@@ -345,7 +345,8 @@ bool WfpUdpFlowRelayRegistry::GetRelaySockets(
         for (const auto& item : relays_) {
             output.push_back({item.first, item.second->UdpSocket(),
                 item.second->ControlSocket(),
-                pendingDatagrams_.find(item.first) != pendingDatagrams_.end()});
+                pendingDatagrams_.find(item.first) != pendingDatagrams_.end(),
+                item.second->WantsRead(), item.second->WantsWrite()});
         }
     } catch (...) {
         output.clear();

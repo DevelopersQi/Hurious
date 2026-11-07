@@ -44,6 +44,8 @@ public:
     WfpSocks5UdpFlowRelayResult AdvanceOpen(
         bool readable, bool writable, int* errorCode = nullptr) noexcept;
     bool IsOpening() const noexcept;
+    bool WantsRead() const noexcept;
+    bool WantsWrite() const noexcept;
 
     void Close() noexcept;
     bool IsOpen() const noexcept;

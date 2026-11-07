@@ -175,6 +175,14 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::AdvanceOpen(
     return WfpSocks5UdpFlowRelayResult::AssociationOpenFailed;
 }
 
+bool WfpSocks5UdpFlowRelay::WantsRead() const noexcept {
+    return association_.WantsRead();
+}
+
+bool WfpSocks5UdpFlowRelay::WantsWrite() const noexcept {
+    return association_.WantsWrite();
+}
+
 bool WfpSocks5UdpFlowRelay::IsOpening() const noexcept {
     const auto state = association_.AsyncState();
     return state != Socks5UdpAssociationAsyncState::Idle &&

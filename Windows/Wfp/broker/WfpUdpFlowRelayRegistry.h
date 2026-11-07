@@ -32,6 +32,8 @@ struct WfpUdpRelaySocket final {
     SOCKET socket = INVALID_SOCKET;
     SOCKET controlSocket = INVALID_SOCKET;
     bool handshaking = false;
+    bool wantsRead = false;
+    bool wantsWrite = false;
 };
 
 // Single-I/O-thread owner for UDP flow state and per-flow SOCKS5 relay sockets.
