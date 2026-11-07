@@ -122,6 +122,7 @@ void TestTunnelRegistrationFailureCancelsBeforeConnect() {
         &probe);
 
     assert(upstream == INVALID_SOCKET);
+    (void)upstream; // Keep /W4 /WX clean when Release disables assert().
     assert(error == WSA_OPERATION_ABORTED);
     assert(probe.registerCalls == 1);
     assert(probe.unregisterCalls == 0);
@@ -154,6 +155,7 @@ void TestTunnelRejectsUnpairedCancellationCallbacks() {
         &probe);
 
     assert(upstream == INVALID_SOCKET);
+    (void)upstream; // Keep /W4 /WX clean when Release disables assert().
     assert(error == WSAEINVAL);
     assert(probe.registerCalls == 0);
     assert(probe.unregisterCalls == 0);
