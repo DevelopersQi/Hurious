@@ -365,6 +365,10 @@ int main() {
     CHECK(!IsValidRedirectContext(invalidContext));
     invalidContext = redirectContext;
     invalidContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    invalidContext.OriginalAddress[0] = 0x20;
+    invalidContext.OriginalAddress[1] = 0x01;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(IsValidRedirectContext(invalidContext));
     invalidContext.OriginalAddress[0] = 0xFE;
     invalidContext.OriginalAddress[1] = 0x80;
     invalidContext.OriginalAddress[15] = 1;

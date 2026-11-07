@@ -475,9 +475,9 @@ static VOID NTAPI FuriousClassify(
                 (UCHAR)(destinationHostOrder >> 24);
             if (destinationFirstOctet == 0 || destinationFirstOctet == 127 ||
                 destinationFirstOctet >= 224) {
-            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
-            FwpsReleaseClassifyHandle0(classifyHandle);
-            ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+                FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+                FwpsReleaseClassifyHandle0(classifyHandle);
+                ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
                 FuriousContinue(classifyOut);
                 return;
             }
@@ -501,10 +501,9 @@ static VOID NTAPI FuriousClassify(
             FuriousBlock(classifyOut);
             return;
         }
-        // Preserve IPv6 loopback and IPv4-mapped 127/8 destinations.
-        // Winsock applications may address local services through either
-        // ::1 or ::ffff:127.x.x.x; redirecting either form can break IPC or
-        // create a local proxy loop.
+        // Preserve local, multicast and scope-dependent destinations.
+        // The redirect ABI carries the original IPv6 address but not a scope
+        // ID, so link-local and multicast traffic cannot be safely proxied.
         {
             const UCHAR* address = remote->sin6_addr.u.Byte;
             IN6_ADDR loopbackAddress = { 0 };

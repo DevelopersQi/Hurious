@@ -199,11 +199,12 @@ inline bool IsValidRedirectContext(
         }
     } else {
         bool unspecified = true;
-        bool loopback = true;
+        bool loopbackPrefix = true;
         for (size_t i = 0; i < sizeof(value.OriginalAddress); ++i) {
             if (value.OriginalAddress[i] != 0) unspecified = false;
-            if (i < 15 && value.OriginalAddress[i] != 0) loopback = false;
+            if (i < 15 && value.OriginalAddress[i] != 0) loopbackPrefix = false;
         }
+        const bool loopback = loopbackPrefix && value.OriginalAddress[15] == 1;
         if (unspecified || loopback || value.OriginalAddress[0] == 0xFF ||
             (value.OriginalAddress[0] == 0xFE &&
              (value.OriginalAddress[1] & 0xC0) == 0x80)) {
@@ -211,10 +212,13 @@ inline bool IsValidRedirectContext(
             // Link-local destinations therefore cannot be reconstructed safely.
             return false;
         }
-        static const FURIOUS_WFP_U8 mappedPrefix[12] = {
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF
-        };
-        if (memcmp(value.OriginalAddress, mappedPrefix, sizeof(mappedPrefix)) == 0) {
+        bool ipv4Mapped = true;
+        for (size_t i = 0; i < 10; ++i) {
+            if (value.OriginalAddress[i] != 0) ipv4Mapped = false;
+        }
+        ipv4Mapped = ipv4Mapped && value.OriginalAddress[10] == 0xFF &&
+            value.OriginalAddress[11] == 0xFF;
+        if (ipv4Mapped) {
             const FURIOUS_WFP_U8 mappedFirstOctet = value.OriginalAddress[12];
             if (mappedFirstOctet == 0 || mappedFirstOctet == 127 ||
                 mappedFirstOctet >= 224) {
