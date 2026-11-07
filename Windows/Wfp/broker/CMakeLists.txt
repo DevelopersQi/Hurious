@@ -7,6 +7,7 @@ endif()
 
 add_library(FuriousWfpTcpBroker STATIC
     WfpTcpRedirect.cpp
+    WfpSocks5Udp.cpp
     WfpTcpRedirect.h
     WfpTcpBrokerServer.cpp
     WfpTcpBrokerServer.h
