@@ -404,10 +404,16 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
 }
 
 std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
-    std::vector<std::uint64_t> expired;
-    const auto count = flows_.SweepExpired(now, expired);
-    for (const auto id : expired) CloseFlow(id);
-    return count;
+    // Close each expired relay before removing its flow identity. This avoids
+    // the allocating ID snapshot, whose failure previously looked identical
+    // to "nothing expired" and could indefinitely defer cleanup under pressure.
+    std::size_t closed = 0;
+    std::uint64_t expiredFlowId = 0;
+    while (flows_.FindExpired(now, expiredFlowId)) {
+        CloseFlow(expiredFlowId);
+        ++closed;
+    }
+    return closed;
 }
 
 std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {

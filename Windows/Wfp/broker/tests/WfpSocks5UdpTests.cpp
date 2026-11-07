@@ -366,8 +366,16 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
     std::vector<std::uint64_t> expired;
     assert(manager.SweepExpired(now + std::chrono::seconds(12), expired) == 2);
     assert(expired.size() == 2);
-    assert(manager.Remove(flow1));
-    assert(manager.Remove(flow2));
+    std::uint64_t nextExpired = 0;
+    assert(manager.FindExpired(now + std::chrono::seconds(12), nextExpired));
+    assert(nextExpired == flow1 || nextExpired == flow2);
+    assert(manager.Remove(nextExpired));
+    assert(manager.FindExpired(now + std::chrono::seconds(12), nextExpired));
+    assert(nextExpired != 0 && nextExpired != 0);
+    assert(manager.Remove(nextExpired));
+    assert(!manager.FindExpired(now + std::chrono::seconds(12), nextExpired));
+    assert(nextExpired == 0);
+    assert(manager.Remove(flow1) || manager.Remove(flow2));
     assert(manager.ActiveCount() == 0);
 
     // Shutdown clearing must remove live identities without relying on the

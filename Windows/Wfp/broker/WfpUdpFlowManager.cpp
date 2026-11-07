@@ -281,6 +281,18 @@ bool WfpUdpFlowManager::Remove(std::uint64_t flowId) noexcept {
     return false;
 }
 
+bool WfpUdpFlowManager::FindExpired(
+    TimePoint now, std::uint64_t& expiredFlowId) const noexcept {
+    expiredFlowId = 0;
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& entry : entries_) {
+        if (!IsExpired(entry, now)) continue;
+        expiredFlowId = entry.id;
+        return true;
+    }
+    return false;
+}
+
 void WfpUdpFlowManager::Clear() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     entries_.clear();

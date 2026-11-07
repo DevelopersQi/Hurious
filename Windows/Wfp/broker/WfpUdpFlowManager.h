@@ -75,6 +75,8 @@ public:
 
     bool GetSnapshot(std::uint64_t flowId, WfpUdpFlowSnapshot& output) const noexcept;
     bool Remove(std::uint64_t flowId) noexcept;
+    // Finds one expired flow without allocating; caller closes resources then removes it.
+    bool FindExpired(TimePoint now, std::uint64_t& expiredFlowId) const noexcept;
     // Clears all flow identities after the resource owner has closed relays.
     // Unlike SweepExpired(), this operation performs no allocation.
     void Clear() noexcept;
