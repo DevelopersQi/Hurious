@@ -1322,11 +1322,39 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 )
                 return None
 
-            endpointGetter = getattr(configuration, 'socksProxy', None)
-            if not callable(endpointGetter):
-                logger.debug('active core does not expose a SOCKS inbound endpoint')
-                return None
-            endpoint = str(endpointGetter() or '').strip()
+            if factoryId == 'official.hysteria2':
+                socksConfig = runtimeConfiguration.get('socks5', {})
+                if not isinstance(socksConfig, dict):
+                    socksConfig = {}
+                if socksConfig.get('username') or socksConfig.get('password'):
+                    logger.warning(
+                        'WFP TCP broker requires a no-auth Hysteria2 SOCKS5 inbound'
+                    )
+                    return None
+                endpoint = str(socksConfig.get('listen', '') or '').strip()
+            else:
+                endpointGetter = getattr(configuration, 'socksProxy', None)
+                if not callable(endpointGetter):
+                    logger.debug('active core does not expose a SOCKS inbound endpoint')
+                    return None
+                endpoint = str(endpointGetter() or '').strip()
+
+                # The native broker currently implements SOCKS5 no-auth only.
+                inbounds = runtimeConfiguration.get('inbounds', [])
+                for inbound in inbounds if isinstance(inbounds, list) else ():
+                    if str(inbound.get('protocol', '')).casefold() != 'socks':
+                        continue
+                    settings = inbound.get('settings', {})
+                    if isinstance(settings, dict) and (
+                        str(settings.get('auth', 'noauth')).casefold() != 'noauth'
+                        or settings.get('accounts')
+                    ):
+                        logger.warning(
+                            'WFP TCP broker requires a no-auth Xray SOCKS5 inbound'
+                        )
+                        return None
+                    break
+
             if not endpoint:
                 logger.warning('WFP TCP broker skipped: no local SOCKS inbound is configured')
                 return None
