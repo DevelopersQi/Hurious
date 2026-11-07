@@ -141,6 +141,60 @@ int SetNonblocking(SOCKET socket) noexcept {
         ? 0 : WSAGetLastError();
 }
 
+int ConnectWithTimeout(
+    SOCKET socket,
+    const sockaddr* address,
+    int addressLength,
+    DWORD timeoutMilliseconds) noexcept {
+    u_long nonblocking = 1;
+    if (ioctlsocket(socket, FIONBIO, &nonblocking) == SOCKET_ERROR) {
+        return WSAGetLastError();
+    }
+
+    int error = 0;
+    if (connect(socket, address, addressLength) == SOCKET_ERROR) {
+        error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK || error == WSAEINPROGRESS ||
+            error == WSAEALREADY) {
+            fd_set writable;
+            fd_set exceptional;
+            FD_ZERO(&writable);
+            FD_ZERO(&exceptional);
+            FD_SET(socket, &writable);
+            FD_SET(socket, &exceptional);
+            timeval timeout{
+                static_cast<long>(timeoutMilliseconds / 1000u),
+                static_cast<long>((timeoutMilliseconds % 1000u) * 1000u)
+            };
+            const int ready = select(
+                0, nullptr, &writable, &exceptional, &timeout);
+            if (ready == 0) {
+                error = WSAETIMEDOUT;
+            } else if (ready == SOCKET_ERROR) {
+                error = WSAGetLastError();
+            } else {
+                int socketError = 0;
+                int socketErrorLength = sizeof(socketError);
+                if (getsockopt(
+                        socket, SOL_SOCKET, SO_ERROR,
+                        reinterpret_cast<char*>(&socketError),
+                        &socketErrorLength) == SOCKET_ERROR) {
+                    error = WSAGetLastError();
+                } else {
+                    error = socketError;
+                }
+            }
+        }
+    }
+
+    u_long blocking = 0;
+    if (ioctlsocket(socket, FIONBIO, &blocking) == SOCKET_ERROR &&
+        error == 0) {
+        error = WSAGetLastError();
+    }
+    return error;
+}
+
 int SendNonblocking(
     SOCKET socket,
     const char* data,
@@ -322,15 +376,23 @@ SOCKET OpenSocks5Tunnel(
         return INVALID_SOCKET;
     }
 
-    DWORD handshakeTimeout = 10000;
-    setsockopt(upstream, SOL_SOCKET, SO_RCVTIMEO,
-        reinterpret_cast<const char*>(&handshakeTimeout), sizeof(handshakeTimeout));
-    setsockopt(upstream, SOL_SOCKET, SO_SNDTIMEO,
-        reinterpret_cast<const char*>(&handshakeTimeout), sizeof(handshakeTimeout));
+    DWORD handshakeTimeout = 3000;
+    if (setsockopt(upstream, SOL_SOCKET, SO_RCVTIMEO,
+            reinterpret_cast<const char*>(&handshakeTimeout),
+            sizeof(handshakeTimeout)) == SOCKET_ERROR ||
+        setsockopt(upstream, SOL_SOCKET, SO_SNDTIMEO,
+            reinterpret_cast<const char*>(&handshakeTimeout),
+            sizeof(handshakeTimeout)) == SOCKET_ERROR) {
+        const int socketError = WSAGetLastError();
+        closesocket(upstream);
+        if (errorCode != nullptr) *errorCode = socketError;
+        return INVALID_SOCKET;
+    }
 
     int error = ApplyRedirectRecords(upstream, redirected.redirectRecords);
-    if (error == 0 && connect(upstream, socksAddress, socksAddressLength) == SOCKET_ERROR) {
-        error = WSAGetLastError();
+    if (error == 0) {
+        error = ConnectWithTimeout(
+            upstream, socksAddress, socksAddressLength, 5000);
     }
 
     const std::uint8_t greeting[] = {0x05, 0x01, 0x00};
