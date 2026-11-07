@@ -593,9 +593,14 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
     // without destroying the established SOCKS association.
     SOCKET attacker = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     assert(attacker != INVALID_SOCKET);
+    std::vector<WfpUdpRelaySocket> activeRelays;
+    assert(registry.GetRelaySockets(activeRelays));
+    const auto activeRelay = std::find_if(activeRelays.begin(), activeRelays.end(),
+        [flowId](const WfpUdpRelaySocket& item) { return item.flowId == flowId; });
+    assert(activeRelay != activeRelays.end());
     sockaddr_in relaySocketAddress{};
     int relaySocketAddressLength = static_cast<int>(sizeof(relaySocketAddress));
-    assert(getsockname(relays.front().socket,
+    assert(getsockname(activeRelay->socket,
         reinterpret_cast<sockaddr*>(&relaySocketAddress),
         &relaySocketAddressLength) == 0);
     relaySocketAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -612,7 +617,7 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
         reinterpret_cast<const sockaddr*>(&relaySocketAddress),
         relaySocketAddressLength) == static_cast<int>(spoofDatagram.size()));
     WSAPOLLFD spoofPoll{};
-    spoofPoll.fd = relays.front().socket;
+    spoofPoll.fd = activeRelay->socket;
     spoofPoll.events = POLLRDNORM;
     assert(WSAPoll(&spoofPoll, 1, 1000) > 0);
     gWfpUdpSendCapture = WfpUdpSendCapture{};
@@ -639,7 +644,7 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
         relaySocketAddressLength) ==
         static_cast<int>(wrongDestinationDatagram.size()));
     WSAPOLLFD wrongDestinationPoll{};
-    wrongDestinationPoll.fd = relays.front().socket;
+    wrongDestinationPoll.fd = activeRelay->socket;
     wrongDestinationPoll.events = POLLRDNORM;
     assert(WSAPoll(&wrongDestinationPoll, 1, 1000) > 0);
     const auto wrongDestinationResult = registry.HandleUpstreamResponse(
