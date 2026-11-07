@@ -37,3 +37,36 @@ class WfpRuntimeSnapshot:
 
         object.__setattr__(self, "generation", generation)
         object.__setattr__(self, "excluded_process_ids", process_ids)
+
+def collect_live_proxy_process_ids(runtimes, is_excluded_runtime=None):
+    """Return only process IDs belonging to currently running proxy runtimes.
+
+    A runtime may still expose its last PID briefly after its process exits but
+    before the queued exit callback is handled. Such a PID must not remain in
+    the WFP exclusion list, where Windows could reuse it for an unrelated app.
+    """
+    process_ids = set()
+    for runtime in runtimes:
+        if is_excluded_runtime is not None and is_excluded_runtime(runtime):
+            continue
+
+        is_running = getattr(runtime, "isRunning", None)
+        if not callable(is_running):
+            continue
+        try:
+            if not is_running():
+                continue
+        except Exception:
+            # An uncertain process state is never safe to exclude from redirect.
+            continue
+
+        process_id = getattr(runtime, "processId", None)
+        if (
+            isinstance(process_id, int)
+            and not isinstance(process_id, bool)
+            and 0 < process_id <= MAX_UINT32
+        ):
+            process_ids.add(process_id)
+
+    return tuple(sorted(process_ids))
+
