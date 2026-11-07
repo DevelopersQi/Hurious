@@ -232,6 +232,10 @@ int main() {
     endpoint.TcpPortV6 = 10809;
     endpoint.UdpPortV6 = 10809;
     CHECK(IsValidEndpointConfig(endpoint));
+    CHECK(furious::wfp::ipc::TcpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::TcpBrokerListenerPorts{10808, 10809}));
+    CHECK(!furious::wfp::ipc::TcpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::TcpBrokerListenerPorts{10808, 10810}));
     CHECK(furious::wfp::ipc::UdpBrokerMatchesEndpoint(
         endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 10809}));
     CHECK(!furious::wfp::ipc::UdpBrokerMatchesEndpoint(

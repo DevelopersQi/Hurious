@@ -149,6 +149,18 @@ inline bool IsUdpEndpointConfigured() noexcept {
     return HasEndpointConfigSnapshot() &&
         (EndpointConfigSnapshot().Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
 }
+inline bool TcpBrokerMatchesEndpoint(
+    const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG& config,
+    const furious::wfp::broker::TcpBrokerListenerPorts& ports) noexcept {
+    const bool v4 = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV4) != 0;
+    const bool v6 = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV6) != 0;
+    const bool tcp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) != 0;
+    return tcp &&
+        ((v4 && config.TcpPortV4 != 0 && config.TcpPortV4 == ports.ipv4) ||
+         (!v4 && config.TcpPortV4 == 0 && ports.ipv4 == 0)) &&
+        ((v6 && config.TcpPortV6 != 0 && config.TcpPortV6 == ports.ipv6) ||
+         (!v6 && config.TcpPortV6 == 0 && ports.ipv6 == 0));
+}
 inline bool UdpBrokerMatchesEndpoint(
     const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG& config,
     const furious::wfp::broker::UdpBrokerListenerPorts& ports) noexcept {
@@ -166,7 +178,14 @@ inline DWORD SetEndpointConfig(
     furious::wfp::Engine* engine) noexcept {
     if (!furious::wfp::redirect::IsValidEndpointConfig(config))
         return ERROR_INVALID_PARAMETER;
+    const bool enableTcp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) != 0;
     const bool enableUdp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    if (enableTcp) {
+        auto& broker = GetTcpBrokerServer();
+        if (!broker.IsRunning()) return ERROR_SERVICE_NOT_ACTIVE;
+        if (!TcpBrokerMatchesEndpoint(config, broker.ListenerPorts()))
+            return ERROR_INVALID_PARAMETER;
+    }
     if (enableUdp) {
         if (engine == nullptr) return ERROR_INVALID_HANDLE;
         auto& broker = GetUdpBrokerServer();
