@@ -1,6 +1,22 @@
 #include "WfpSocks5UdpAssociation.h"
 #include "WfpSocks5Udp.h"
 namespace furious::wfp::broker {
+bool Socks5UdpAssociation::IsUsableUnicastAddress(
+    const Socks5UdpEndpoint& endpoint) const noexcept {
+    if (endpoint.family == Socks5UdpEndpointFamily::Ipv4) {
+        const auto* a = endpoint.address.data();
+        // Reject unspecified 0/8, multicast, and limited broadcast.
+        return a[0] != 0 && (a[0] < 224 || a[0] > 239) &&
+            !(a[0] == 255 && a[1] == 255 && a[2] == 255 && a[3] == 255);
+    }
+    if (endpoint.family == Socks5UdpEndpointFamily::Ipv6) {
+        const auto* a = endpoint.address.data();
+        bool unspecified = true;
+        for (std::size_t i = 0; i < 16; ++i) unspecified = unspecified && a[i] == 0;
+        return !unspecified && a[0] != 0xFF;
+    }
+    return false;
+}
 bool Socks5UdpAssociation::SameAddress(const Socks5UdpEndpoint& a,
     const Socks5UdpEndpoint& b) const noexcept {
     if (a.family != b.family) return false;
@@ -14,8 +30,7 @@ bool Socks5UdpAssociation::Start(const Socks5UdpEndpoint& peer,
     std::uint16_t requestedPort, std::chrono::milliseconds timeout,
     std::size_t maximumLength, TimePoint now) noexcept {
     Close();
-    if ((peer.family != Socks5UdpEndpointFamily::Ipv4 &&
-         peer.family != Socks5UdpEndpointFamily::Ipv6) ||
+    if (!IsUsableUnicastAddress(peer) ||
         timeout.count() <= 0 || maximumLength == 0 ||
         maximumLength > kMaximumSocks5UdpDatagramSize) return false;
     peer_ = peer;
@@ -30,8 +45,7 @@ bool Socks5UdpAssociation::Start(const Socks5UdpEndpoint& peer,
 Socks5UdpAssociationResult Socks5UdpAssociation::AuthorizeClientDatagram(
     const Socks5UdpEndpoint& source, std::size_t length, TimePoint now) noexcept {
     if (!IsActive(now)) { Close(); return Socks5UdpAssociationResult::Inactive; }
-    if ((source.family != Socks5UdpEndpointFamily::Ipv4 &&
-         source.family != Socks5UdpEndpointFamily::Ipv6) || source.port == 0)
+    if (!IsUsableUnicastAddress(source) || source.port == 0)
         return Socks5UdpAssociationResult::InvalidSourceEndpoint;
     if (!SameAddress(source, peer_))
         return Socks5UdpAssociationResult::SourceAddressMismatch;

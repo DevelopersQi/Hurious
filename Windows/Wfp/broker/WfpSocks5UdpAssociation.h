@@ -31,6 +31,7 @@ public:
     const Socks5UdpEndpoint& BoundClient() const noexcept;
     std::size_t MaximumDatagramLength() const noexcept;
 private:
+    bool IsUsableUnicastAddress(const Socks5UdpEndpoint&) const noexcept;
     bool SameAddress(const Socks5UdpEndpoint&, const Socks5UdpEndpoint&) const noexcept;
     Socks5UdpEndpoint peer_{};
     Socks5UdpEndpoint client_{};

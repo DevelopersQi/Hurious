@@ -298,6 +298,24 @@ void TestSocks5UdpAssociationLifecycle() {
     assert(a.Start(peer6, 0, std::chrono::seconds(5), 1400, t));
     assert(a.AuthorizeClientDatagram(client6, 64, t)==Socks5UdpAssociationResult::Accepted);
     assert(!a.Start(peer6, 0, std::chrono::milliseconds(0), 100, t));
+    auto unspecified4 = peer;
+    unspecified4.address = {};
+    assert(!a.Start(unspecified4, 0, std::chrono::seconds(5), 100, t));
+    auto multicast4 = peer;
+    multicast4.address[0] = 239;
+    assert(!a.Start(multicast4, 0, std::chrono::seconds(5), 100, t));
+    auto unspecified6 = peer6;
+    unspecified6.address = {};
+    assert(!a.Start(unspecified6, 0, std::chrono::seconds(5), 100, t));
+    auto multicast6 = peer6;
+    multicast6.address[0] = 0xFF;
+    assert(!a.Start(multicast6, 0, std::chrono::seconds(5), 100, t));
+    assert(a.Start(peer, 0, std::chrono::seconds(5), 100, t));
+    auto invalidSource = client;
+    invalidSource.address[0] = 224;
+    assert(a.AuthorizeClientDatagram(invalidSource, 10, t) ==
+        Socks5UdpAssociationResult::InvalidSourceEndpoint);
+    a.Close();
 }
  
 void TestSocks5UdpAssociateControlMessages() {
