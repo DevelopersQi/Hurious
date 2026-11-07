@@ -16,9 +16,9 @@ struct PollTarget final {
     std::uint64_t flowId = 0;
 };
 
-void SetNonblocking(SOCKET socket) noexcept {
+bool SetNonblocking(SOCKET socket) noexcept {
     u_long enabled = 1;
-    ioctlsocket(socket, FIONBIO, &enabled);
+    return ioctlsocket(socket, FIONBIO, &enabled) == 0;
 }
 
 } // namespace
@@ -82,7 +82,10 @@ bool UdpBrokerServer::CreateIngress(int family, Ingress& ingress) noexcept {
         return false;
     }
 
-    SetNonblocking(ingress.socket);
+    if (!SetNonblocking(ingress.socket)) {
+        CloseIngress(ingress);
+        return false;
+    }
     if (ResolveWsaRecvMsg(ingress.socket, &ingress.receiveMessage) != 0 ||
         ResolveWsaSendMsg(ingress.socket, &ingress.sendMessage) != 0 ||
         ingress.receiveMessage == nullptr || ingress.sendMessage == nullptr) {
@@ -260,6 +263,16 @@ void UdpBrokerServer::Run() noexcept {
                 }
             } else if (target.kind == PollKind::ReadyControl) {
                 registry_.SweepClosedControls();
+            }
+        }
+
+        // Advance pending handshakes even when the peer has sent no bytes;
+        // this enforces each association's deadline without a per-flow timer.
+        std::vector<WfpUdpRelaySocket> pendingTimeouts;
+        if (registry_.GetRelaySockets(pendingTimeouts)) {
+            for (const auto& relay : pendingTimeouts) {
+                if (relay.handshaking)
+                    registry_.AdvancePendingFlow(relay.flowId, false, false);
             }
         }
 
