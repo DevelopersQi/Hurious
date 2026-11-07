@@ -293,6 +293,22 @@ bool WfpUdpFlowManager::FindExpired(
     return false;
 }
 
+bool WfpUdpFlowManager::FindExpiredFrom(
+    TimePoint now, std::size_t& scanIndex,
+    std::uint64_t& expiredFlowId) const noexcept {
+    expiredFlowId = 0;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (scanIndex > entries_.size()) scanIndex = entries_.size();
+    for (std::size_t index = scanIndex; index < entries_.size(); ++index) {
+        if (!IsExpired(entries_[index], now)) continue;
+        scanIndex = index;
+        expiredFlowId = entries_[index].id;
+        return true;
+    }
+    scanIndex = entries_.size();
+    return false;
+}
+
 void WfpUdpFlowManager::Clear() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     entries_.clear();

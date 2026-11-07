@@ -77,6 +77,10 @@ public:
     bool Remove(std::uint64_t flowId) noexcept;
     // Finds one expired flow without allocating; caller closes resources then removes it.
     bool FindExpired(TimePoint now, std::uint64_t& expiredFlowId) const noexcept;
+    // Continues an allocation-free scan after the last removed entry. Keep the
+    // cursor unchanged after the caller removes the returned entry.
+    bool FindExpiredFrom(TimePoint now, std::size_t& scanIndex,
+        std::uint64_t& expiredFlowId) const noexcept;
     // Clears all flow identities after the resource owner has closed relays.
     // Unlike SweepExpired(), this operation performs no allocation.
     void Clear() noexcept;
