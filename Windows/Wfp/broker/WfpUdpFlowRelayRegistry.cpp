@@ -234,6 +234,8 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
     int* errorCode) noexcept {
     const auto found = relays_.find(flowId);
     if (found == relays_.end()) return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+    if (pendingDatagrams_.find(flowId) != pendingDatagrams_.end())
+        return WfpUdpFlowRelayRegistryResult::Pending;
 
     // Upstream traffic is not client activity. Check the lease without
     // refreshing it, otherwise unsolicited responses can keep idle flows alive.
@@ -294,7 +296,10 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
 std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
     std::size_t closed = 0;
     for (auto it = relays_.begin(); it != relays_.end();) {
-        if (it->second->IsControlAlive()) {
+        // During SOCKS5 negotiation, readable bytes are protocol replies, not
+        // proof that the reserved control channel has been closed.
+        if (pendingDatagrams_.find(it->first) != pendingDatagrams_.end() ||
+            it->second->IsControlAlive()) {
             ++it;
             continue;
         }
