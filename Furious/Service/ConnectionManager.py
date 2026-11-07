@@ -1378,15 +1378,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
             return None
 
         backend, brokerPid, tcpPortV4, tcpPortV6 = self._wfpBrokerEndpoint
-        snapshot = self.wfpRuntimeSnapshot
-        if not snapshot.excluded_process_ids:
-            self._wfpEndpointPending.clear()
-            self._wfpIpcController.clearEndpointConfig()
-            self._wfpIpcController.stopBroker()
-            self._wfpBrokerEndpoint = None
-            return None
-
         try:
+            snapshot = self.wfpRuntimeSnapshot
             payload = build_endpoint_config(
                 snapshot,
                 backend,
