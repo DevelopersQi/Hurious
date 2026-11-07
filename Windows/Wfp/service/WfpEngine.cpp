@@ -123,8 +123,7 @@ bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
         app.conditionValue.byteBlob == nullptr || app.conditionValue.byteBlob->size == 0 ||
         std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) != 0 ||
         protocol.matchType != FWP_MATCH_EQUAL || protocol.conditionValue.type != FWP_UINT8 ||
-        (protocol.conditionValue.uint8 != 6 && protocol.conditionValue.uint8 != 17) ||
-        (filter->flags & FWPM_FILTER_FLAG_PERSISTENT) == 0) return false;
+        (protocol.conditionValue.uint8 != 6 && protocol.conditionValue.uint8 != 17)) return false;
     if (filter->action.type == FWP_ACTION_PERMIT) return true;
     if (filter->action.type != FWP_ACTION_CALLOUT_TERMINATING) return false;
     const GUID& callout = v4 ? kConnectRedirectV4CalloutKey : kConnectRedirectV6CalloutKey;
@@ -184,7 +183,10 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     filter.providerKey = const_cast<GUID*>(&kProviderKey);
     filter.layerKey = layer;
     filter.subLayerKey = kSublayerKey;
-    filter.flags = FWPM_FILTER_FLAG_PERSISTENT;
+    // Application rules belong to the dynamic engine session. If the service
+    // crashes or loses its engine handle, WFP removes these filters instead
+    // of leaving a stale callout action installed without a live broker.
+    filter.flags = 0;
     UINT64 weight = 0x100000000ULL - static_cast<UINT64>(rule.Priority);
     filter.weight.type = FWP_UINT64;
     filter.weight.uint64 = &weight;
