@@ -44,3 +44,35 @@ not prove that the driver loads, registers with the kernel WFP runtime, survives
 Driver Verifier, or correctly handles real network traffic. Those checks require
 a disposable Windows 10 x64 VM, test-signing configuration, installation and
 rollback tests. Do not deploy this bootstrap driver to a production system.
+
+
+## UDP and flow-identity limitations (must remain gated)
+
+The current driver registers only `FWPS_LAYER_ALE_CONNECT_REDIRECT_V4` and
+`FWPS_LAYER_ALE_CONNECT_REDIRECT_V6`. It does **not** register
+`ALE_FLOW_ESTABLISHED` callouts, does not call `FwpsFlowAssociateContext`,
+and does not attach per-flow state. Consequently:
+
+- UDP redirection at this layer applies only to connection-oriented UDP socket
+  operations that pass through ALE connect redirection. It is **not** a
+  transparent interception mechanism for arbitrary unconnected
+  `sendto()/WSASendTo()` destinations.
+- The broker's UDP relay/registry tests prove SOCKS5 UDP association behavior;
+  they do not prove that arbitrary Windows UDP traffic is captured by this
+  driver or that WFP flow identity is carried into the broker.
+- The current `FuriousFlowDelete` callback intentionally has no per-flow
+  resource to release. It must not be treated as evidence that flow lifetime
+  tracking is implemented.
+- Source-address/port tuples alone are not a durable flow identity. A future
+  flow-context design must include the WFP flow handle, address family, protocol,
+  compartment/interface/scope information where relevant, and a generation-safe
+  redirect record. It must define cleanup for flow deletion, process exit,
+  service stop, network change, and PID/tuple reuse.
+- Do not enable UDP endpoint configuration or install UDP application filters
+  until the driver and broker share a tested flow-identity contract and the
+  unconnected UDP path is explicitly covered (or explicitly excluded in product
+  behavior and UI).
+
+A successful WDK build and the current SOCKS5 UDP unit/integration tests do not
+change these limitations. Real Windows 10 x64 packet-capture tests are still
+required before enabling any production redirect gate.
