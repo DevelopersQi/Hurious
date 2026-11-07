@@ -331,11 +331,16 @@ void UdpBrokerServer::Run() noexcept {
         // Advance pending handshakes even when the peer has sent no bytes;
         // this enforces each association's deadline without a per-flow timer.
         std::vector<WfpUdpRelaySocket> pendingTimeouts;
-        if (registry_->GetRelaySockets(pendingTimeouts)) {
-            for (const auto& relay : pendingTimeouts) {
-                if (relay.handshaking)
-                    registry_->AdvancePendingFlow(relay.flowId, false, false);
-            }
+        if (!registry_->GetRelaySockets(pendingTimeouts)) {
+            // A failed snapshot means we cannot reliably enforce handshake
+            // deadlines this iteration. Fail closed instead of silently
+            // keeping pending control sockets alive without timeout service.
+            stopping_.store(true);
+            break;
+        }
+        for (const auto& relay : pendingTimeouts) {
+            if (relay.handshaking)
+                registry_->AdvancePendingFlow(relay.flowId, false, false);
         }
 
         const auto now = std::chrono::steady_clock::now();
