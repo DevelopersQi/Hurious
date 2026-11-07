@@ -54,6 +54,7 @@ static PDEVICE_OBJECT gDeviceObject = NULL;
 static KSPIN_LOCK gEndpointConfigLock;
 static FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG gEndpointConfig;
 static BOOLEAN gEndpointConfigValid = FALSE;
+static BOOLEAN gProcessNotifyRegistered = FALSE;
 
 static BOOLEAN FuriousValidateEndpointConfig(
     const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG* value)
@@ -148,6 +149,32 @@ static UINT32 FuriousGetCalloutId(ULONG index)
     calloutId = gCalloutIds[index];
     KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
     return calloutId;
+}
+
+static VOID NTAPI FuriousProcessNotify(
+    HANDLE parentProcessId,
+    HANDLE processId,
+    BOOLEAN create)
+{
+    KIRQL oldIrql;
+    ULONG processIdValue;
+
+    UNREFERENCED_PARAMETER(parentProcessId);
+    if (create) {
+        return;
+    }
+
+    processIdValue = (ULONG)(ULONG_PTR)processId;
+    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+    if (gEndpointConfigValid &&
+        gEndpointConfig.ProxyProcessId == processIdValue) {
+        // The broker runs inside the WFP service process. If that process
+        // exits unexpectedly, invalidate its PID before Windows can reuse it
+        // for an unrelated process and redirect traffic to the wrong target.
+        RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
+        gEndpointConfigValid = FALSE;
+    }
+    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
 }
 
 static ULONG FuriousGetDriverFlags(void)
@@ -547,6 +574,23 @@ static VOID NTAPI FuriousFlowDelete(
 static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
+    if (gProcessNotifyRegistered) {
+        NTSTATUS status = PsSetCreateProcessNotifyRoutine(
+            FuriousProcessNotify, TRUE);
+        if (status == STATUS_SUCCESS || status == STATUS_INVALID_PARAMETER) {
+            gProcessNotifyRegistered = FALSE;
+        } else {
+            LARGE_INTEGER retryDelay;
+            retryDelay.QuadPart = -1000000;
+            while (status != STATUS_SUCCESS && status != STATUS_INVALID_PARAMETER) {
+                DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+                    "FuriousWfpCallout: process notify removal retry, status=0x%08X\\n", status);
+                KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
+                status = PsSetCreateProcessNotifyRoutine(FuriousProcessNotify, TRUE);
+            }
+            gProcessNotifyRegistered = FALSE;
+        }
+    }
     {
         ULONG index;
         for (index = 0; index < FURIOUS_WFP_CALLOUT_COUNT; ++index) {
@@ -649,11 +693,19 @@ NTSTATUS DriverEntry(
         status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
         if (NT_SUCCESS(status)) {
             FuriousSetCalloutRegistered(1, TRUE, calloutId);
-            gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-            return STATUS_SUCCESS;
+            status = PsSetCreateProcessNotifyRoutine(FuriousProcessNotify, FALSE);
+            if (NT_SUCCESS(status)) {
+                gProcessNotifyRegistered = TRUE;
+                gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
+                return STATUS_SUCCESS;
+            }
         }
     }
 
+    if (FuriousIsCalloutRegistered(1)) {
+        FwpsCalloutUnregisterById0(FuriousGetCalloutId(1));
+        FuriousSetCalloutRegistered(1, FALSE, 0);
+    }
     if (FuriousIsCalloutRegistered(0)) {
         FwpsCalloutUnregisterById0(FuriousGetCalloutId(0));
         FuriousSetCalloutRegistered(0, FALSE, 0);
