@@ -16,9 +16,9 @@ import ntpath
 import time
 
 
-PIPE_NAME = r"\\.\pipe\FuriousWfpService.v2"
+PIPE_NAME = r"\\.\pipe\FuriousWfpService.v3"
 IPC_MAGIC = 0x46575043
-IPC_VERSION = 2
+IPC_VERSION = 3
 MAX_MESSAGE_SIZE = 512 * 1024
 
 COMMAND_STATUS = 1
@@ -29,6 +29,8 @@ COMMAND_SET_ENDPOINT_CONFIG = 5
 COMMAND_CLEAR_ENDPOINT_CONFIG = 6
 COMMAND_START_BROKER = 7
 COMMAND_STOP_BROKER = 8
+COMMAND_START_UDP_BROKER = 9
+COMMAND_STOP_UDP_BROKER = 10
 
 REDIRECT_ABI_VERSION = 2
 MAX_EXCLUDED_PROCESS_IDS = 8
@@ -39,7 +41,7 @@ REDIRECT_FLAG_UDP = 0x00000008
 REDIRECT_KNOWN_FLAGS = 0x0000000F
 
 _HEADER = struct.Struct("<IHHIIQ")
-_RESPONSE = struct.Struct("<IHHIIQIIIHH")
+_RESPONSE = struct.Struct("<IHHIIQIIIHHHH")
 _ENDPOINT_CONFIG = struct.Struct("<IIIIIIQHHHHI8I")
 _BROKER_START = struct.Struct("<IIHHHH16s")
 _POLICY_HEADER = struct.Struct("<IIIIQ")
@@ -76,6 +78,8 @@ class WfpIpcResponse:
     broker_process_id: int
     tcp_port_v4: int
     tcp_port_v6: int
+    udp_port_v4: int
+    udp_port_v6: int
 
 
 _request_ids = count(1)
@@ -113,7 +117,7 @@ def parse_response(data, command, request_id):
 
     (
         magic, version, header_size, total_size, response_command, response_id,
-        status, state, broker_pid, tcp_port_v4, tcp_port_v6,
+        status, state, broker_pid, tcp_port_v4, tcp_port_v6, udp_port_v4, udp_port_v6,
     ) = _RESPONSE.unpack(data)
     if (
         magic != IPC_MAGIC
@@ -124,12 +128,12 @@ def parse_response(data, command, request_id):
         or response_id != int(request_id)
     ):
         raise WfpIpcProtocolError("WFP service response does not match the request")
-    if bool(broker_pid) != bool(tcp_port_v4 or tcp_port_v6):
+    if bool(broker_pid) != bool(tcp_port_v4 or tcp_port_v6 or udp_port_v4 or udp_port_v6):
         raise WfpIpcProtocolError("WFP broker telemetry is internally inconsistent")
 
     return WfpIpcResponse(
         response_command, response_id, status, state,
-        broker_pid, tcp_port_v4, tcp_port_v6,
+        broker_pid, tcp_port_v4, tcp_port_v6, udp_port_v4, udp_port_v6,
     )
 
 
@@ -444,8 +448,24 @@ class WfpIpcClient:
 
     def stopBroker(self):
         response = self.request(COMMAND_STOP_BROKER)
-        if response.broker_process_id or response.tcp_port_v4 or response.tcp_port_v6:
+        if response.broker_process_id or response.tcp_port_v4 or response.tcp_port_v6 or response.udp_port_v4 or response.udp_port_v6:
             raise WfpIpcProtocolError("WFP broker remained active after stop")
+        return response
+
+    def startUdpBroker(self, socks_host, socks_port, listen_ipv4=True, listen_ipv6=True):
+        payload = pack_broker_start_request(
+            socks_host, socks_port,
+            listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6,
+        )
+        response = self.request(COMMAND_START_UDP_BROKER, payload)
+        if response.broker_process_id == 0 or not (response.udp_port_v4 or response.udp_port_v6):
+            raise WfpIpcProtocolError("WFP UDP broker started without valid PID/listener telemetry")
+        return response
+
+    def stopUdpBroker(self):
+        response = self.request(COMMAND_STOP_UDP_BROKER)
+        if response.udp_port_v4 or response.udp_port_v6:
+            raise WfpIpcProtocolError("WFP UDP broker remained active after stop")
         return response
 
     def setPolicy(self, rules, backend, policy_generation):
