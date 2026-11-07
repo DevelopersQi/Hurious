@@ -6,6 +6,7 @@
 #include "../WfpSocks5UdpSocket.h"
 #include "../WfpSocks5UdpRedirectRecord.h"
 #include "../WfpUdpFlowManager.h"
+#include "../WfpUdpFlowRelayRegistry.h"
 #include "../../include/WfpRedirectProtocol.h"
 
 #include <winsock2.h>
@@ -300,6 +301,172 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
         WfpUdpFlowCreateResult::InvalidContext);
 }
 
+void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
+    SOCKET tcpListener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    SOCKET udpRelay = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    assert(tcpListener != INVALID_SOCKET && udpRelay != INVALID_SOCKET);
+
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(tcpListener, reinterpret_cast<const sockaddr*>(&socksAddress),
+        static_cast<int>(sizeof(socksAddress))) == 0);
+    assert(listen(tcpListener, 1) == 0);
+    int socksLength = static_cast<int>(sizeof(socksAddress));
+    assert(getsockname(tcpListener, reinterpret_cast<sockaddr*>(&socksAddress),
+        &socksLength) == 0);
+
+    sockaddr_in relayAddress{};
+    relayAddress.sin_family = AF_INET;
+    relayAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(udpRelay, reinterpret_cast<const sockaddr*>(&relayAddress),
+        static_cast<int>(sizeof(relayAddress))) == 0);
+    int relayLength = static_cast<int>(sizeof(relayAddress));
+    assert(getsockname(udpRelay, reinterpret_cast<sockaddr*>(&relayAddress),
+        &relayLength) == 0);
+
+    std::atomic<bool> relayVerified{false};
+    std::atomic<bool> serverFinished{false};
+    std::thread fakeSocksServer([&]() {
+        SOCKET peer = INVALID_SOCKET;
+        do {
+            fd_set tcpReadable;
+            FD_ZERO(&tcpReadable);
+            FD_SET(tcpListener, &tcpReadable);
+            timeval acceptTimeout{3, 0};
+            if (select(0, &tcpReadable, nullptr, nullptr, &acceptTimeout) <= 0) break;
+            peer = accept(tcpListener, nullptr, nullptr);
+            if (peer == INVALID_SOCKET) break;
+
+            std::array<std::uint8_t, 3> greeting{};
+            if (!ReceiveExactSocket(peer, greeting.data(), greeting.size()) ||
+                greeting != std::array<std::uint8_t, 3>{5, 1, 0}) break;
+            const std::array<std::uint8_t, 2> methodReply{5, 0};
+            if (!SendAllSocket(peer, methodReply.data(), methodReply.size())) break;
+
+            std::array<std::uint8_t, 10> associateRequest{};
+            if (!ReceiveExactSocket(peer, associateRequest.data(),
+                    associateRequest.size()) ||
+                associateRequest[0] != 5 || associateRequest[1] != 3 ||
+                associateRequest[2] != 0) break;
+
+            const auto relayPort = ntohs(relayAddress.sin_port);
+            const std::array<std::uint8_t, 10> associateReply{
+                5, 0, 0, 1, 127, 0, 0, 1,
+                static_cast<std::uint8_t>(relayPort >> 8),
+                static_cast<std::uint8_t>(relayPort & 0xFF)
+            };
+            if (!SendAllSocket(peer, associateReply.data(), associateReply.size())) break;
+
+            fd_set udpReadable;
+            FD_ZERO(&udpReadable);
+            FD_SET(udpRelay, &udpReadable);
+            timeval udpTimeout{3, 0};
+            if (select(0, &udpReadable, nullptr, nullptr, &udpTimeout) <= 0) break;
+
+            std::array<std::uint8_t, 2048> datagram{};
+            sockaddr_in sender{};
+            int senderLength = static_cast<int>(sizeof(sender));
+            const int received = recvfrom(udpRelay,
+                reinterpret_cast<char*>(datagram.data()),
+                static_cast<int>(datagram.size()), 0,
+                reinterpret_cast<sockaddr*>(&sender), &senderLength);
+            if (received <= 0) break;
+
+            Socks5UdpDatagramView view{};
+            const std::array<std::uint8_t, 4> expectedAddress{198, 51, 100, 8};
+            const std::array<std::uint8_t, 4> expectedPayload{'p', 'i', 'n', 'g'};
+            if (ParseSocks5UdpDatagram(datagram.data(),
+                    static_cast<std::size_t>(received), view) ==
+                    Socks5UdpParseResult::Valid &&
+                view.addressType == Socks5UdpAddressType::Ipv4 &&
+                view.addressLength == expectedAddress.size() &&
+                std::memcmp(view.address, expectedAddress.data(),
+                    expectedAddress.size()) == 0 &&
+                view.port == 443 &&
+                view.payloadLength == expectedPayload.size() &&
+                std::memcmp(view.payload, expectedPayload.data(),
+                    expectedPayload.size()) == 0) {
+                relayVerified.store(true);
+            }
+        } while (false);
+
+        if (peer != INVALID_SOCKET) closesocket(peer);
+        serverFinished.store(true);
+    });
+
+    furious::wfp::broker::WfpUdpFlowRelayRegistry registry(4, 2,
+        std::chrono::seconds(10));
+    assert(registry.Configure(reinterpret_cast<const sockaddr*>(&socksAddress),
+        static_cast<int>(sizeof(socksAddress)), 3000));
+
+    WfpUdpReceivedMessage message{};
+    auto source = FlowSource(50050);
+    source.sin_addr.s_addr = htonl(0xC000020A); // 192.0.2.10
+    std::memcpy(&message.sourceAddress, &source, sizeof(source));
+    message.sourceAddressLength = static_cast<int>(sizeof(source));
+    message.payloadLength = 4;
+    message.redirectRecord = {0x11, 0x22, 0x33};
+    const auto redirectContext = MakeUdpRedirectContext(1001);
+    message.redirectContext.resize(sizeof(redirectContext));
+    std::memcpy(message.redirectContext.data(), &redirectContext,
+        sizeof(redirectContext));
+    const std::array<std::uint8_t, 4> payload{'p', 'i', 'n', 'g'};
+
+    std::uint64_t flowId = 0;
+    const auto startResult = registry.ProcessClientDatagram(
+        message, payload.data(), WfpUdpFlowRelayRegistry::Clock::now(),
+        &flowId);
+    assert(startResult == WfpUdpFlowRelayRegistryResult::Pending);
+    assert(flowId != 0);
+
+    auto handshakeResult = WfpUdpFlowRelayRegistryResult::Pending;
+    const auto handshakeDeadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(2);
+    while (handshakeResult == WfpUdpFlowRelayRegistryResult::Pending &&
+           std::chrono::steady_clock::now() < handshakeDeadline) {
+        std::vector<WfpUdpRelaySocket> relays;
+        if (!registry.GetRelaySockets(relays)) break;
+        const auto relay = std::find_if(relays.begin(), relays.end(),
+            [flowId](const WfpUdpRelaySocket& item) {
+                return item.flowId == flowId;
+            });
+        if (relay == relays.end()) break;
+
+        WSAPOLLFD descriptor{};
+        descriptor.fd = relay->controlSocket;
+        if (relay->wantsRead) descriptor.events |= POLLRDNORM;
+        if (relay->wantsWrite) descriptor.events |= POLLWRNORM;
+        const int ready = WSAPoll(&descriptor, 1, 100);
+        if (ready == SOCKET_ERROR) break;
+        const bool readable = ready > 0 && (descriptor.revents &
+            (POLLRDNORM | POLLERR | POLLHUP)) != 0;
+        const bool writable = ready > 0 && (descriptor.revents &
+            (POLLWRNORM | POLLERR | POLLHUP)) != 0;
+        handshakeResult = registry.AdvancePendingFlow(flowId, readable, writable);
+        if (handshakeResult != WfpUdpFlowRelayRegistryResult::Pending &&
+            handshakeResult != WfpUdpFlowRelayRegistryResult::Ready) break;
+    }
+
+    const bool handshakeReady =
+        handshakeResult == WfpUdpFlowRelayRegistryResult::Ready;
+    const auto relayDeadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(1);
+    while (!relayVerified.load() && !serverFinished.load() &&
+           std::chrono::steady_clock::now() < relayDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    const bool datagramForwarded = relayVerified.load();
+
+    registry.CloseAll();
+    fakeSocksServer.join();
+    closesocket(tcpListener);
+    closesocket(udpRelay);
+
+    assert(handshakeReady);
+    assert(datagramForwarded);
+}
+
 void TestAssociationSourcePinningAndExpiry() {
     using Clock = Socks5UdpAssociation::Clock;
     const auto now = Clock::now();
@@ -501,6 +668,7 @@ int main() {
     TestAssociateControlMessages();
     TestRedirectContextDecodeRequiresValidUdpMetadata();
     TestUdpFlowManagerIdentityLimitsAndExpiry();
+    TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay();
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
     TestNonblockingSocks5UdpHandshake();
