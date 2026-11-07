@@ -16,6 +16,7 @@ add_library(FuriousWfpTcpBroker STATIC
     WfpUdpFlowManager.cpp
     WfpSocks5UdpAssociationClient.cpp
     WfpSocks5UdpRelayTransport.cpp
+    WfpSocks5UdpFlowRelay.cpp
     WfpTcpRedirect.h
     WfpTcpBrokerServer.cpp
     WfpTcpBrokerServer.h

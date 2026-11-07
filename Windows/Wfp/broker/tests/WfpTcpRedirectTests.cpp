@@ -7,6 +7,7 @@
 #include "../WfpUdpFlowManager.h"
 #include "../WfpSocks5UdpAssociationClient.h"
 #include "../WfpSocks5UdpRelayTransport.h"
+#include "../WfpSocks5UdpFlowRelay.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
