@@ -1144,6 +1144,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpPolicyPending = {}
         self._wfpPolicyReady = False
         self._wfpBrokerEndpoint = None
+        self._wfpUdpExpected = False
 
     def _getWfpIpcController(self):
         """Create the background IPC worker only when Windows WFP is needed."""
@@ -1166,6 +1167,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     return
                 self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
+                self._wfpUdpExpected = False
                 self._wfpTcpBrokerEndpoint = None
                 self._wfpUdpBrokerEndpoint = None
                 if self._wfpIpcController is not None:
@@ -1176,6 +1178,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpUdpBrokerPending.pop(requestId, None)
                 self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
+                self._wfpUdpExpected = False
                 self._wfpTcpBrokerEndpoint = None
                 self._wfpUdpBrokerEndpoint = None
                 if command in ('set-policy', 'clear-policy'):
@@ -1246,6 +1249,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpBrokerPending.pop(requestId, None)
             self._wfpUdpBrokerPending.pop(requestId, None)
             self._wfpBrokerEndpoint = None
+            self._wfpUdpExpected = False
             self._wfpTcpBrokerEndpoint = None
             self._wfpUdpBrokerEndpoint = None
             if self._wfpIpcController is not None:
@@ -1272,6 +1276,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             logger.info('WFP application routing policy cleared')
         elif command == 'stop-broker':
             self._wfpBrokerEndpoint = None
+            self._wfpUdpExpected = False
             self._wfpTcpBrokerEndpoint = None
             self._wfpUdpBrokerEndpoint = None
             self._wfpUdpBrokerPending.clear()
@@ -1317,6 +1322,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpEndpointPending.clear()
         self._wfpPolicyPending.clear()
         self._wfpPolicyReady = False
+        self._wfpUdpExpected = False
         controller.clearEndpointConfig()
         controller.stopBroker()
 
@@ -1344,6 +1350,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpPolicyBackend = 0
         self._wfpPolicyReady = False
         self._wfpPolicyPending.clear()
+        self._wfpUdpExpected = False
         self._wfpBrokerEndpoint = None
         self._wfpTcpBrokerEndpoint = None
         self._wfpUdpBrokerEndpoint = None
@@ -1355,7 +1362,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         return controller.clearPolicy()
 
     def _startWfpBroker(self, configuration, resetExisting=True):
-        """Start the TCP broker only for a supported socket-owning proxy core."""
+        """Start the supported TCP/UDP brokers for the active SOCKS upstream."""
         if sys.platform != 'win32':
             return None
         if SystemRuntime.isTUNMode():
@@ -1464,7 +1471,15 @@ class ConnectionManager(Mixins.CleanupOnExit):
                         return None
             return requestId
         except Exception as error:
-            logger.warning(f'WFP TCP broker start could not be queued: {error}')
+            logger.warning(f'WFP TCP/UDP broker start could not be queued: {error}')
+            if self._wfpIpcController is not None:
+                self._wfpIpcController.clearEndpointConfig()
+                self._wfpIpcController.stopBroker()
+            self._wfpBrokerEndpoint = None
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
+            self._wfpUdpBrokerPending.clear()
+            self._wfpBrokerPending.clear()
             return None
 
     def _completeWfpBrokerStartup(self):
