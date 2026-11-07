@@ -24,6 +24,9 @@
 using namespace furious::wfp::broker;
 
 namespace {
+bool ReceiveExactSocket(SOCKET socket, std::uint8_t* output, std::size_t length);
+bool SendAllSocket(SOCKET socket, const std::uint8_t* input, std::size_t length);
+
 Socks5UdpEndpoint V4(std::uint8_t a, std::uint8_t b,
                      std::uint8_t c, std::uint8_t d,
                      std::uint16_t port = 0) {
