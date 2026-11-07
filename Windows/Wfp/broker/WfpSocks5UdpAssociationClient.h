@@ -92,6 +92,8 @@ private:
     std::array<std::uint8_t, 22> asyncRequest_{};
     std::size_t asyncRequestLength_ = 0;
     std::size_t asyncSendOffset_ = 0;
+    std::array<std::uint8_t, 2> asyncMethodReply_{};
+    std::size_t asyncMethodReplySize_ = 0;
     std::array<std::uint8_t, 262> asyncReply_{};
     std::size_t asyncReplySize_ = 0;
     std::size_t asyncReplyExpected_ = 4;

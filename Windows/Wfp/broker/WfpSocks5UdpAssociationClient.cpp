@@ -424,6 +424,8 @@ Socks5UdpAssociationAsyncResult Socks5UdpAssociationClient::BeginOpen(
     asyncDeadline_ = GetTickCount64() + timeoutMilliseconds;
     asyncRequestLength_ = 0;
     asyncSendOffset_ = 0;
+    asyncMethodReply_ = {};
+    asyncMethodReplySize_ = 0;
     asyncReplySize_ = 0;
     asyncReplyExpected_ = 4;
     asyncError_ = 0;
@@ -534,8 +536,9 @@ Socks5UdpAssociationAsyncResult Socks5UdpAssociationClient::Advance(
         }
         if (asyncState_ == Socks5UdpAssociationAsyncState::ReceivingMethod) {
             if (!readable) return Socks5UdpAssociationAsyncResult::Pending;
-            std::uint8_t method[2]{};
-            const int received = recv(controlSocket_, reinterpret_cast<char*>(method), 2, 0);
+            const int received = recv(controlSocket_,
+                reinterpret_cast<char*>(asyncMethodReply_.data() + asyncMethodReplySize_),
+                static_cast<int>(asyncMethodReply_.size() - asyncMethodReplySize_), 0);
             if (received == SOCKET_ERROR) {
                 const int error = WSAGetLastError();
                 if (error == WSAEWOULDBLOCK || error == WSAEINTR)
@@ -543,13 +546,11 @@ Socks5UdpAssociationAsyncResult Socks5UdpAssociationClient::Advance(
                 return fail(error);
             }
             if (received == 0) return fail(WSAECONNRESET);
-            if (received != 2) {
-                // Keep protocol reads atomic by buffering a split method reply.
-                asyncReply_[asyncReplySize_++] = method[0];
-                asyncState_ = Socks5UdpAssociationAsyncState::ReceivingMethod;
+            asyncMethodReplySize_ += static_cast<std::size_t>(received);
+            if (asyncMethodReplySize_ < asyncMethodReply_.size())
                 return Socks5UdpAssociationAsyncResult::Pending;
-            }
-            if (method[0] != 5 || method[1] != 0) return fail(WSAEACCES);
+            if (asyncMethodReply_[0] != 5 || asyncMethodReply_[1] != 0)
+                return fail(WSAEACCES);
             asyncState_ = Socks5UdpAssociationAsyncState::SendingAssociateRequest;
             asyncSendOffset_ = 0;
             continue;
@@ -633,6 +634,8 @@ void Socks5UdpAssociationClient::Close() noexcept {
     socksAddressLength_ = 0;
     asyncDeadline_ = 0;
     asyncRequestLength_ = asyncSendOffset_ = 0;
+    asyncMethodReply_ = {};
+    asyncMethodReplySize_ = 0;
     asyncReplySize_ = 0;
     asyncReplyExpected_ = 4;
     asyncState_ = Socks5UdpAssociationAsyncState::Idle;
