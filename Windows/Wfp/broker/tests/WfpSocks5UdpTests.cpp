@@ -1371,7 +1371,12 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
         assert(ReceiveExactSocket(peer, receivedGreeting.data(), receivedGreeting.size()));
         assert(receivedGreeting == greeting);
         const std::array<std::uint8_t, 2> methodReply{5, 0};
-        assert(SendAllSocket(peer, methodReply.data(), methodReply.size()));
+        // Deliberately fragment SOCKS replies to exercise the nonblocking
+        // parser's partial-read state transitions rather than relying on TCP
+        // packet boundaries.
+        assert(SendAllSocket(peer, methodReply.data(), 1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        assert(SendAllSocket(peer, methodReply.data() + 1, 1));
 
         std::array<std::uint8_t, 22> associateRequest{};
         assert(ReceiveExactSocket(peer, associateRequest.data(), associateRequest.size()));
@@ -1391,7 +1396,12 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
         associateReply[19] = 1;
         associateReply[20] = static_cast<std::uint8_t>(relayPort >> 8);
         associateReply[21] = static_cast<std::uint8_t>(relayPort & 0xFF);
-        assert(SendAllSocket(peer, associateReply.data(), associateReply.size()));
+        assert(SendAllSocket(peer, associateReply.data(), 4));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        assert(SendAllSocket(peer, associateReply.data() + 4, 3));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        assert(SendAllSocket(peer, associateReply.data() + 7,
+            associateReply.size() - 7));
 
         fd_set readable;
         FD_ZERO(&readable);
