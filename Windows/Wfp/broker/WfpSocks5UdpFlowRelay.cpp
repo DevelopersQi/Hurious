@@ -255,6 +255,13 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::ReceiveUpstreamResponse(
         buffer, capacity, parsed, receivedLength, errorCode);
     if (result == Socks5UdpRelayIoResult::WouldBlock)
         return WfpSocks5UdpFlowRelayResult::ReceivePending;
+    // Untrusted or malformed UDP datagrams are packet-level noise, not a
+    // reason to tear down a healthy association. The datagram was consumed;
+    // keep the flow alive and continue polling for the negotiated relay.
+    if (result == Socks5UdpRelayIoResult::UnexpectedRelay ||
+        result == Socks5UdpRelayIoResult::InvalidDatagram ||
+        result == Socks5UdpRelayIoResult::BufferTooSmall)
+        return WfpSocks5UdpFlowRelayResult::ReceiveDropped;
     if (result != Socks5UdpRelayIoResult::Received)
         return WfpSocks5UdpFlowRelayResult::ReceiveFailed;
     if (!MatchesOriginalDestination(parsed)) {

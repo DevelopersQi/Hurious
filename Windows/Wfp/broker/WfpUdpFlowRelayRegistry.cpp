@@ -248,7 +248,8 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
     std::size_t received = 0;
     const auto result = found->second->ReceiveUpstreamResponse(
         buffer, capacity, response, received, errorCode);
-    if (result == WfpSocks5UdpFlowRelayResult::ReceivePending)
+    if (result == WfpSocks5UdpFlowRelayResult::ReceivePending ||
+        result == WfpSocks5UdpFlowRelayResult::ReceiveDropped)
         return WfpUdpFlowRelayRegistryResult::ReceivePending;
     if (result == WfpSocks5UdpFlowRelayResult::UnexpectedDestination)
         return WfpUdpFlowRelayRegistryResult::UnexpectedDestination;

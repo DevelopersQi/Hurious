@@ -588,6 +588,68 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
     assert(handshakeReady);
     assert(datagramForwarded);
     assert(responseForwarded);
+
+    // A datagram spoofed from a different local UDP source must be discarded
+    // without destroying the established SOCKS association.
+    SOCKET attacker = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    assert(attacker != INVALID_SOCKET);
+    sockaddr_in relaySocketAddress{};
+    int relaySocketAddressLength = static_cast<int>(sizeof(relaySocketAddress));
+    assert(getsockname(relays.front().socket,
+        reinterpret_cast<sockaddr*>(&relaySocketAddress),
+        &relaySocketAddressLength) == 0);
+    relaySocketAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    const std::array<std::uint8_t, 4> spoofPayload{'e', 'v', 'i', 'l'};
+    std::vector<std::uint8_t> spoofDatagram;
+    const std::array<std::uint8_t, 4> expectedAddress{198, 51, 100, 8};
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        expectedAddress.data(), expectedAddress.size(), 443,
+        spoofPayload.data(), spoofPayload.size(), spoofDatagram) ==
+        Socks5UdpBuildResult::Valid);
+    assert(sendto(attacker,
+        reinterpret_cast<const char*>(spoofDatagram.data()),
+        static_cast<int>(spoofDatagram.size()), 0,
+        reinterpret_cast<const sockaddr*>(&relaySocketAddress),
+        relaySocketAddressLength) == static_cast<int>(spoofDatagram.size()));
+    WSAPOLLFD spoofPoll{};
+    spoofPoll.fd = relays.front().socket;
+    spoofPoll.events = POLLRDNORM;
+    assert(WSAPoll(&spoofPoll, 1, 1000) > 0);
+    gWfpUdpSendCapture = WfpUdpSendCapture{};
+    std::array<std::uint8_t, 256> ignoredResponse{};
+    const auto spoofResult = registry.HandleUpstreamResponse(
+        flowId, ingress, CaptureWfpUdpSendMessage, ignoredResponse.data(),
+        ignoredResponse.size(), WfpUdpFlowRelayRegistry::Clock::now());
+    assert(spoofResult == WfpUdpFlowRelayRegistryResult::ReceivePending);
+    assert(!gWfpUdpSendCapture.called);
+    assert(registry.ActiveCount() == 1);
+
+    // A response with the wrong original destination from the trusted relay
+    // is also dropped without injecting it into the redirected client.
+    const std::array<std::uint8_t, 4> wrongAddress{198, 51, 100, 9};
+    std::vector<std::uint8_t> wrongDestinationDatagram;
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        wrongAddress.data(), wrongAddress.size(), 443,
+        spoofPayload.data(), spoofPayload.size(), wrongDestinationDatagram) ==
+        Socks5UdpBuildResult::Valid);
+    assert(sendto(udpRelay,
+        reinterpret_cast<const char*>(wrongDestinationDatagram.data()),
+        static_cast<int>(wrongDestinationDatagram.size()), 0,
+        reinterpret_cast<const sockaddr*>(&relaySocketAddress),
+        relaySocketAddressLength) ==
+        static_cast<int>(wrongDestinationDatagram.size()));
+    WSAPOLLFD wrongDestinationPoll{};
+    wrongDestinationPoll.fd = relays.front().socket;
+    wrongDestinationPoll.events = POLLRDNORM;
+    assert(WSAPoll(&wrongDestinationPoll, 1, 1000) > 0);
+    const auto wrongDestinationResult = registry.HandleUpstreamResponse(
+        flowId, ingress, CaptureWfpUdpSendMessage, ignoredResponse.data(),
+        ignoredResponse.size(), WfpUdpFlowRelayRegistry::Clock::now());
+    assert(wrongDestinationResult ==
+        WfpUdpFlowRelayRegistryResult::UnexpectedDestination);
+    assert(!gWfpUdpSendCapture.called);
+    assert(registry.ActiveCount() == 1);
+    closesocket(attacker);
 }
 
 void TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams() {
