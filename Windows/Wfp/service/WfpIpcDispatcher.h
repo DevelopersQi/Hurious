@@ -219,7 +219,7 @@ inline DWORD StartUdpBroker(const void* payload, size_t payloadSize) noexcept {
         addressLength = sizeof(sockaddr_in6);
     } else return ERROR_INVALID_PARAMETER;
     auto& broker = GetUdpBrokerServer();
-    if (broker.IsRunning()) return ERROR_SUCCESS;
+    if (broker.IsRunning()) return ERROR_ALREADY_EXISTS;
     const bool listenV4 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV4) != 0;
     const bool listenV6 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV6) != 0;
     return broker.Start(reinterpret_cast<const sockaddr*>(&address), addressLength,
