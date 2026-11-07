@@ -1139,11 +1139,12 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Log asynchronous WFP control-plane results without affecting proxy state."""
         if error:
             logger.warning(f'WFP IPC {command} request failed: {error}')
-            if command == 'start-broker':
+            if command in ('start-broker', 'set-endpoint'):
                 self._wfpBrokerPending.pop(requestId, None)
                 self._wfpBrokerEndpoint = None
                 if self._wfpIpcController is not None:
                     self._wfpIpcController.clearEndpointConfig()
+                    self._wfpIpcController.stopBroker()
         elif command == 'status':
             logger.debug('WFP service status request completed')
         elif command == 'start-broker' and result is not None:
@@ -1229,6 +1230,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         snapshot = self.wfpRuntimeSnapshot
         if not snapshot.excluded_process_ids:
             self._wfpIpcController.clearEndpointConfig()
+            self._wfpIpcController.stopBroker()
+            self._wfpBrokerEndpoint = None
             return None
 
         flags = REDIRECT_FLAG_TCP
@@ -1238,6 +1241,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
             flags |= REDIRECT_FLAG_IPV6
         if not (flags & (REDIRECT_FLAG_IPV4 | REDIRECT_FLAG_IPV6)):
             self._wfpIpcController.clearEndpointConfig()
+            self._wfpIpcController.stopBroker()
+            self._wfpBrokerEndpoint = None
             return None
 
         try:
@@ -1253,6 +1258,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         except (TypeError, ValueError) as error:
             logger.error(f'WFP endpoint configuration rejected locally: {error}')
             self._wfpIpcController.clearEndpointConfig()
+            self._wfpIpcController.stopBroker()
+            self._wfpBrokerEndpoint = None
             return None
 
         return self._wfpIpcController.setEndpointConfig(payload)
