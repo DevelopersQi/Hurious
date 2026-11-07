@@ -43,10 +43,8 @@ active.
 The native TCP broker is hosted by the elevated WFP service. Its authenticated
 IPC start command returns the actual service PID and dynamically bound IPv4/IPv6
 listener ports. ConnectionManager starts and stops the broker with the proxy
-runtime. Application-specific TCP filters are installed by SET_POLICY; UDP
-filters are deliberately withheld until a dedicated UDP relay is implemented.
-Endpoint activation remains gated on synchronizing the live broker PID, listener
-ports, selected backend and core PID exclusions into SET_ENDPOINT_CONFIG.
+runtime. Endpoint activation remains gated on synchronizing the live broker PID,
+listener ports, selected backend and core PID exclusions into SET_ENDPOINT_CONFIG.
 
 A production redirect path additionally requires:
 - ALE application identity based on the WFP application ID (not PID alone);

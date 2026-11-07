@@ -25,25 +25,26 @@ does not reset the generation counter.
 
 ## Current implementation boundary
 
-The service now resolves enabled executable paths to WFP application IDs during
-SET_POLICY and atomically stores both the validated payload and compiled
-application-rule snapshot. Compilation sorts rules by ascending numeric priority
-and rejects multiple textual paths that resolve to the same application ID.
-CLEAR_POLICY clears both snapshots while preserving the monotonic generation.
+SET_POLICY resolves enabled executable paths to WFP application IDs,
+sorts rules by ascending numeric priority, rejects duplicate App IDs, and
+transactionally replaces per-application TCP filters for IPv4 and IPv6. Direct
+rules install terminating permit filters; Proxy rules install terminating
+callout filters. CLEAR_POLICY removes those filters and clears the in-memory
+snapshots. UDP filters are deliberately withheld until a dedicated UDP relay
+has been implemented and tested.
 
-The compiled rules are **not yet installed as application-specific WFP filters**
-and are not consumed by the kernel classify path. The service starts the callout
-driver and installs the base IPv4/IPv6 redirect filters, but clears endpoint
-configuration at startup; without a live endpoint, the classify callback passes
-traffic through. Do not treat policy acceptance or App ID compilation as
-application routing being active.
+The service clears endpoint configuration at startup. Proxy-action filters fail
+closed when no valid endpoint is configured; direct-action filters remain
+direct. This avoids silently bypassing the proxy for applications explicitly
+selected for Proxy, but also means Proxy rules must not be activated until the
+TCP broker endpoint is ready.
 
 The driver endpoint ABI is version 2 and supports up to eight auxiliary process
-IDs in addition to the local redirect-target PID. The kernel validates and
-excludes those IDs when supplied. The service-hosted TCP broker PID is returned by IPC and can occupy the mandatory
-ProxyProcessId field. Xray/Hysteria2 core PIDs are available in the Python runtime
-snapshot, but are not yet atomically synchronized into endpoint configuration on
-every start/stop/restart.
+IDs in addition to the local redirect-target PID. The service-hosted TCP broker
+PID is returned by IPC and can occupy the mandatory ProxyProcessId field.
+Xray/Hysteria2 core PIDs are available in the Python runtime snapshot, but are
+not yet atomically synchronized into endpoint configuration on every
+start/stop/restart.
 
 Before enabling traffic filters or redirect:
 - resolve each executable path to a canonical WFP application ID;

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from queue import Queue
-from threading import Thread
+from threading import Lock, Thread
 from itertools import count
 
 from PySide6 import QtCore
@@ -25,6 +25,7 @@ class _WfpIpcWorker:
         self._client_factory = client_factory
         self._completed = completed
         self._queue = Queue()
+        self._stateLock = Lock()
         self._closed = False
         self._thread = Thread(
             target=self._run,
@@ -34,18 +35,20 @@ class _WfpIpcWorker:
         self._thread.start()
 
     def submit(self, request_id, command, arguments=()):
-        if self._closed:
-            return False
+        with self._stateLock:
+            if self._closed:
+                return False
 
-        self._queue.put((int(request_id), str(command), tuple(arguments)))
-        return True
+            self._queue.put((int(request_id), str(command), tuple(arguments)))
+            return True
 
     def close(self):
-        if self._closed:
-            return
+        with self._stateLock:
+            if self._closed:
+                return
 
-        self._closed = True
-        self._queue.put(self._STOP)
+            self._closed = True
+            self._queue.put(self._STOP)
 
     def _run(self):
         client = None
@@ -133,7 +136,9 @@ class WfpIpcController(QtCore.QObject):
 
     def startBroker(self, socksHost, socksPort, listenIpv4=True, listenIpv6=True):
         """Start the service-hosted TCP broker asynchronously."""
-        return self._submit("start-broker", socksHost, socksPort, listenIpv4, listenIpv6)
+        return self._submit(
+            "start-broker", socksHost, socksPort, listenIpv4, listenIpv6
+        )
 
     def stopBroker(self):
         """Stop the service-hosted TCP broker asynchronously."""

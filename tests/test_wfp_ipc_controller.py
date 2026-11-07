@@ -20,9 +20,18 @@ class _FakeClient:
     def clearEndpointConfig(self):
         return self._record("clear-endpoint")
 
-    def _record(self, command):
+    def startBroker(self, host, port, listen_ipv4=True, listen_ipv6=True):
+        return self._record("start-broker", host, port, listen_ipv4, listen_ipv6)
+
+    def stopBroker(self):
+        return self._record("stop-broker")
+
+    def setEndpointConfig(self, payload):
+        return self._record("set-endpoint", bytes(payload))
+
+    def _record(self, command, *arguments):
         with self.lock:
-            self.calls.append((command, get_ident()))
+            self.calls.append((command, get_ident(), arguments))
 
         if self.fail:
             raise RuntimeError("service unavailable")
@@ -55,7 +64,7 @@ class WfpIpcWorkerTest(unittest.TestCase):
             worker.close()
 
         self.assertEqual([entry[0] for entry in calls], ["status", "clear-endpoint"])
-        self.assertTrue(all(thread_id != main_thread for _, thread_id in calls))
+        self.assertTrue(all(entry[1] != main_thread for entry in calls))
         self.assertEqual(
             completed,
             [
@@ -89,6 +98,43 @@ class WfpIpcWorkerTest(unittest.TestCase):
         self.assertEqual(len(completed), 2)
         self.assertTrue(all(result is None for _, _, result, _ in completed))
         self.assertTrue(all(error == "service unavailable" for _, _, _, error in completed))
+
+    def test_forwards_broker_and_endpoint_arguments_in_queue_order(self):
+        calls = []
+        lock = Lock()
+        completed = []
+        done = Event()
+
+        def on_complete(request_id, command, result, error):
+            completed.append((request_id, command, result, error))
+            if len(completed) == 3:
+                done.set()
+
+        worker = _WfpIpcWorker(lambda: _FakeClient(calls, lock), on_complete)
+        try:
+            worker.submit(1, "start-broker", ("127.0.0.1", 10808, True, False))
+            worker.submit(2, "set-endpoint", (b"endpoint-abi",))
+            worker.submit(3, "stop-broker")
+            self.assertTrue(done.wait(2))
+        finally:
+            worker.close()
+
+        self.assertEqual(
+            [entry[0] for entry in calls],
+            ["start-broker", "set-endpoint", "stop-broker"],
+        )
+        self.assertEqual(
+            [entry[2] for entry in calls],
+            [
+                ("127.0.0.1", 10808, True, False),
+                (b"endpoint-abi",),
+                (),
+            ],
+        )
+        self.assertEqual(
+            [entry[2] for entry in completed],
+            ["start-broker-ok", "set-endpoint-ok", "stop-broker-ok"],
+        )
 
     def test_rejects_new_commands_after_close(self):
         worker = _WfpIpcWorker(lambda: None, lambda *args: None)

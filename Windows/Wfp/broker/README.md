@@ -1,7 +1,7 @@
 # WFP TCP broker primitives
 
-This directory contains the native TCP redirect primitives used by the future
-long-running broker service.
+This directory contains the native TCP redirect primitives and the service-hosted
+long-running broker.
 
 ## Implemented primitives
 
@@ -21,12 +21,12 @@ inbound, so traffic continues through the selected Xray/Hysteria2 backend.
 
 ## Important integration boundary
 
-The listener service is implemented as a native library component, but it is
-not yet wired into ConnectionManager or backend inbound discovery. The next
-integration layer must supply the selected backend's actual SOCKS inbound,
-start and stop this server with the proxy runtime, and publish the real broker
-PID and listener ports to the WFP service. Until that layer exists and passes Windows tests,
-the SET_ENDPOINT_CONFIG command must remain disabled.
+The broker listener is hosted by the elevated WFP service and controlled through
+authenticated IPC. ConnectionManager starts and stops it with the proxy runtime;
+the service returns its actual PID and dynamically bound listener ports. The
+remaining gate is to publish those values together with the selected backend and
+current core PID exclusions through SET_ENDPOINT_CONFIG, then validate the full
+path in Windows tests.
 
 The redirect-record blob is opaque and is copied without interpretation. The
 context is Furious-owned ABI data and is validated before its address and port
