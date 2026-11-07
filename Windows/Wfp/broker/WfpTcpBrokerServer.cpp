@@ -322,14 +322,12 @@ void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
         bool keep = false;
         {
             std::lock_guard<std::mutex> lock(activeMutex_);
-            if (!stopping_.load()) {
-                try {
-                    activeSockets_.insert(upstream);
-                    keep = true;
-                } catch (...) {
-                    keep = false;
-                }
-            }
+            // OpenSocks5Tunnel registers the upstream socket before connect and
+            // keeps it registered until this worker closes it. Do not insert it
+            // a second time here: verify the cancellation registry invariant
+            // instead, so Stop() can always find every in-flight socket.
+            keep = !stopping_.load() &&
+                activeSockets_.find(upstream) != activeSockets_.end();
         }
         if (keep) {
             RelayBidirectional(client, upstream);
