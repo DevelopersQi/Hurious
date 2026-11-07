@@ -704,15 +704,12 @@ jobs:
           echo "Required deployment assets could not be downloaded after 3 attempts"
           exit 1
       - name: Set up MSBuild for the Windows WFP driver
-        if: matrix.id == 'windows10-amd64'
         uses: microsoft/setup-msbuild@v2
 
       - name: Set up NuGet for the Windows WFP driver
-        if: matrix.id == 'windows10-amd64'
         uses: NuGet/setup-nuget@v2
 
       - name: Build Windows 10 x64 WFP driver for ZIP inclusion
-        if: matrix.id == 'windows10-amd64'
         shell: pwsh
         run: |
           nuget restore packages.config -PackagesDirectory packages
