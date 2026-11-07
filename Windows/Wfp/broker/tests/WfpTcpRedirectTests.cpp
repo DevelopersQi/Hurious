@@ -5,6 +5,8 @@
 #include "../WfpSocks5UdpSocket.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
+#include <atomic>
+#include <thread>
 
 #include <cassert>
 #include <cstdint>
@@ -374,6 +376,27 @@ void TestSocks5UdpAssociationManagerLimitsAndExpiry() {
     assert(manager.ActiveCount() == 0);
     assert(manager.AuthorizeClientDatagram(3, client, 32,
         now + std::chrono::seconds(10)) == Socks5UdpAssociationResult::Inactive);
+
+    assert(manager.Open(5, peer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::Opened);
+    assert(manager.RecordActivity(5, now + std::chrono::seconds(9)));
+    assert(manager.SweepExpired(now + std::chrono::seconds(10)) == 0);
+    assert(manager.SweepExpired(now + std::chrono::seconds(19)) == 1);
+    assert(manager.ActiveCount() == 0);
+
+    Socks5UdpAssociationManager concurrent(8, 1);
+    std::atomic<int> opened{0};
+    const auto openSamePeer = [&concurrent, &opened, &peer, now](std::uint64_t id) {
+        if (concurrent.Open(id, peer, 0, std::chrono::seconds(10), 1200, now) ==
+            OpenResult::Opened) {
+            opened.fetch_add(1);
+        }
+    };
+    std::thread first(openSamePeer, 10);
+    std::thread second(openSamePeer, 11);
+    first.join();
+    second.join();
+    assert(opened.load() == 1 && concurrent.ActiveCount() == 1);
 
     Socks5UdpAssociationManager disabled(0, 0);
     assert(disabled.Open(1, peer, 0, std::chrono::seconds(10), 1200, now) ==

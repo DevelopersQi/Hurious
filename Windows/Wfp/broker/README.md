@@ -58,3 +58,6 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 - Sockets are nonblocking, use exclusive address binding, and request bounded 64 KiB send/receive buffers.
 - The hosting service owns Winsock initialization. The socket wrapper intentionally does not call WSAStartup or WSACleanup.
 - This is a socket lifecycle primitive only: no datagram receive/send loop, DNS resolution, remote endpoint forwarding, or WFP UDP filter is enabled yet.
+
+
+The association registry is internally synchronized so control-session workers and a periodic expiry sweep can safely share it. Validated client datagrams and accepted relay responses refresh the same monotonic idle timer; stale associations are removed on access or by the sweep.

@@ -69,6 +69,11 @@ void Socks5UdpAssociation::Close() noexcept {
 bool Socks5UdpAssociation::IsActive(TimePoint now) const noexcept {
     return active_ && now >= lastActivity_ && now-lastActivity_ < idleTimeout_;
 }
+bool Socks5UdpAssociation::RecordActivity(TimePoint now) noexcept {
+    if (!IsActive(now)) { Close(); return false; }
+    lastActivity_ = now;
+    return true;
+}
 bool Socks5UdpAssociation::HasBoundClient() const noexcept { return active_ && clientBound_; }
 const Socks5UdpEndpoint& Socks5UdpAssociation::BoundClient() const noexcept { return client_; }
 std::size_t Socks5UdpAssociation::MaximumDatagramLength() const noexcept {

@@ -27,6 +27,7 @@ public:
     void OnControlClosed() noexcept;
     void Close() noexcept;
     bool IsActive(TimePoint now) const noexcept;
+    bool RecordActivity(TimePoint now) noexcept;
     bool HasBoundClient() const noexcept;
     const Socks5UdpEndpoint& BoundClient() const noexcept;
     std::size_t MaximumDatagramLength() const noexcept;

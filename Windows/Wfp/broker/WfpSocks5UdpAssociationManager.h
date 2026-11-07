@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace furious::wfp::broker {
@@ -42,6 +43,7 @@ public:
         std::size_t datagramLength,
         Socks5UdpAssociation::TimePoint now) noexcept;
 
+    bool RecordActivity(std::uint64_t id, Socks5UdpAssociation::TimePoint now) noexcept;
     bool Close(std::uint64_t id) noexcept;
     std::size_t SweepExpired(Socks5UdpAssociation::TimePoint now) noexcept;
     std::size_t ActiveCount() const noexcept;
@@ -59,6 +61,7 @@ private:
         const Socks5UdpEndpoint& a,
         const Socks5UdpEndpoint& b) const noexcept;
 
+    mutable std::mutex mutex_;
     const std::size_t maximumAssociations_;
     const std::size_t maximumAssociationsPerPeer_;
     std::vector<Entry> entries_;

@@ -40,6 +40,7 @@ Socks5UdpAssociationOpenResult Socks5UdpAssociationManager::Open(
             idleTimeout, maximumDatagramLength, now)) {
         return Socks5UdpAssociationOpenResult::InvalidParameters;
     }
+    std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& entry : entries_) {
         if (entry.id == id) return Socks5UdpAssociationOpenResult::DuplicateId;
     }
@@ -73,6 +74,7 @@ Socks5UdpAssociationResult Socks5UdpAssociationManager::AuthorizeClientDatagram(
     const Socks5UdpEndpoint& source,
     std::size_t datagramLength,
     Socks5UdpAssociation::TimePoint now) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         if (entries_[i].id != id) continue;
         const auto result = entries_[i].association.AuthorizeClientDatagram(
@@ -85,7 +87,20 @@ Socks5UdpAssociationResult Socks5UdpAssociationManager::AuthorizeClientDatagram(
     return Socks5UdpAssociationResult::Inactive;
 }
 
+bool Socks5UdpAssociationManager::RecordActivity(
+    std::uint64_t id, Socks5UdpAssociation::TimePoint now) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+        if (entries_[i].id != id) continue;
+        if (entries_[i].association.RecordActivity(now)) return true;
+        entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
+        return false;
+    }
+    return false;
+}
+
 bool Socks5UdpAssociationManager::Close(std::uint64_t id) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         if (entries_[i].id != id) continue;
         entries_[i].association.OnControlClosed();
@@ -97,6 +112,7 @@ bool Socks5UdpAssociationManager::Close(std::uint64_t id) noexcept {
 
 std::size_t Socks5UdpAssociationManager::SweepExpired(
     Socks5UdpAssociation::TimePoint now) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::size_t removed = 0;
     for (std::size_t i = 0; i < entries_.size();) {
         if (!entries_[i].association.IsActive(now)) {
@@ -111,6 +127,7 @@ std::size_t Socks5UdpAssociationManager::SweepExpired(
 }
 
 std::size_t Socks5UdpAssociationManager::ActiveCount() const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
     return entries_.size();
 }
 
