@@ -290,6 +290,13 @@ void UdpBrokerServer::Run() noexcept {
                     (events & (POLLWRNORM | POLLERR | POLLHUP)) != 0;
                 registry_->AdvancePendingFlow(target.flowId, readable, writable);
             } else if (target.kind == PollKind::RelayUdp) {
+                // A failed relay datagram socket cannot recover its association.
+                // Tear down the whole flow immediately instead of retaining a
+                // dead UDP socket until the idle lease expires.
+                if ((events & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+                    registry_->CloseFlow(target.flowId);
+                    continue;
+                }
                 const auto relay = std::find_if(relays.begin(), relays.end(),
                     [&target](const WfpUdpRelaySocket& value) {
                         return value.flowId == target.flowId;
@@ -304,7 +311,10 @@ void UdpBrokerServer::Run() noexcept {
                     }
                 }
             } else if (target.kind == PollKind::ReadyControl) {
-                registry_->SweepClosedControls();
+                if ((events & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+                    registry_->CloseFlow(target.flowId);
+                else
+                    registry_->SweepClosedControls();
             }
         }
 

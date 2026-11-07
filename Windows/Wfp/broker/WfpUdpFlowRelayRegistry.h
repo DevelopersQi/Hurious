@@ -76,13 +76,13 @@ public:
 
     std::size_t SweepExpired(TimePoint now) noexcept;
     std::size_t SweepClosedControls() noexcept;
+    // Immediately release a flow when its relay socket reports a terminal poll event.
+    void CloseFlow(std::uint64_t flowId) noexcept;
     void CloseAll() noexcept;
     std::size_t ActiveCount() const noexcept;
     bool GetRelaySockets(std::vector<WfpUdpRelaySocket>& output) const noexcept;
 
 private:
-    void CloseFlow(std::uint64_t flowId) noexcept;
-
     WfpUdpFlowManager flows_;
     std::unordered_map<std::uint64_t, std::unique_ptr<WfpSocks5UdpFlowRelay>> relays_;
     std::unordered_map<std::uint64_t, std::vector<std::uint8_t>> pendingDatagrams_;
