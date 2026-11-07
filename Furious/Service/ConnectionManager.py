@@ -1332,7 +1332,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     return None
                 endpoint = str(socksConfig.get('listen', '') or '').strip()
             else:
-                endpointGetter = getattr(configuration, 'socksProxy', None)
+                endpointGetter = getattr(runtimeConfiguration, 'socksProxy', None)
                 if not callable(endpointGetter):
                     logger.debug('active core does not expose a SOCKS inbound endpoint')
                     return None
