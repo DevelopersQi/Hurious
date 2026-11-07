@@ -729,21 +729,24 @@ jobs:
           msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
           $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse | Select-Object -First 1
           if ($null -eq $driver) { throw 'WFP driver build did not produce FuriousWfpCallout.sys' }
-          $certificate = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Furious WFP Test Driver (non-production)' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(2)
+          $certificate = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Furious WFP Driver Test Signing' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(5)
           $pfx = Join-Path $env:RUNNER_TEMP 'furious-wfp-test-signing.pfx'
           $cer = Join-Path $env:RUNNER_TEMP 'FuriousWfpCallout.cer'
           $password = ConvertTo-SecureString ([Guid]::NewGuid().ToString('N')) -AsPlainText -Force
           Export-PfxCertificate -Cert $certificate -FilePath $pfx -Password $password | Out-Null
           Export-Certificate -Cert $certificate -FilePath $cer | Out-Null
-          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1
-          if ($null -eq $signTool) { throw 'Windows SDK signtool.exe was not found' }
+          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $signTool = Get-ChildItem -LiteralPath $sdkRoot -Filter signtool.exe -Recurse | Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if ($null -eq $signTool) { throw "Windows SDK SignTool was not found below $sdkRoot" }
           $plainPassword = [System.Net.NetworkCredential]::new('', $password).Password
-          & $signTool.FullName sign /fd SHA256 /f $pfx /p $plainPassword $driver.FullName
+          & $signTool.FullName sign /v /fd SHA256 /f $pfx /p $plainPassword $driver.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Test signing the WFP driver failed' }
           Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
           Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' | Out-Null
           & $signTool.FullName verify /pa /v $driver.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification of the test-signed WFP driver failed' }
+          $signature = Get-AuthenticodeSignature -FilePath $driver.FullName
+          if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) { throw 'The WFP driver signature is not valid or does not match this run certificate.' }
           Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_DRIVER_BINARY=$($driver.FullName)" -Encoding utf8
           Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_TEST_CERTIFICATE=$cer" -Encoding utf8
           Get-FileHash -LiteralPath $driver.FullName -Algorithm SHA256

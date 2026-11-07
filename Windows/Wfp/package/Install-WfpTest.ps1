@@ -27,6 +27,10 @@ Copy-Item -LiteralPath $serviceSource -Destination (Join-Path $installDirectory 
 Copy-Item -LiteralPath $certificateSource -Destination (Join-Path $installDirectory 'FuriousWfpCallout.cer') -Force
 
 $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificateSource)
+$driverSignature = Get-AuthenticodeSignature -FilePath $driverSource
+if ($driverSignature.Status -ne 'Valid' -or $null -eq $driverSignature.SignerCertificate -or $driverSignature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+    throw 'The WFP driver signature is invalid or does not match the bundled test certificate.'
+}
 Import-Certificate -FilePath $certificateSource -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
 Import-Certificate -FilePath $certificateSource -CertStoreLocation 'Cert:\LocalMachine\TrustedPublisher' | Out-Null
 
