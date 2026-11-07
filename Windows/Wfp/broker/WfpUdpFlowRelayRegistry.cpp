@@ -284,8 +284,15 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
                     auto& next = pending->second.front();
                     outbound.first->second.push_back(std::move(next));
                     const auto size = outbound.first->second.back().size();
-                    pendingDatagramBytes_ = size > pendingDatagramBytes_
-                        ? 0 : pendingDatagramBytes_ - size;
+                    // Moving a datagram between queues must preserve exact
+                    // global accounting. A mismatch indicates corrupted state;
+                    // close the flow instead of masking an underflow.
+                    if (size > pendingDatagramBytes_ ||
+                        size > kMaximumPendingDatagramBytes - outboundDatagramBytes_) {
+                        CloseFlow(flowId);
+                        return WfpUdpFlowRelayRegistryResult::SendFailed;
+                    }
+                    pendingDatagramBytes_ -= size;
                     outboundDatagramBytes_ += size;
                     pending->second.pop_front();
                 }
@@ -302,8 +309,11 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
                 ? WfpUdpFlowRelayRegistryResult::ControlClosed
                 : WfpUdpFlowRelayRegistryResult::SendFailed;
         }
-        pendingDatagramBytes_ = datagram.size() > pendingDatagramBytes_
-            ? 0 : pendingDatagramBytes_ - datagram.size();
+        if (datagram.size() > pendingDatagramBytes_) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
+        pendingDatagramBytes_ -= datagram.size();
         pending->second.pop_front();
     }
     pendingDatagrams_.erase(pending);
@@ -336,8 +346,11 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvanceQueuedClientDatagr
             return WfpUdpFlowRelayRegistryResult::SendFailed;
         }
         const auto size = datagram.size();
-        outboundDatagramBytes_ = size > outboundDatagramBytes_
-            ? 0 : outboundDatagramBytes_ - size;
+        if (size > outboundDatagramBytes_) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
+        outboundDatagramBytes_ -= size;
         queued->second.pop_front();
     }
     outboundDatagrams_.erase(queued);
