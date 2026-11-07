@@ -105,6 +105,7 @@ private:
     bool QueuePendingDatagram(std::uint64_t flowId,
         const std::uint8_t* payload, std::size_t payloadLength) noexcept;
     void DiscardPendingDatagrams(std::uint64_t flowId) noexcept;
+    void RecalculateQueueByteCounts() noexcept;
     bool QueueOutboundDatagram(std::uint64_t flowId,
         const std::uint8_t* payload, std::size_t payloadLength) noexcept;
     void DiscardOutboundDatagrams(std::uint64_t flowId) noexcept;

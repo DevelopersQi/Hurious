@@ -1,4 +1,5 @@
 #include "WfpUdpFlowRelayRegistry.h"
+#include <limits>
 
 #include <cstring>
 #include <new>
@@ -511,16 +512,34 @@ bool WfpUdpFlowRelayRegistry::QueuePendingDatagram(
     }
 }
 
+void WfpUdpFlowRelayRegistry::RecalculateQueueByteCounts() noexcept {
+    // Rebuild accounting from the surviving queues after cleanup. This avoids
+    // saturating subtraction hiding an earlier counter mismatch and poisoning
+    // the global queue budget for subsequent flows.
+    const auto addSaturated = [](std::size_t& total, std::size_t amount) noexcept {
+        const auto maximum = (std::numeric_limits<std::size_t>::max)();
+        total = amount > maximum - total ? maximum : total + amount;
+    };
+
+    pendingDatagramBytes_ = 0;
+    for (const auto& item : pendingDatagrams_) {
+        for (const auto& datagram : item.second)
+            addSaturated(pendingDatagramBytes_, datagram.size());
+    }
+
+    outboundDatagramBytes_ = 0;
+    for (const auto& item : outboundDatagrams_) {
+        for (const auto& datagram : item.second)
+            addSaturated(outboundDatagramBytes_, datagram.size());
+    }
+}
+
 void WfpUdpFlowRelayRegistry::DiscardPendingDatagrams(
     std::uint64_t flowId) noexcept {
     const auto found = pendingDatagrams_.find(flowId);
     if (found == pendingDatagrams_.end()) return;
-    for (const auto& datagram : found->second) {
-        const auto size = datagram.size();
-        pendingDatagramBytes_ = size > pendingDatagramBytes_
-            ? 0 : pendingDatagramBytes_ - size;
-    }
     pendingDatagrams_.erase(found);
+    RecalculateQueueByteCounts();
 }
 
 bool WfpUdpFlowRelayRegistry::QueueOutboundDatagram(
@@ -550,12 +569,8 @@ void WfpUdpFlowRelayRegistry::DiscardOutboundDatagrams(
     std::uint64_t flowId) noexcept {
     const auto found = outboundDatagrams_.find(flowId);
     if (found == outboundDatagrams_.end()) return;
-    for (const auto& datagram : found->second) {
-        const auto size = datagram.size();
-        outboundDatagramBytes_ = size > outboundDatagramBytes_
-            ? 0 : outboundDatagramBytes_ - size;
-    }
     outboundDatagrams_.erase(found);
+    RecalculateQueueByteCounts();
 }
 
 void WfpUdpFlowRelayRegistry::CloseFlowResources(std::uint64_t flowId) noexcept {
