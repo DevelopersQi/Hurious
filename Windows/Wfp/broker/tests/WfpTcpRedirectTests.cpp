@@ -1,6 +1,7 @@
 #include "../WfpTcpRedirect.h"
 #include "../WfpSocks5Udp.h"
 #include "../WfpSocks5UdpAssociation.h"
+#include "../WfpSocks5UdpAssociationManager.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 
@@ -321,6 +322,63 @@ void TestSocks5UdpAssociationLifecycle() {
     a.Close();
 }
  
+void TestSocks5UdpAssociationManagerLimitsAndExpiry() {
+    using namespace furious::wfp::broker;
+    using Clock = Socks5UdpAssociation::Clock;
+    using OpenResult = Socks5UdpAssociationOpenResult;
+    const auto now = Clock::time_point{} + std::chrono::seconds(100);
+
+    Socks5UdpEndpoint peer{};
+    peer.family = Socks5UdpEndpointFamily::Ipv4;
+    peer.address[0] = 192;
+    peer.address[2] = 2;
+    peer.address[3] = 10;
+    peer.port = 51000;
+    auto samePeerDifferentPort = peer;
+    samePeerDifferentPort.port = 51001;
+    auto otherPeer = peer;
+    otherPeer.address[3] = 11;
+
+    Socks5UdpAssociationManager manager(2, 1);
+    assert(manager.MaximumAssociations() == 2);
+    assert(manager.MaximumAssociationsPerPeer() == 1);
+    assert(manager.Open(0, peer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::InvalidId);
+    assert(manager.Open(1, peer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::Opened);
+    assert(manager.Open(1, peer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::DuplicateId);
+    assert(manager.Open(2, samePeerDifferentPort, 0,
+        std::chrono::seconds(10), 1200, now) == OpenResult::PerPeerLimitReached);
+    assert(manager.Open(3, otherPeer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::Opened);
+    auto thirdPeer = peer;
+    thirdPeer.address[3] = 12;
+    assert(manager.Open(4, thirdPeer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::AssociationLimitReached);
+    assert(manager.ActiveCount() == 2);
+
+    auto client = peer;
+    client.port = 62000;
+    assert(manager.AuthorizeClientDatagram(1, client, 32, now) ==
+        Socks5UdpAssociationResult::Accepted);
+    assert(manager.Close(1));
+    assert(!manager.Close(1));
+    assert(manager.ActiveCount() == 1);
+
+    assert(manager.Open(4, peer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::Opened);
+    assert(manager.ActiveCount() == 2);
+    assert(manager.SweepExpired(now + std::chrono::seconds(10)) == 2);
+    assert(manager.ActiveCount() == 0);
+    assert(manager.AuthorizeClientDatagram(3, client, 32,
+        now + std::chrono::seconds(10)) == Socks5UdpAssociationResult::Inactive);
+
+    Socks5UdpAssociationManager disabled(0, 0);
+    assert(disabled.Open(1, peer, 0, std::chrono::seconds(10), 1200, now) ==
+        OpenResult::InvalidParameters);
+}
+
 void TestSocks5UdpAssociateControlMessages() {
     using namespace furious::wfp::broker;
     Socks5UdpAssociateRequestView view{};
@@ -378,6 +436,7 @@ void TestBrokerStopsWhileAcceptingConnections();
 int main() {
     TestSocks5UdpParser();
     TestSocks5UdpAssociationLifecycle();
+    TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpAssociateControlMessages();
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();

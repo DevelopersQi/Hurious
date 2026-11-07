@@ -40,3 +40,12 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 - Expose a non-owning payload/address view for IPv4, IPv6 and domain targets; the caller retains buffer ownership.
 - Reject fragmented datagrams until bounded fragment reassembly is implemented.
 - This parser is not a UDP relay: it performs no DNS resolution, socket forwarding, association management, or WFP UDP redirection. UDP remains disabled at the IPC boundary.
+
+
+## UDP association resource guard (not yet wired to sockets)
+
+- Maintain a bounded registry of SOCKS5 UDP associations with unique IDs.
+- Enforce a global association ceiling and a per-control-peer-IP ceiling; the per-peer key ignores ephemeral TCP ports.
+- Reclaim idle associations through an explicit monotonic-clock sweep, and remove an association immediately when its control session closes.
+- Enforce per-association datagram-size limits through the existing association state guard.
+- This manager is currently a tested policy primitive only. It is not yet connected to TCP control-session handling or UDP sockets, and UDP remains disabled at the IPC/WFP boundary.
