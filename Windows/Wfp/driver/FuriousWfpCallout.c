@@ -575,7 +575,7 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
     if (gProcessNotifyRegistered) {
-        NTSTATUS status = PsSetCreateProcessNotifyRoutine(
+        NTSTATUS status = PsSetCreateProcessNotifyRoutineEx(
             FuriousProcessNotify, TRUE);
         if (status == STATUS_SUCCESS || status == STATUS_INVALID_PARAMETER) {
             gProcessNotifyRegistered = FALSE;
