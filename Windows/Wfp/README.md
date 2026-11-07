@@ -17,7 +17,12 @@ separate from the Python UI and proxy-core process lifecycle.
 
 The service now starts the adjacent callout driver through SCM, verifies the
 driver ABI/callout registration, and transactionally installs IPv4/IPv6 ALE
-connect-redirect filters. The driver redirects only applications with an installed Proxy policy filter
+connect-redirect filters.
+Application-specific Proxy/Direct filters are scoped to the service's dynamic
+WFP engine session (not persistent). If the service process exits unexpectedly,
+WFP removes those filters with the session, preventing stale application
+redirect rules from surviving without a live broker. The provider, sublayer and
+callout registration remain separately managed and are reconciled on restart. The driver redirects only applications with an installed Proxy policy filter
 and a valid endpoint. Direct rules remain direct. Proxy filters fail closed if
 the endpoint is missing or a redirect operation fails. The service hosts a native TCP broker and exposes it through authenticated IPC.
 The broker obtains original-destination context, preserves WFP redirect records,
