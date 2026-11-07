@@ -655,6 +655,35 @@ void TestSocks5UdpRelayTransportLoopback() {
         assert(received.port == 5353 && received.payloadLength == sizeof(payload));
         assert(std::memcmp(received.payload, payload, sizeof(payload)) == 0);
 
+        // Exact-capacity datagrams are valid; only actual truncation is rejected.
+        std::uint8_t exactBuffer[22]{};
+        const std::uint8_t exactPayload[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+        std::vector<std::uint8_t> exactResponse;
+        assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+            target, sizeof(target), 5353, exactPayload, sizeof(exactPayload),
+            exactResponse, sizeof(exactBuffer)) == Socks5UdpBuildResult::Valid);
+        assert(exactResponse.size() == sizeof(exactBuffer));
+        assert(sendto(relay, reinterpret_cast<const char*>(exactResponse.data()),
+            static_cast<int>(exactResponse.size()), 0,
+            reinterpret_cast<const sockaddr*>(&clientAddress), sizeof(clientAddress)) ==
+            static_cast<int>(exactResponse.size()));
+        assert(ReceiveSocks5UdpFromRelay(client,
+            reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+            exactBuffer, sizeof(exactBuffer), received, receivedLength, &error) ==
+            Socks5UdpRelayIoResult::Received);
+        assert(receivedLength == sizeof(exactBuffer));
+
+        std::uint8_t tooSmallBuffer[21]{};
+        assert(sendto(relay, reinterpret_cast<const char*>(exactResponse.data()),
+            static_cast<int>(exactResponse.size()), 0,
+            reinterpret_cast<const sockaddr*>(&clientAddress), sizeof(clientAddress)) ==
+            static_cast<int>(exactResponse.size()));
+        assert(ReceiveSocks5UdpFromRelay(client,
+            reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+            tooSmallBuffer, sizeof(tooSmallBuffer), received, receivedLength, &error) ==
+            Socks5UdpRelayIoResult::BufferTooSmall);
+        assert(receivedLength == 0 && received.address == nullptr);
+
         // A datagram from any other source is rejected before parsing.
         assert(sendto(attacker, reinterpret_cast<const char*>(response.data()),
             static_cast<int>(response.size()), 0,

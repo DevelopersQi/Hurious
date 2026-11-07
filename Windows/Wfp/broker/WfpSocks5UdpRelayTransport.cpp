@@ -1,6 +1,7 @@
 #include "WfpSocks5UdpRelayTransport.h"
 
 #include <algorithm>
+#include <ws2tcpip.h>
 #include <cstring>
 #include <limits>
 #include <vector>
@@ -120,9 +121,9 @@ Socks5UdpRelayIoResult ReceiveSocks5UdpFromRelay(
     if (received == SOCKET_ERROR) {
         const int error = WSAGetLastError();
         if (errorCode != nullptr) *errorCode = error;
-        return error == WSAEWOULDBLOCK
-            ? Socks5UdpRelayIoResult::WouldBlock
-            : Socks5UdpRelayIoResult::SocketError;
+        if (error == WSAEWOULDBLOCK) return Socks5UdpRelayIoResult::WouldBlock;
+        if (error == WSAEMSGSIZE) return Socks5UdpRelayIoResult::BufferTooSmall;
+        return Socks5UdpRelayIoResult::SocketError;
     }
 
     if (!SameEndpoint(expectedRelayAddress, expectedRelayAddressLength,
@@ -132,13 +133,6 @@ Socks5UdpRelayIoResult ReceiveSocks5UdpFromRelay(
     }
 
     receivedLength = static_cast<std::size_t>(received);
-    if (receivedLength == bufferCapacity) {
-        // recvfrom cannot distinguish an exactly full datagram from a truncated one.
-        // Treat a full buffer as ambiguous and fail closed.
-        if (errorCode != nullptr) *errorCode = WSAEMSGSIZE;
-        receivedLength = 0;
-        return Socks5UdpRelayIoResult::BufferTooSmall;
-    }
     if (ParseSocks5UdpDatagram(buffer, receivedLength, output) !=
         Socks5UdpParseResult::Valid) {
         output = Socks5UdpDatagramView{};
