@@ -1361,6 +1361,7 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
     const std::array<std::uint8_t, 4> responsePayload{'p', 'o', 'n', 'g'};
     std::atomic<bool> relayVerified{false};
     std::atomic<bool> responseSent{false};
+    std::atomic<bool> allowServerClose{false};
 
     std::thread fakeSocksServer([&]() {
         SOCKET peer = accept(tcpListener, nullptr, nullptr);
@@ -1427,6 +1428,14 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
             reinterpret_cast<const sockaddr*>(&sender), senderLength) ==
             static_cast<int>(responseDatagram.size()));
         responseSent.store(true);
+        // Keep the SOCKS control channel alive until the client has validated
+        // and forwarded the UDP response; EOF means the association is closed.
+        const auto closeDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(3);
+        while (!allowServerClose.load() &&
+               std::chrono::steady_clock::now() < closeDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
         closesocket(peer);
     });
 
@@ -1487,7 +1496,8 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
     std::size_t responseLength = 0;
     assert(relay.ReceiveUpstreamResponse(responseBuffer.data(), responseBuffer.size(),
         response, responseLength, &error) == WfpSocks5UdpFlowRelayResult::Ready);
-    assert(responseLength == responseBuffer.size() || responseLength > response.payloadLength);
+    assert(responseLength > response.payloadLength);
+    assert(response.payloadLength == responsePayload.size());
     gWfpUdpSendCapture = WfpUdpSendCapture{};
     DWORD bytesSent = 0;
     assert(relay.ForwardUpstreamResponse(ingress, CaptureWfpUdpSendMessage,
@@ -1512,6 +1522,7 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
             sizeof(in6_addr)) == 0;
 
     relay.Close();
+    allowServerClose.store(true);
     closesocket(ingress);
     fakeSocksServer.join();
     closesocket(tcpListener);
