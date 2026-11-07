@@ -1135,8 +1135,12 @@ void TestWfpUdpFlowManager() {
 }
  
 INT WSAAPI FakeRecvMsgWithoutSource(
-    SOCKET, LPWSAMSG message, LPDWORD bytesReceived,
-    LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE) {
+    SOCKET socket, LPWSAMSG message, LPDWORD bytesReceived,
+    LPWSAOVERLAPPED overlapped,
+    LPWSAOVERLAPPED_COMPLETION_ROUTINE completionRoutine) {
+    (void)socket;
+    (void)overlapped;
+    (void)completionRoutine;
     if (message != nullptr) message->name = nullptr;
     if (bytesReceived != nullptr) *bytesReceived = 1;
     return 0;
