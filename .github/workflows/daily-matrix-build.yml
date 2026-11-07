@@ -17,6 +17,11 @@
 
 name: Daily matrix build
 
+# A newer WFP packaging commit supersedes a stuck older build.
+concurrency:
+  group: furious-wfp-package-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   # Run one Windows 10 packaging build when this workflow is deliberately
   # changed on the feature branch; ordinary source commits stay lightweight.
@@ -44,6 +49,7 @@ jobs:
   deploy-binaries:
     name: Deploy ${{ matrix.id }} on ${{ matrix.os }} Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -734,6 +740,7 @@ jobs:
       - name: Build and test-sign Windows 10 x64 WFP driver
         if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
         shell: pwsh
+        timeout-minutes: 15
         run: |
           nuget restore packages.config -PackagesDirectory packages
           msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
