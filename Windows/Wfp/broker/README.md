@@ -61,3 +61,11 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 
 
 The association registry is internally synchronized so control-session workers and a periodic expiry sweep can safely share it. Validated client datagrams and accepted relay responses refresh the same monotonic idle timer; stale associations are removed on access or by the sweep.
+
+
+## WFP non-TCP redirect-record handling
+
+- Windows delivers the redirect record for a non-TCP flow on the flow-creating datagram as an ancillary `IP_CONNECTION_REDIRECT_RECORD` control message.
+- The broker resolves the Winsock `WSARecvMsg` and `WSASendMsg` extension functions, extracts and bounds the first-packet record, and can attach it to the corresponding outbound UDP message.
+- Subsequent datagrams are allowed to omit the record; duplicate, malformed, empty, and oversized records are rejected.
+- This is the ancillary-data protocol layer only. It does not yet create UDP flow mappings, forward payloads to Xray/Hysteria2, or enable UDP WFP filters.

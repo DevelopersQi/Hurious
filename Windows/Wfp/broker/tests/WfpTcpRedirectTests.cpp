@@ -3,6 +3,7 @@
 #include "../WfpSocks5UdpAssociation.h"
 #include "../WfpSocks5UdpAssociationManager.h"
 #include "../WfpSocks5UdpSocket.h"
+#include "../WfpSocks5UdpRedirectRecord.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
@@ -449,6 +450,50 @@ void TestSocks5UdpSocketOwnership() {
     WSACleanup();
 }
 
+void TestWfpUdpRedirectRecordAncillaryData() {
+    using namespace furious::wfp::broker;
+    std::vector<std::uint8_t> extracted;
+    WSAMSG message{};
+    assert(ExtractWfpUdpRedirectRecord(message, extracted) ==
+        WfpUdpRedirectRecordResult::NotPresent);
+    assert(extracted.empty());
+
+    const std::uint8_t record[] = {0x10, 0x20, 0x30, 0x40, 0x50};
+    std::vector<char> controlBuffer(WSA_CMSG_SPACE(sizeof(record)));
+    message.Control.buf = controlBuffer.data();
+    message.Control.len = static_cast<ULONG>(controlBuffer.size());
+    WSACMSGHDR* header = WSA_CMSG_FIRSTHDR(&message);
+    assert(header != nullptr);
+    header->cmsg_level = IPPROTO_IP;
+    header->cmsg_type = IP_CONNECTION_REDIRECT_RECORD;
+    header->cmsg_len = WSA_CMSG_LEN(sizeof(record));
+    std::memcpy(WSA_CMSG_DATA(header), record, sizeof(record));
+    assert(ExtractWfpUdpRedirectRecord(message, extracted) ==
+        WfpUdpRedirectRecordResult::Present);
+    assert(extracted.size() == sizeof(record));
+    assert(std::memcmp(extracted.data(), record, sizeof(record)) == 0);
+
+    header->cmsg_len = 0;
+    assert(ExtractWfpUdpRedirectRecord(message, extracted) ==
+        WfpUdpRedirectRecordResult::InvalidMessage);
+    assert(extracted.empty());
+
+    message.Control.buf = nullptr;
+    message.Control.len = 0;
+    LPFN_WSARECVMSG receiveMessage = nullptr;
+    LPFN_WSASENDMSG sendMessage = nullptr;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    SOCKET socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    assert(socket != INVALID_SOCKET);
+    assert(ResolveWsaRecvMsg(socket, &receiveMessage) == 0);
+    assert(receiveMessage != nullptr);
+    assert(ResolveWsaSendMsg(socket, &sendMessage) == 0);
+    assert(sendMessage != nullptr);
+    closesocket(socket);
+    WSACleanup();
+}
+
 void TestSocks5UdpAssociateControlMessages() {
     using namespace furious::wfp::broker;
     Socks5UdpAssociateRequestView view{};
@@ -508,6 +553,7 @@ int main() {
     TestSocks5UdpAssociationLifecycle();
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpSocketOwnership();
+    TestWfpUdpRedirectRecordAncillaryData();
     TestSocks5UdpAssociateControlMessages();
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
