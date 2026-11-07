@@ -438,6 +438,8 @@ void TestUdpFlowManagerIpv6ScopeIdentity() {
     globalSource.sin6_addr.s6_addr[2] = 0x0D;
     globalSource.sin6_addr.s6_addr[3] = 0xB8;
     globalSource.sin6_addr.s6_addr[15] = 0x02;
+    // The copied link-local source carries a scope ID; global unicast must not.
+    globalSource.sin6_scope_id = 0;
     globalSource.sin6_port = htons(53002);
     std::uint64_t globalFlow = 0;
     assert(manager.RegisterFirstDatagram(
