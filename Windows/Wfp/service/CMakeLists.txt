@@ -18,6 +18,8 @@ add_library(FuriousWfpTcpBroker STATIC
     ../broker/WfpSocks5UdpRelayTransport.cpp
     ../broker/WfpSocks5UdpFlowRelay.cpp
     ../broker/WfpUdpFlowRelayRegistry.cpp
+    ../broker/WfpUdpBrokerServer.cpp
+    ../broker/WfpUdpBrokerServer.h
     ../broker/WfpTcpRedirect.h
     ../broker/WfpTcpBrokerServer.cpp
     ../broker/WfpTcpBrokerServer.h

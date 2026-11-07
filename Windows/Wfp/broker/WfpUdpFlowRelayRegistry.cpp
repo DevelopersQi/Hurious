@@ -346,7 +346,9 @@ bool WfpUdpFlowRelayRegistry::GetRelaySockets(
             output.push_back({item.first, item.second->UdpSocket(),
                 item.second->ControlSocket(),
                 pendingDatagrams_.find(item.first) != pendingDatagrams_.end(),
-                item.second->WantsRead(), item.second->WantsWrite()});
+                item.second->WantsRead(), item.second->WantsWrite(),
+                item.second->OriginalClient() != nullptr
+                    ? item.second->OriginalClient()->sa_family : AF_UNSPEC});
         }
     } catch (...) {
         output.clear();

@@ -34,6 +34,7 @@ struct WfpUdpRelaySocket final {
     bool handshaking = false;
     bool wantsRead = false;
     bool wantsWrite = false;
+    int clientAddressFamily = AF_UNSPEC;
 };
 
 // Single-I/O-thread owner for UDP flow state and per-flow SOCKS5 relay sockets.
