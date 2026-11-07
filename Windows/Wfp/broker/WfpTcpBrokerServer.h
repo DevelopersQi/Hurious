@@ -47,6 +47,8 @@ private:
     void AcceptLoop() noexcept;
     void WorkerLoop() noexcept;
     void ProcessClient(SOCKET client) noexcept;
+    static bool RegisterSocketForCancellation(void* context, SOCKET socket) noexcept;
+    static void UnregisterSocketForCancellation(void* context, SOCKET socket) noexcept;
 
     // Serialize Start/Stop and keep lifecycle-owned fields stable for readers.
     mutable std::recursive_mutex lifecycleMutex_;
