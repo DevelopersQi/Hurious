@@ -531,7 +531,8 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
         handshakeResult == WfpUdpFlowRelayRegistryResult::Ready;
     const auto relayDeadline = std::chrono::steady_clock::now() +
         std::chrono::seconds(1);
-    while (!relayVerified.load() && !serverFinished.load() &&
+    while ((!relayVerified.load() || !responseSent.load()) &&
+           !serverFinished.load() &&
            std::chrono::steady_clock::now() < relayDeadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
