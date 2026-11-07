@@ -22,9 +22,12 @@ constexpr std::size_t kMaximumWfpUdpRedirectRecordSize = 64u * 1024u;
 int ResolveWsaRecvMsg(SOCKET socket, LPFN_WSARECVMSG* function) noexcept;
 int ResolveWsaSendMsg(SOCKET socket, LPFN_WSASENDMSG* function) noexcept;
 
-// The redirect record is present only on the flow-creating datagram. The
-// output is cleared for NotPresent and every failure result.
+// Redirect records and the callout-owned context are ancillary data on the
+// flow-creating datagram. Each output is cleared for NotPresent and failures.
 WfpUdpRedirectRecordResult ExtractWfpUdpRedirectRecord(
+    const WSAMSG& message,
+    std::vector<std::uint8_t>& output) noexcept;
+WfpUdpRedirectRecordResult ExtractWfpUdpRedirectContext(
     const WSAMSG& message,
     std::vector<std::uint8_t>& output) noexcept;
 
@@ -38,6 +41,7 @@ int SendWfpUdpMessage(
     const std::uint8_t* payload,
     std::size_t payloadLength,
     const std::vector<std::uint8_t>& redirectRecord,
+    const std::vector<std::uint8_t>& redirectContext,
     DWORD* bytesSent = nullptr) noexcept;
 
 } // namespace furious::wfp::broker

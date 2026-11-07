@@ -1,12 +1,73 @@
 #include "WfpSocks5UdpRedirectRecord.h"
 
 #include <cstring>
-
 #include <mstcpip.h>
 #include <ws2tcpip.h>
 
 namespace furious::wfp::broker {
 namespace {
+
+WfpUdpRedirectRecordResult ExtractControlData(
+    const WSAMSG& message,
+    int messageType,
+    std::vector<std::uint8_t>& output) noexcept {
+    output.clear();
+    if (message.Control.len == 0) {
+        return WfpUdpRedirectRecordResult::NotPresent;
+    }
+    if (message.Control.buf == nullptr ||
+        message.Control.len > 2 * WSA_CMSG_SPACE(kMaximumWfpUdpRedirectRecordSize)) {
+        return WfpUdpRedirectRecordResult::InvalidMessage;
+    }
+
+    bool found = false;
+    WSAMSG* mutableMessage = const_cast<WSAMSG*>(&message);
+    const char* controlBegin = message.Control.buf;
+    const char* controlEnd = controlBegin + message.Control.len;
+    for (WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(mutableMessage);
+         control != nullptr;
+         control = WSA_CMSG_NXTHDR(mutableMessage, control)) {
+        const char* controlAddress = reinterpret_cast<const char*>(control);
+        if (controlAddress < controlBegin || controlAddress > controlEnd) {
+            return WfpUdpRedirectRecordResult::InvalidMessage;
+        }
+        const std::size_t remaining =
+            static_cast<std::size_t>(controlEnd - controlAddress);
+        const std::size_t headerLength = WSA_CMSG_LEN(0);
+        if (control->cmsg_len < headerLength ||
+            control->cmsg_len > remaining) {
+            output.clear();
+            return WfpUdpRedirectRecordResult::InvalidMessage;
+        }
+        if (control->cmsg_type != messageType ||
+            (control->cmsg_level != IPPROTO_IP &&
+             control->cmsg_level != IPPROTO_IPV6)) {
+            continue;
+        }
+        if (found) {
+            output.clear();
+            return WfpUdpRedirectRecordResult::DuplicateRecord;
+        }
+        const std::size_t dataLength = control->cmsg_len - headerLength;
+        if (dataLength == 0) {
+            return WfpUdpRedirectRecordResult::InvalidMessage;
+        }
+        if (dataLength > kMaximumWfpUdpRedirectRecordSize) {
+            return WfpUdpRedirectRecordResult::RecordTooLarge;
+        }
+        const auto* data = reinterpret_cast<const std::uint8_t*>(
+            WSA_CMSG_DATA(control));
+        try {
+            output.assign(data, data + dataLength);
+        } catch (...) {
+            output.clear();
+            return WfpUdpRedirectRecordResult::AllocationFailure;
+        }
+        found = true;
+    }
+    return found ? WfpUdpRedirectRecordResult::Present
+                 : WfpUdpRedirectRecordResult::NotPresent;
+}
 
 int ResolveExtension(
     SOCKET socket,
@@ -41,54 +102,13 @@ int ResolveWsaSendMsg(SOCKET socket, LPFN_WSASENDMSG* function) noexcept {
 WfpUdpRedirectRecordResult ExtractWfpUdpRedirectRecord(
     const WSAMSG& message,
     std::vector<std::uint8_t>& output) noexcept {
-    output.clear();
-    if (message.Control.len == 0) {
-        return WfpUdpRedirectRecordResult::NotPresent;
-    }
-    if (message.Control.buf == nullptr ||
-        message.Control.len > WSA_CMSG_SPACE(kMaximumWfpUdpRedirectRecordSize)) {
-        return WfpUdpRedirectRecordResult::InvalidMessage;
-    }
+    return ExtractControlData(message, IP_WFP_REDIRECT_RECORDS, output);
+}
 
-    bool found = false;
-    WSAMSG* mutableMessage = const_cast<WSAMSG*>(&message);
-    for (WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(mutableMessage);
-         control != nullptr;
-         control = WSA_CMSG_NXTHDR(mutableMessage, control)) {
-        const std::size_t headerLength = WSA_CMSG_LEN(0);
-        if (control->cmsg_len < headerLength ||
-            control->cmsg_len > message.Control.len) {
-            output.clear();
-            return WfpUdpRedirectRecordResult::InvalidMessage;
-        }
-        if (control->cmsg_type != IP_CONNECTION_REDIRECT_RECORD ||
-            (control->cmsg_level != IPPROTO_IP &&
-             control->cmsg_level != IPPROTO_IPV6)) {
-            continue;
-        }
-        if (found) {
-            output.clear();
-            return WfpUdpRedirectRecordResult::DuplicateRecord;
-        }
-        const std::size_t recordLength = control->cmsg_len - headerLength;
-        if (recordLength == 0) {
-            return WfpUdpRedirectRecordResult::InvalidMessage;
-        }
-        if (recordLength > kMaximumWfpUdpRedirectRecordSize) {
-            return WfpUdpRedirectRecordResult::RecordTooLarge;
-        }
-        const auto* record = reinterpret_cast<const std::uint8_t*>(
-            WSA_CMSG_DATA(control));
-        try {
-            output.assign(record, record + recordLength);
-        } catch (...) {
-            output.clear();
-            return WfpUdpRedirectRecordResult::AllocationFailure;
-        }
-        found = true;
-    }
-    return found ? WfpUdpRedirectRecordResult::Present
-                 : WfpUdpRedirectRecordResult::NotPresent;
+WfpUdpRedirectRecordResult ExtractWfpUdpRedirectContext(
+    const WSAMSG& message,
+    std::vector<std::uint8_t>& output) noexcept {
+    return ExtractControlData(message, IP_WFP_REDIRECT_CONTEXT, output);
 }
 
 int SendWfpUdpMessage(
@@ -99,13 +119,15 @@ int SendWfpUdpMessage(
     const std::uint8_t* payload,
     std::size_t payloadLength,
     const std::vector<std::uint8_t>& redirectRecord,
+    const std::vector<std::uint8_t>& redirectContext,
     DWORD* bytesSent) noexcept {
     if (bytesSent != nullptr) *bytesSent = 0;
     if (socket == INVALID_SOCKET) return WSAENOTSOCK;
     if (sendMessage == nullptr || destination == nullptr ||
         (payload == nullptr && payloadLength != 0) ||
         payloadLength > 65507 ||
-        redirectRecord.size() > kMaximumWfpUdpRedirectRecordSize) {
+        redirectRecord.size() > kMaximumWfpUdpRedirectRecordSize ||
+        redirectContext.size() > kMaximumWfpUdpRedirectRecordSize) {
         return WSAEINVAL;
     }
     if ((destination->sa_family == AF_INET &&
@@ -126,22 +148,35 @@ int SendWfpUdpMessage(
     message.dwBufferCount = 1;
 
     std::vector<char> controlBuffer;
-    if (!redirectRecord.empty()) {
+    if (!redirectRecord.empty() || !redirectContext.empty()) {
+        const std::size_t controlLength =
+            (redirectRecord.empty() ? 0 : WSA_CMSG_SPACE(redirectRecord.size())) +
+            (redirectContext.empty() ? 0 : WSA_CMSG_SPACE(redirectContext.size()));
         try {
-            controlBuffer.resize(WSA_CMSG_SPACE(redirectRecord.size()));
+            controlBuffer.resize(controlLength);
         } catch (...) {
             return WSA_NOT_ENOUGH_MEMORY;
         }
         message.Control.buf = controlBuffer.data();
         message.Control.len = static_cast<ULONG>(controlBuffer.size());
         WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(&message);
-        if (control == nullptr) return WSAEINVAL;
-        control->cmsg_level = destination->sa_family == AF_INET
-            ? IPPROTO_IP : IPPROTO_IPV6;
-        control->cmsg_type = IP_CONNECTION_REDIRECT_RECORD;
-        control->cmsg_len = WSA_CMSG_LEN(redirectRecord.size());
-        std::memcpy(WSA_CMSG_DATA(control), redirectRecord.data(),
-            redirectRecord.size());
+        if (!redirectRecord.empty()) {
+            if (control == nullptr) return WSAEINVAL;
+            control->cmsg_level = IPPROTO_IP;
+            control->cmsg_type = IP_WFP_REDIRECT_RECORDS;
+            control->cmsg_len = WSA_CMSG_LEN(redirectRecord.size());
+            std::memcpy(WSA_CMSG_DATA(control), redirectRecord.data(),
+                redirectRecord.size());
+            control = WSA_CMSG_NXTHDR(&message, control);
+        }
+        if (!redirectContext.empty()) {
+            if (control == nullptr) return WSAEINVAL;
+            control->cmsg_level = IPPROTO_IP;
+            control->cmsg_type = IP_WFP_REDIRECT_CONTEXT;
+            control->cmsg_len = WSA_CMSG_LEN(redirectContext.size());
+            std::memcpy(WSA_CMSG_DATA(control), redirectContext.data(),
+                redirectContext.size());
+        }
     }
 
     DWORD localBytesSent = 0;

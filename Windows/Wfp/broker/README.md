@@ -66,6 +66,6 @@ The association registry is internally synchronized so control-session workers a
 ## WFP non-TCP redirect-record handling
 
 - Windows delivers the redirect record for a non-TCP flow on the flow-creating datagram as an ancillary `IP_CONNECTION_REDIRECT_RECORD` control message.
-- The broker resolves the Winsock `WSARecvMsg` and `WSASendMsg` extension functions, extracts and bounds the first-packet record, and can attach it to the corresponding outbound UDP message.
+- The broker resolves the Winsock `WSARecvMsg` and `WSASendMsg` extension functions, extracts and bounds both first-packet redirect records and callout context, and can attach both to the corresponding outbound UDP message.
 - Subsequent datagrams are allowed to omit the record; duplicate, malformed, empty, and oversized records are rejected.
 - This is the ancillary-data protocol layer only. It does not yet create UDP flow mappings, forward payloads to Xray/Hysteria2, or enable UDP WFP filters.

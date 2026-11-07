@@ -453,31 +453,48 @@ void TestSocks5UdpSocketOwnership() {
 
 void TestWfpUdpRedirectRecordAncillaryData() {
     using namespace furious::wfp::broker;
-    std::vector<std::uint8_t> extracted;
+    std::vector<std::uint8_t> extractedRecord;
+    std::vector<std::uint8_t> extractedContext;
     WSAMSG message{};
-    assert(ExtractWfpUdpRedirectRecord(message, extracted) ==
+    assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
         WfpUdpRedirectRecordResult::NotPresent);
-    assert(extracted.empty());
+    assert(ExtractWfpUdpRedirectContext(message, extractedContext) ==
+        WfpUdpRedirectRecordResult::NotPresent);
+    assert(extractedRecord.empty() && extractedContext.empty());
 
     const std::uint8_t record[] = {0x10, 0x20, 0x30, 0x40, 0x50};
-    std::vector<char> controlBuffer(WSA_CMSG_SPACE(sizeof(record)));
+    const std::uint8_t context[] = {0xA1, 0xB2, 0xC3};
+    const std::size_t controlLength =
+        WSA_CMSG_SPACE(sizeof(record)) + WSA_CMSG_SPACE(sizeof(context));
+    std::vector<char> controlBuffer(controlLength);
     message.Control.buf = controlBuffer.data();
     message.Control.len = static_cast<ULONG>(controlBuffer.size());
     WSACMSGHDR* header = WSA_CMSG_FIRSTHDR(&message);
     assert(header != nullptr);
     header->cmsg_level = IPPROTO_IP;
-    header->cmsg_type = IP_CONNECTION_REDIRECT_RECORD;
+    header->cmsg_type = IP_WFP_REDIRECT_RECORDS;
     header->cmsg_len = WSA_CMSG_LEN(sizeof(record));
     std::memcpy(WSA_CMSG_DATA(header), record, sizeof(record));
-    assert(ExtractWfpUdpRedirectRecord(message, extracted) ==
+    WSACMSGHDR* contextHeader = WSA_CMSG_NXTHDR(&message, header);
+    assert(contextHeader != nullptr);
+    contextHeader->cmsg_level = IPPROTO_IP;
+    contextHeader->cmsg_type = IP_WFP_REDIRECT_CONTEXT;
+    contextHeader->cmsg_len = WSA_CMSG_LEN(sizeof(context));
+    std::memcpy(WSA_CMSG_DATA(contextHeader), context, sizeof(context));
+
+    assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
         WfpUdpRedirectRecordResult::Present);
-    assert(extracted.size() == sizeof(record));
-    assert(std::memcmp(extracted.data(), record, sizeof(record)) == 0);
+    assert(extractedRecord.size() == sizeof(record));
+    assert(std::memcmp(extractedRecord.data(), record, sizeof(record)) == 0);
+    assert(ExtractWfpUdpRedirectContext(message, extractedContext) ==
+        WfpUdpRedirectRecordResult::Present);
+    assert(extractedContext.size() == sizeof(context));
+    assert(std::memcmp(extractedContext.data(), context, sizeof(context)) == 0);
 
     header->cmsg_len = 0;
-    assert(ExtractWfpUdpRedirectRecord(message, extracted) ==
+    assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
         WfpUdpRedirectRecordResult::InvalidMessage);
-    assert(extracted.empty());
+    assert(extractedRecord.empty());
 
     message.Control.buf = nullptr;
     message.Control.len = 0;
