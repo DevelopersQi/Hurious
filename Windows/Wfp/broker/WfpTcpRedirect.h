@@ -35,11 +35,17 @@ bool BuildSocks5ConnectRequest(
     const FURIOUS_WFP_REDIRECT_CONTEXT& context,
     std::vector<std::uint8_t>& output) noexcept;
 
+using ActiveSocketRegister = bool(*)(void*, SOCKET) noexcept;
+using ActiveSocketUnregister = void(*)(void*, SOCKET) noexcept;
+
 SOCKET OpenSocks5Tunnel(
     const sockaddr* socksAddress,
     int socksAddressLength,
     const RedirectedTcpConnection& redirected,
-    int* errorCode) noexcept;
+    int* errorCode,
+    ActiveSocketRegister registerSocket = nullptr,
+    ActiveSocketUnregister unregisterSocket = nullptr,
+    void* callbackContext = nullptr) noexcept;
 
 int RelayBidirectional(
     SOCKET clientSocket,
