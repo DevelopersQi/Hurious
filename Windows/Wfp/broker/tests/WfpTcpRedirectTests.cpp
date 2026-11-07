@@ -1,5 +1,7 @@
 #include "../WfpTcpRedirect.h"
 #include "../WfpSocks5Udp.h"
+#include "../WfpSocks5UdpAssociation.h"
+#include <chrono>
 
 #include <cassert>
 #include <cstdint>
@@ -260,12 +262,48 @@ void TestSocks5UdpParser() {
 
 }
 
+void TestSocks5UdpAssociationLifecycle() {
+    using namespace furious::wfp::broker;
+    using Clock = Socks5UdpAssociation::Clock;
+    const auto t = Clock::time_point{} + std::chrono::seconds(10);
+    Socks5UdpEndpoint peer{};
+    peer.family = Socks5UdpEndpointFamily::Ipv4;
+    peer.address[0]=192; peer.address[2]=2; peer.address[3]=7; peer.port=51000;
+    auto client=peer; client.port=62000;
+    Socks5UdpAssociation a;
+    assert(a.Start(peer, 0, std::chrono::seconds(30), 1200, t));
+    auto spoof=client; spoof.address[3]=8;
+    assert(a.AuthorizeClientDatagram(spoof, 10, t)==Socks5UdpAssociationResult::SourceAddressMismatch);
+    assert(!a.HasBoundClient());
+    assert(a.AuthorizeClientDatagram(client, 1201, t)==Socks5UdpAssociationResult::DatagramTooLarge);
+    assert(a.AuthorizeClientDatagram(client, 10, t)==Socks5UdpAssociationResult::Accepted);
+    assert(a.HasBoundClient() && a.BoundClient().port==62000);
+    auto changed=client; changed.port=62001;
+    assert(a.AuthorizeClientDatagram(changed, 10, t+std::chrono::seconds(1))==
+        Socks5UdpAssociationResult::SourcePortMismatch);
+    assert(a.IsActive(t+std::chrono::seconds(29)));
+    assert(!a.IsActive(t+std::chrono::seconds(30)));
+    assert(a.AuthorizeClientDatagram(client, 10, t+std::chrono::seconds(30))==
+        Socks5UdpAssociationResult::Inactive);
+    assert(a.Start(peer, 62000, std::chrono::seconds(5), 512, t));
+    assert(a.AuthorizeClientDatagram(client, 10, t)==Socks5UdpAssociationResult::Accepted);
+    a.OnControlClosed();
+    assert(!a.IsActive(t) && a.MaximumDatagramLength()==0);
+    Socks5UdpEndpoint peer6{}; peer6.family=Socks5UdpEndpointFamily::Ipv6;
+    peer6.address[0]=0x20; peer6.address[1]=1; peer6.address[15]=1;
+    auto client6=peer6; client6.port=53000;
+    assert(a.Start(peer6, 0, std::chrono::seconds(5), 1400, t));
+    assert(a.AuthorizeClientDatagram(client6, 64, t)==Socks5UdpAssociationResult::Accepted);
+    assert(!a.Start(peer6, 0, std::chrono::milliseconds(0), 100, t));
+}
+
 void TestBrokerServerLifecycle();
 void TestBrokerConcurrentStartStopIsSerialized();
 void TestBrokerStopsWhileAcceptingConnections();
 
 int main() {
     TestSocks5UdpParser();
+    TestSocks5UdpAssociationLifecycle();
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
