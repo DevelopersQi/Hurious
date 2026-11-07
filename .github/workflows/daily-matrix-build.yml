@@ -711,14 +711,22 @@ jobs:
       - name: Set up NuGet for the Windows WFP driver
         uses: NuGet/setup-nuget@v2
 
+      - name: Set up MSVC environment for the Windows WFP service
+        if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Build and test Windows 10 x64 WFP service
         if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
         shell: pwsh
         run: |
-          cmake -S Windows/Wfp/service -B build/wfp-service -G 'Visual Studio 18 2026' -A x64 -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-          cmake --build build/wfp-service --config Release --parallel
-          ctest --test-dir build/wfp-service -C Release --output-on-failure
-          $service = Get-ChildItem build/wfp-service -Filter FuriousWfpService.exe -Recurse | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          # Ninja is supported by the runner's CMake even when its Visual Studio
+          # generator list lags behind the installed Visual Studio toolset.
+          cmake -S Windows/Wfp/service -B build/wfp-service -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build/wfp-service --parallel
+          ctest --test-dir build/wfp-service --output-on-failure
+          $service = Get-ChildItem build/wfp-service -Filter FuriousWfpService.exe -Recurse | Select-Object -First 1
           if ($null -eq $service) { throw 'WFP service build did not produce FuriousWfpService.exe' }
           Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_SERVICE_BINARY=$($service.FullName)" -Encoding utf8
           Write-Host "WFP service selected for ZIP: $($service.FullName)"
