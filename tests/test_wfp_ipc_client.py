@@ -14,6 +14,8 @@ from Furious.Service.WfpIpcClient import (
     COMMAND_SET_POLICY,
     COMMAND_CLEAR_POLICY,
     COMMAND_STOP_BROKER,
+    COMMAND_START_UDP_BROKER,
+    COMMAND_STOP_UDP_BROKER,
     IPC_MAGIC,
     IPC_VERSION,
     REDIRECT_FLAG_IPV4,
@@ -40,13 +42,17 @@ class _Transport:
         magic, version, header_size, total_size, command, request_id = (
             struct.unpack("<IHHIIQ", request[:24])
         )
-        broker_pid = 5678 if command == COMMAND_START_BROKER else 0
-        port_v4 = 32001 if command == COMMAND_START_BROKER else 0
-        port_v6 = 32002 if command == COMMAND_START_BROKER else 0
+        tcp_start = command == COMMAND_START_BROKER
+        udp_start = command == COMMAND_START_UDP_BROKER
+        broker_pid = 5678 if tcp_start or udp_start else 0
+        port_v4 = 32001 if tcp_start else 0
+        port_v6 = 32002 if tcp_start else 0
+        udp_v4 = 33001 if udp_start else 0
+        udp_v6 = 33002 if udp_start else 0
         response = struct.pack(
-            "<IHHIIQIIIHH",
-            magic, version, 24, 40, command, request_id, self.status, 4,
-            broker_pid, port_v4, port_v6,
+            "<IHHIIQIIIHHHH",
+            magic, version, 24, 44, command, request_id, self.status, 4,
+            broker_pid, port_v4, port_v6, udp_v4, udp_v6,
         )
         return self.response_mutator(response) if self.response_mutator else response
 
@@ -174,8 +180,8 @@ class WfpIpcClientTest(unittest.TestCase):
     def testResponseParserRejectsInconsistentBrokerTelemetry(self):
         request_id = 19
         malformed = struct.pack(
-            "<IHHIIQIIIHH", IPC_MAGIC, IPC_VERSION, 24, 40,
-            COMMAND_STATUS, request_id, 0, 4, 1234, 0, 0,
+            "<IHHIIQIIIHHHH", IPC_MAGIC, IPC_VERSION, 24, 44,
+            COMMAND_STATUS, request_id, 0, 4, 1234, 0, 0, 0, 0,
         )
         with self.assertRaisesRegex(WfpIpcProtocolError, "telemetry"):
             parse_response(malformed, COMMAND_STATUS, request_id)
@@ -183,8 +189,8 @@ class WfpIpcClientTest(unittest.TestCase):
     def testResponseParserRejectsMalformedProtocolHeaders(self):
         request_id = 77
         valid = struct.pack(
-            "<IHHIIQIIIHH",
-            IPC_MAGIC, IPC_VERSION, 24, 40, COMMAND_STATUS, request_id, 0, 1, 0, 0, 0,
+            "<IHHIIQIIIHHHH",
+            IPC_MAGIC, IPC_VERSION, 24, 44, COMMAND_STATUS, request_id, 0, 1, 0, 0, 0, 0, 0,
         )
         corruptions = (
             valid[:0] + struct.pack("<I", 0) + valid[4:],
@@ -227,6 +233,14 @@ class WfpIpcClientTest(unittest.TestCase):
         self.assertEqual(broker.tcp_port_v4, 32001)
         self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
                          COMMAND_START_BROKER)
+        udp = client.startUdpBroker("127.0.0.1", 10808)
+        self.assertEqual(udp.udp_port_v4, 33001)
+        self.assertEqual(udp.udp_port_v6, 33002)
+        self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
+                         COMMAND_START_UDP_BROKER)
+        client.stopUdpBroker()
+        self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
+                         COMMAND_STOP_UDP_BROKER)
         client.stopBroker()
         self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
                          COMMAND_STOP_BROKER)
