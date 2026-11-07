@@ -50,6 +50,12 @@ from Furious.Frozenlib.SystemNetwork import resolvePrimaryAdapterInterfaceName
 from Furious.Service.RuntimeLease import RuntimeEventRouter, RuntimeLease
 from Furious.Service.WfpRuntimeSnapshot import WfpRuntimeSnapshot
 from Furious.Service.WfpIpcController import WfpIpcController
+from Furious.Service.WfpIpcClient import (
+    REDIRECT_FLAG_IPV4,
+    REDIRECT_FLAG_IPV6,
+    REDIRECT_FLAG_TCP,
+    pack_endpoint_config,
+)
 
 from typing import Callable, Tuple, Union
 from dataclasses import dataclass, field
@@ -1116,6 +1122,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._activeTUNBackend = None
         self._wfpRuntimeGeneration = 0
         self._wfpIpcController = None
+        self._wfpBrokerPending = {}
+        self._wfpBrokerEndpoint = None
 
     def _getWfpIpcController(self):
         """Create the background IPC worker only when Windows WFP is needed."""
@@ -1134,33 +1142,106 @@ class ConnectionManager(Mixins.CleanupOnExit):
         elif command == 'status':
             logger.debug('WFP service status request completed')
         elif command == 'start-broker' and result is not None:
+            backend = self._wfpBrokerPending.pop(requestId, None)
+            if backend is None:
+                logger.warning('WFP TCP broker started without a matching runtime request')
+                return
+            self._wfpBrokerEndpoint = (
+                backend,
+                result.broker_process_id,
+                result.tcp_port_v4,
+                result.tcp_port_v6,
+            )
             logger.info(
                 f'WFP TCP broker started: pid={result.broker_process_id}, '
                 f'IPv4={result.tcp_port_v4}, IPv6={result.tcp_port_v6}'
             )
+            self._publishWfpEndpointConfig()
+        elif command == 'start-broker':
+            self._wfpBrokerPending.pop(requestId, None)
+            self._wfpBrokerEndpoint = None
+            if self._wfpIpcController is not None:
+                self._wfpIpcController.clearEndpointConfig()
+        elif command == 'set-endpoint':
+            logger.info('WFP TCP redirect endpoint configuration updated')
         elif command == 'stop-broker':
+            self._wfpBrokerEndpoint = None
             logger.debug('WFP TCP broker stop request completed')
 
     def _startWfpBroker(self, configuration):
-        """Start the service-hosted TCP broker for a ready proxy runtime."""
+        """Start the TCP broker only for a supported socket-owning proxy core."""
         if sys.platform != 'win32':
             return None
-        endpointGetter = getattr(configuration, 'socksProxy', None)
-        if not callable(endpointGetter):
-            logger.debug('active core does not expose a SOCKS inbound endpoint')
-            return None
-        endpoint = str(endpointGetter() or '').strip()
-        if not endpoint:
-            logger.warning('WFP TCP broker skipped: no local SOCKS inbound is configured')
-            return None
+
         try:
+            factory = getPluginRegistry().factoryForConfig(configuration)
+            factoryId = str(getattr(factory, 'factoryId', '')).casefold()
+            backend = {
+                'official.xray': 1,
+                'official.hysteria2': 2,
+            }.get(factoryId)
+            if backend is None:
+                logger.debug(
+                    f'WFP TCP broker skipped for unsupported backend: {factoryId or "unknown"}'
+                )
+                return None
+
+            endpointGetter = getattr(configuration, 'socksProxy', None)
+            if not callable(endpointGetter):
+                logger.debug('active core does not expose a SOCKS inbound endpoint')
+                return None
+            endpoint = str(endpointGetter() or '').strip()
+            if not endpoint:
+                logger.warning('WFP TCP broker skipped: no local SOCKS inbound is configured')
+                return None
+
             host, port = parseHostPort(endpoint)
             controller = self._getWfpIpcController()
             controller.queryStatus()
-            return controller.startBroker(host, int(port))
+            requestId = controller.startBroker(host, int(port))
+            if requestId is not None:
+                self._wfpBrokerPending[requestId] = backend
+            return requestId
         except Exception as error:
             logger.warning(f'WFP TCP broker start could not be queued: {error}')
             return None
+
+    def _publishWfpEndpointConfig(self):
+        """Publish broker telemetry and the current live-core PID snapshot atomically."""
+        if self._wfpIpcController is None or self._wfpBrokerEndpoint is None:
+            return None
+
+        backend, brokerPid, tcpPortV4, tcpPortV6 = self._wfpBrokerEndpoint
+        snapshot = self.wfpRuntimeSnapshot
+        if not snapshot.excluded_process_ids:
+            self._wfpIpcController.clearEndpointConfig()
+            return None
+
+        flags = REDIRECT_FLAG_TCP
+        if tcpPortV4:
+            flags |= REDIRECT_FLAG_IPV4
+        if tcpPortV6:
+            flags |= REDIRECT_FLAG_IPV6
+        if not (flags & (REDIRECT_FLAG_IPV4 | REDIRECT_FLAG_IPV6)):
+            self._wfpIpcController.clearEndpointConfig()
+            return None
+
+        try:
+            payload = pack_endpoint_config(
+                backend=backend,
+                flags=flags,
+                proxy_process_id=brokerPid,
+                policy_generation=snapshot.generation,
+                tcp_port_v4=tcpPortV4,
+                tcp_port_v6=tcpPortV6,
+                excluded_process_ids=snapshot.excluded_process_ids,
+            )
+        except (TypeError, ValueError) as error:
+            logger.error(f'WFP endpoint configuration rejected locally: {error}')
+            self._wfpIpcController.clearEndpointConfig()
+            return None
+
+        return self._wfpIpcController.setEndpointConfig(payload)
 
     def _advanceWfpRuntimeGeneration(self):
         """Advance the identity of the committed runtime ownership snapshot."""
@@ -1902,9 +1983,13 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         self._leases.remove(lease)
         self._advanceWfpRuntimeGeneration()
-        if not self.wfpExcludedProcessIds and self._wfpIpcController is not None:
+        if self._wfpIpcController is not None:
+            # Any core exit invalidates the old exclusion snapshot. Disable
+            # redirection before the next runtime publishes a fresh endpoint.
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
+        self._wfpBrokerEndpoint = None
+        self._wfpBrokerPending.clear()
 
     def stopAll(self):
         """Stop every managed proxy-core and TUN runtime."""
@@ -1920,6 +2005,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         if self._wfpIpcController is not None:
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
+        self._wfpBrokerEndpoint = None
+        self._wfpBrokerPending.clear()
 
     def cleanup(self):
         """Release resources owned by the core manager."""
