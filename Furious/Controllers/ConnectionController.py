@@ -241,7 +241,10 @@ class ConnectionController(QtCore.QObject):
 
         profile = self._activeProfile
         try:
-            factory = getPluginRegistry().factoryForConfig(profile)
+            runtimeConfiguration = (
+                profile.connection if isinstance(profile, ServerProfile) else profile
+            )
+            factory = getPluginRegistry().factoryForConfig(runtimeConfiguration)
             factoryId = str(getattr(factory, 'factoryId', '')).casefold()
             backend = {
                 'official.xray': 1,

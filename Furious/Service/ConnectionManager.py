@@ -1298,7 +1298,12 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpBrokerPending.clear()
             self._wfpEndpointPending.clear()
 
-            factory = getPluginRegistry().factoryForConfig(configuration)
+            runtimeConfiguration = (
+                configuration.connection
+                if isinstance(configuration, ServerProfile)
+                else configuration
+            )
+            factory = getPluginRegistry().factoryForConfig(runtimeConfiguration)
             factoryId = str(getattr(factory, 'factoryId', '')).casefold()
             backend = {
                 'official.xray': 1,
