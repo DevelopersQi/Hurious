@@ -407,8 +407,17 @@ void TestUdpFlowManagerIpv6ScopeIdentity() {
     source.sin6_port = htons(53001);
     source.sin6_scope_id = 7;
 
-    std::uint64_t firstFlow = 0;
+    // Link-local source endpoints without an interface zone are ambiguous.
+    auto unscoped = source;
+    unscoped.sin6_scope_id = 0;
+    std::uint64_t rejectedFlow = 0;
     const auto now = WfpUdpFlowManager::Clock::now();
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&unscoped), sizeof(unscoped),
+        context, record, now, rejectedFlow) == WfpUdpFlowCreateResult::InvalidSource);
+    assert(rejectedFlow == 0);
+
+    std::uint64_t firstFlow = 0;
     assert(manager.RegisterFirstDatagram(
         reinterpret_cast<const sockaddr*>(&source), sizeof(source),
         context, record, now, firstFlow) == WfpUdpFlowCreateResult::Created);

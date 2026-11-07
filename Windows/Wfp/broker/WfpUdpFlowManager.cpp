@@ -31,6 +31,11 @@ bool WfpUdpFlowManager::IsValidSourceEndpoint(
         if (endpointLength != static_cast<int>(sizeof(sockaddr_in6))) return false;
         const auto* address = reinterpret_cast<const sockaddr_in6*>(endpoint);
         if (address->sin6_port == 0) return false;
+        const auto* bytes = address->sin6_addr.u.Byte;
+        const bool linkLocal = bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80;
+        // A link-local IPv6 endpoint is ambiguous without its interface zone.
+        // Reject it rather than accidentally sharing a relay across interfaces.
+        if (linkLocal && address->sin6_scope_id == 0) return false;
         bool unspecified = true;
         for (std::uint8_t byte : address->sin6_addr.u.Byte) {
             if (byte != 0) { unspecified = false; break; }
