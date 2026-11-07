@@ -6,7 +6,7 @@ bool Socks5UdpAssociation::IsUsableUnicastAddress(
     if (endpoint.family == Socks5UdpEndpointFamily::Ipv4) {
         const auto* a = endpoint.address.data();
         // Reject unspecified 0/8, multicast, and limited broadcast.
-        return a[0] != 0 && (a[0] < 224 || a[0] > 239) &&
+        return a[0] != 0 && a[0] < 224 &&
             !(a[0] == 255 && a[1] == 255 && a[2] == 255 && a[3] == 255);
     }
     if (endpoint.family == Socks5UdpEndpointFamily::Ipv6) {

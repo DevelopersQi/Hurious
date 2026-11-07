@@ -304,6 +304,9 @@ void TestSocks5UdpAssociationLifecycle() {
     auto multicast4 = peer;
     multicast4.address[0] = 239;
     assert(!a.Start(multicast4, 0, std::chrono::seconds(5), 100, t));
+    auto reserved4 = peer;
+    reserved4.address[0] = 240;
+    assert(!a.Start(reserved4, 0, std::chrono::seconds(5), 100, t));
     auto unspecified6 = peer6;
     unspecified6.address = {};
     assert(!a.Start(unspecified6, 0, std::chrono::seconds(5), 100, t));
