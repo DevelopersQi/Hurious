@@ -54,7 +54,10 @@ from Furious.Service.WfpRuntimeSnapshot import (
 )
 from Furious.Service.WfpIpcController import WfpIpcController
 from Furious.Service.WfpIpcClient import pack_application_routing_policy
-from Furious.Service.WfpEndpointConfig import build_endpoint_config
+from Furious.Service.WfpEndpointConfig import (
+    UDP_WFP_REDIRECT_END_TO_END_VERIFIED,
+    build_endpoint_config,
+)
 
 from typing import Callable, Tuple, Union
 from dataclasses import dataclass, field
@@ -1437,7 +1440,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 )
                 return None
 
-            udpSupported = False
+            udpSupported = UDP_WFP_REDIRECT_END_TO_END_VERIFIED
             if factoryId == 'official.hysteria2':
                 socksConfig = runtimeConfiguration.get('socks5', {})
                 if not isinstance(socksConfig, dict):
@@ -1452,7 +1455,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     )
                     return None
                 endpoint = str(socksConfig.get('listen', '') or '').strip()
-                udpSupported = not bool(socksConfig.get('disable_udp', False))
+                udpSupported = udpSupported and not bool(socksConfig.get('disable_udp', False))
             else:
                 endpointGetter = getattr(runtimeConfiguration, 'socksProxy', None)
                 if not callable(endpointGetter):
@@ -1476,7 +1479,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                             'WFP TCP broker requires a no-auth Xray SOCKS5 inbound'
                         )
                         return None
-                    udpSupported = isinstance(settings, dict) and bool(settings.get('udp', False))
+                    udpSupported = udpSupported and isinstance(settings, dict) and bool(settings.get('udp', False))
                     break
 
             if not endpoint:

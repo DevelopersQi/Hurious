@@ -1,5 +1,9 @@
 """Build validated WFP endpoint payloads from live broker/runtime state."""
 
+# Production UDP WFP filters stay disabled until a real end-to-end
+# application -> WFP redirect -> UDP broker -> SOCKS5 relay test passes.
+UDP_WFP_REDIRECT_END_TO_END_VERIFIED = False
+
 from Furious.Service.WfpIpcClient import (
     REDIRECT_FLAG_IPV4,
     REDIRECT_FLAG_IPV6,
