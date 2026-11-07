@@ -262,7 +262,7 @@ int main() {
     // UDP endpoint activation is rejected until a live broker with matching
     // listener ports is running; this prevents redirecting into a dead port.
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
-                          &endpoint, sizeof(endpoint)) == ERROR_SERVICE_NOT_ACTIVE);
+                          &endpoint, sizeof(endpoint)) == ERROR_INVALID_HANDLE);
     auto tcpOnlyEndpoint = endpoint;
     tcpOnlyEndpoint.Flags &= ~FURIOUS_WFP_REDIRECT_FLAG_UDP;
     tcpOnlyEndpoint.UdpPortV4 = 0;
@@ -271,7 +271,7 @@ int main() {
     auto udpFlagOnlyEndpoint = endpoint;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
-          ERROR_SERVICE_NOT_ACTIVE);
+          ERROR_INVALID_HANDLE);
     auto udpPortOnlyEndpoint = tcpOnlyEndpoint;
     udpPortOnlyEndpoint.UdpPortV6 = 10809;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,

@@ -26,6 +26,12 @@ class _FakeClient:
     def stopBroker(self):
         return self._record("stop-broker")
 
+    def startUdpBroker(self, host, port, listen_ipv4=True, listen_ipv6=True):
+        return self._record("start-udp-broker", host, port, listen_ipv4, listen_ipv6)
+
+    def stopUdpBroker(self):
+        return self._record("stop-udp-broker")
+
     def setEndpointConfig(self, payload):
         return self._record("set-endpoint", bytes(payload))
 
@@ -134,6 +140,38 @@ class WfpIpcWorkerTest(unittest.TestCase):
         self.assertEqual(
             [entry[2] for entry in completed],
             ["start-broker-ok", "set-endpoint-ok", "stop-broker-ok"],
+        )
+
+    def test_forwards_udp_broker_lifecycle_commands(self):
+        calls = []
+        lock = Lock()
+        completed = []
+        done = Event()
+
+        def on_complete(request_id, command, result, error):
+            completed.append((request_id, command, result, error))
+            if len(completed) == 2:
+                done.set()
+
+        worker = _WfpIpcWorker(lambda: _FakeClient(calls, lock), on_complete)
+        try:
+            worker.submit(1, "start-udp-broker", ("127.0.0.1", 10808, True, False))
+            worker.submit(2, "stop-udp-broker")
+            self.assertTrue(done.wait(2))
+        finally:
+            worker.close()
+
+        self.assertEqual(
+            [entry[0] for entry in calls],
+            ["start-udp-broker", "stop-udp-broker"],
+        )
+        self.assertEqual(
+            [entry[2] for entry in calls],
+            [("127.0.0.1", 10808, True, False), ()],
+        )
+        self.assertEqual(
+            [entry[2] for entry in completed],
+            ["start-udp-broker-ok", "stop-udp-broker-ok"],
         )
 
     def test_close_drains_accepted_requests_before_worker_exit(self):
