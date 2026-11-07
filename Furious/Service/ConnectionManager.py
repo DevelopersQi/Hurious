@@ -48,7 +48,10 @@ from Furious.Service.DnsResolver import DnsResolver
 from Furious.Core.Tun2socks import Tun2socks
 from Furious.Frozenlib.SystemNetwork import resolvePrimaryAdapterInterfaceName
 from Furious.Service.RuntimeLease import RuntimeEventRouter, RuntimeLease
-from Furious.Service.WfpRuntimeSnapshot import WfpRuntimeSnapshot
+from Furious.Service.WfpRuntimeSnapshot import (
+    WfpRuntimeSnapshot,
+    collect_live_proxy_process_ids,
+)
 from Furious.Service.WfpIpcController import WfpIpcController
 from Furious.Service.WfpIpcClient import pack_application_routing_policy
 from Furious.Service.WfpEndpointConfig import build_endpoint_config
@@ -1461,18 +1464,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
         Hysteria2. PID values are sampled on demand so stopped/restarted
         runtimes cannot leave a cached stale process identifier here.
         """
-        processIds = set()
-
-        for runtime in self.runtimes:
-            if isinstance(runtime, Tun2socks):
-                continue
-
-            processId = getattr(runtime, 'processId', None)
-
-            if isinstance(processId, int) and processId > 0:
-                processIds.add(processId)
-
-        return tuple(sorted(processIds))
+        return collect_live_proxy_process_ids(
+            self.runtimes,
+            is_excluded_runtime=lambda runtime: isinstance(runtime, Tun2socks),
+        )
 
     def _connectionDnsResolver(self) -> DnsResolver:
         """Return the resolver owned by this connection-manager lifecycle."""
