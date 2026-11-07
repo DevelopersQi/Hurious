@@ -78,4 +78,23 @@ if(BUILD_TESTING)
     add_test(NAME FuriousWfpNamedPipeIntegrationTests
         COMMAND FuriousWfpNamedPipeIntegrationTests)
     set_tests_properties(FuriousWfpNamedPipeIntegrationTests PROPERTIES TIMEOUT 10)
+
+    # Exercise the TCP redirect metadata and broker lifecycle in the same
+    # Windows CI job that builds the service. The standalone broker project
+    # already defines these tests, but the service workflow previously only
+    # compiled the broker library without running them.
+    add_executable(FuriousWfpTcpBrokerTests
+        ../broker/tests/WfpTcpRedirectTests.cpp
+        ../broker/tests/WfpTcpBrokerServerTests.cpp
+    )
+    target_compile_features(FuriousWfpTcpBrokerTests PRIVATE cxx_std_17)
+    target_compile_definitions(FuriousWfpTcpBrokerTests PRIVATE
+        WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
+    )
+    target_link_libraries(FuriousWfpTcpBrokerTests PRIVATE FuriousWfpTcpBroker)
+    if(MSVC)
+        target_compile_options(FuriousWfpTcpBrokerTests PRIVATE /W4 /WX /permissive-)
+    endif()
+    add_test(NAME FuriousWfpTcpBrokerTests COMMAND FuriousWfpTcpBrokerTests)
+    set_tests_properties(FuriousWfpTcpBrokerTests PROPERTIES TIMEOUT 15)
 endif()
