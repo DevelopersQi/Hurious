@@ -267,6 +267,33 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
         const auto& datagram = pending->second.front();
         const auto sent = relay->second->SendClientPayload(
             datagram.empty() ? nullptr : datagram.data(), datagram.size(), errorCode);
+        if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
+            errorCode != nullptr && *errorCode == WSAEWOULDBLOCK) {
+            // Handshake buffering transitions atomically to the writable-event
+            // queue. Preserve the unsent suffix in FIFO order and keep the
+            // combined global byte budget unchanged.
+            try {
+                auto outbound = outboundDatagrams_.try_emplace(flowId);
+                if (!outbound.second) {
+                    CloseFlow(flowId);
+                    return WfpUdpFlowRelayRegistryResult::SendFailed;
+                }
+                while (!pending->second.empty()) {
+                    auto& next = pending->second.front();
+                    outbound->first->second.push_back(std::move(next));
+                    const auto size = outbound->first->second.back().size();
+                    pendingDatagramBytes_ = size > pendingDatagramBytes_
+                        ? 0 : pendingDatagramBytes_ - size;
+                    outboundDatagramBytes_ += size;
+                    pending->second.pop_front();
+                }
+            } catch (...) {
+                CloseFlow(flowId);
+                return WfpUdpFlowRelayRegistryResult::SendFailed;
+            }
+            pendingDatagrams_.erase(pending);
+            return WfpUdpFlowRelayRegistryResult::Pending;
+        }
         if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
             CloseFlow(flowId);
             return sent == WfpSocks5UdpFlowRelayResult::ControlClosed
@@ -408,11 +435,13 @@ bool WfpUdpFlowRelayRegistry::QueuePendingDatagram(
     std::uint64_t flowId, const std::uint8_t* payload,
     std::size_t payloadLength) noexcept {
     auto found = pendingDatagrams_.find(flowId);
+    const std::size_t usedBytes = pendingDatagramBytes_ + outboundDatagramBytes_;
     if (found == pendingDatagrams_.end() ||
         found->second.size() >= kMaximumPendingDatagramsPerFlow ||
         payloadLength > 65507 ||
         pendingDatagramBytes_ > kMaximumPendingDatagramBytes ||
-        payloadLength > kMaximumPendingDatagramBytes - pendingDatagramBytes_ ||
+        outboundDatagramBytes_ > kMaximumPendingDatagramBytes - pendingDatagramBytes_ ||
+        payloadLength > kMaximumPendingDatagramBytes - usedBytes ||
         (payloadLength != 0 && payload == nullptr)) return false;
     try {
         std::vector<std::uint8_t> datagram;
@@ -441,11 +470,13 @@ bool WfpUdpFlowRelayRegistry::QueueOutboundDatagram(
     std::uint64_t flowId, const std::uint8_t* payload,
     std::size_t payloadLength) noexcept {
     auto found = outboundDatagrams_.find(flowId);
+    const std::size_t usedBytes = pendingDatagramBytes_ + outboundDatagramBytes_;
     if (found == outboundDatagrams_.end() ||
         found->second.size() >= kMaximumPendingDatagramsPerFlow ||
         payloadLength > 65507 ||
-        outboundDatagramBytes_ > kMaximumPendingDatagramBytes ||
-        payloadLength > kMaximumPendingDatagramBytes - outboundDatagramBytes_ ||
+        pendingDatagramBytes_ > kMaximumPendingDatagramBytes ||
+        outboundDatagramBytes_ > kMaximumPendingDatagramBytes - pendingDatagramBytes_ ||
+        payloadLength > kMaximumPendingDatagramBytes - usedBytes ||
         (payloadLength != 0 && payload == nullptr)) return false;
     try {
         std::vector<std::uint8_t> datagram;
