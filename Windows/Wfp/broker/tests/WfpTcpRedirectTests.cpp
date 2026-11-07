@@ -76,6 +76,84 @@ void TestRejectsInvalidOrUdpContext() {
     assert(request.empty());
 }
 
+struct SocketRegistrationProbe final {
+    int registerCalls = 0;
+    int unregisterCalls = 0;
+};
+
+bool RejectSocketRegistration(void* context, SOCKET) noexcept {
+    auto* probe = static_cast<SocketRegistrationProbe*>(context);
+    ++probe->registerCalls;
+    return false;
+}
+
+void CountSocketUnregistration(void* context, SOCKET) noexcept {
+    auto* probe = static_cast<SocketRegistrationProbe*>(context);
+    ++probe->unregisterCalls;
+}
+
+void TestTunnelRegistrationFailureCancelsBeforeConnect() {
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socksAddress.sin_port = htons(10808);
+
+    furious::wfp::broker::RedirectedTcpConnection redirected;
+    redirected.context = MakeContext(
+        FURIOUS_WFP_REDIRECT_FAMILY_V4,
+        FURIOUS_WFP_REDIRECT_PROTOCOL_TCP);
+    redirected.context.OriginalAddress[0] = 192;
+    redirected.context.OriginalAddress[1] = 0;
+    redirected.context.OriginalAddress[2] = 2;
+    redirected.context.OriginalAddress[3] = 1;
+    redirected.redirectRecords.push_back(0x01);
+
+    SocketRegistrationProbe probe;
+    int error = 0;
+    const SOCKET upstream = furious::wfp::broker::OpenSocks5Tunnel(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress),
+        redirected,
+        &error,
+        &RejectSocketRegistration,
+        &CountSocketUnregistration,
+        &probe);
+
+    assert(upstream == INVALID_SOCKET);
+    assert(error == WSA_OPERATION_ABORTED);
+    assert(probe.registerCalls == 1);
+    assert(probe.unregisterCalls == 0);
+}
+
+void TestTunnelRejectsUnpairedCancellationCallbacks() {
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socksAddress.sin_port = htons(10808);
+
+    furious::wfp::broker::RedirectedTcpConnection redirected;
+    redirected.context = MakeContext(
+        FURIOUS_WFP_REDIRECT_FAMILY_V4,
+        FURIOUS_WFP_REDIRECT_PROTOCOL_TCP);
+    redirected.redirectRecords.push_back(0x01);
+
+    SocketRegistrationProbe probe;
+    int error = 0;
+    const SOCKET upstream = furious::wfp::broker::OpenSocks5Tunnel(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress),
+        redirected,
+        &error,
+        &RejectSocketRegistration,
+        nullptr,
+        &probe);
+
+    assert(upstream == INVALID_SOCKET);
+    assert(error == WSAEINVAL);
+    assert(probe.registerCalls == 0);
+    assert(probe.unregisterCalls == 0);
+}
+
 } // namespace
 
 void TestBrokerServerLifecycle();
@@ -86,6 +164,8 @@ int main() {
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
+    TestTunnelRegistrationFailureCancelsBeforeConnect();
+    TestTunnelRejectsUnpairedCancellationCallbacks();
     TestBrokerServerLifecycle();
     TestBrokerConcurrentStartStopIsSerialized();
     TestBrokerStopsWhileAcceptingConnections();
