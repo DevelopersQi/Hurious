@@ -124,8 +124,8 @@ inline bool IsValidEndpointConfig(
         value.ExcludedProcessCount > FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS ||
         (value.Flags & ~FURIOUS_WFP_REDIRECT_KNOWN_FLAGS) != 0 ||
         (value.Flags & (FURIOUS_WFP_REDIRECT_FLAG_IPV4 |
-                        FURIOUS_WFP_REDIRECT_FLAG_IPV6 |
-                        FURIOUS_WFP_REDIRECT_FLAG_TCP |
+                        FURIOUS_WFP_REDIRECT_FLAG_IPV6)) == 0 ||
+        (value.Flags & (FURIOUS_WFP_REDIRECT_FLAG_TCP |
                         FURIOUS_WFP_REDIRECT_FLAG_UDP)) == 0) {
         return false;
     }

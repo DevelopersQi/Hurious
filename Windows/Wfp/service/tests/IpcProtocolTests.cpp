@@ -233,6 +233,26 @@ int main() {
     endpoint.UdpPortV6 = 10809;
     CHECK(IsValidEndpointConfig(endpoint));
 
+    // The user-mode validator must enforce the same minimum family/transport
+    // requirements as the kernel before an endpoint reaches the driver.
+    auto noAddressFamilyEndpoint = endpoint;
+    noAddressFamilyEndpoint.Flags &=
+        ~(FURIOUS_WFP_REDIRECT_FLAG_IPV4 | FURIOUS_WFP_REDIRECT_FLAG_IPV6);
+    noAddressFamilyEndpoint.TcpPortV4 = 0;
+    noAddressFamilyEndpoint.TcpPortV6 = 0;
+    noAddressFamilyEndpoint.UdpPortV4 = 0;
+    noAddressFamilyEndpoint.UdpPortV6 = 0;
+    CHECK(!IsValidEndpointConfig(noAddressFamilyEndpoint));
+
+    auto noTransportEndpoint = endpoint;
+    noTransportEndpoint.Flags &=
+        ~(FURIOUS_WFP_REDIRECT_FLAG_TCP | FURIOUS_WFP_REDIRECT_FLAG_UDP);
+    noTransportEndpoint.TcpPortV4 = 0;
+    noTransportEndpoint.TcpPortV6 = 0;
+    noTransportEndpoint.UdpPortV4 = 0;
+    noTransportEndpoint.UdpPortV6 = 0;
+    CHECK(!IsValidEndpointConfig(noTransportEndpoint));
+
     // UDP redirect is deliberately unavailable until a UDP relay is implemented.
     // Reject both the protocol flag and stale/nonzero UDP ports at the IPC boundary.
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
