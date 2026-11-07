@@ -46,7 +46,8 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::Open(
         }
         validDestination = !unspecified && context.OriginalAddress[0] != 0xFF;
     }
-    if (!ValidEndpoint(originalClient, originalClientLength) ||
+    if (!ValidEndpoint(socksAddress, socksAddressLength) ||
+        !ValidEndpoint(originalClient, originalClientLength) ||
         redirectRecord.empty() ||
         redirectRecord.size() > kMaximumWfpUdpRedirectRecordSize ||
         !furious::wfp::redirect::IsValidRedirectContext(context) ||
@@ -59,7 +60,9 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::Open(
         if (errorCode) *errorCode = WSAEINVAL;
         return WfpSocks5UdpFlowRelayResult::InvalidArgument;
     }
-    const auto family = originalClient->sa_family == AF_INET
+    // The UDP ASSOCIATE socket must use the SOCKS control peer's address
+    // family; the redirected client endpoint may legitimately be dual-stack.
+    const auto family = socksAddress->sa_family == AF_INET
         ? Socks5UdpEndpointFamily::Ipv4 : Socks5UdpEndpointFamily::Ipv6;
     int error = 0;
     if (udpSocket_.Open(family, &error) != Socks5UdpSocketOpenResult::Opened) {

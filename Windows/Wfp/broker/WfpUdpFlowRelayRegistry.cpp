@@ -175,8 +175,10 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
         CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ControlClosed;
     }
-    if (result != WfpSocks5UdpFlowRelayResult::Ready)
+    if (result != WfpSocks5UdpFlowRelayResult::Ready) {
+        CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ReceiveFailed;
+    }
 
     const auto forwarded = found->second->ForwardUpstreamResponse(
         ingress, sendMessage, response);

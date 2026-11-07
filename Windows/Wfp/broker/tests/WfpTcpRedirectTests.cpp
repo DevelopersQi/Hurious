@@ -865,17 +865,23 @@ void TestSocks5UdpFlowRelayBridge() {
         Socks5UdpDatagramView requestView{};
         assert(ParseSocks5UdpDatagram(packet, static_cast<std::size_t>(packetLength),
             requestView) == Socks5UdpParseResult::Valid);
-        const std::uint8_t target[] = {203, 0, 113, 7};
+        const std::uint8_t target[] = {
+            0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 7
+        };
         const std::uint8_t payload[] = {0xCA, 0xFE, 0xBA, 0xBE};
-        assert(requestView.addressType == Socks5UdpAddressType::Ipv4);
+        assert(requestView.addressType == Socks5UdpAddressType::Ipv6);
         assert(requestView.addressLength == sizeof(target) &&
             std::memcmp(requestView.address, target, sizeof(target)) == 0);
         assert(requestView.port == 443 && requestView.payloadLength == sizeof(payload));
         assert(std::memcmp(requestView.payload, payload, sizeof(payload)) == 0);
 
-        const std::uint8_t wrongTarget[] = {203, 0, 113, 8};
+        const std::uint8_t wrongTarget[] = {
+            0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 8
+        };
         std::vector<std::uint8_t> wrongResponse;
-        assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv6,
             wrongTarget, sizeof(wrongTarget), 443, payload, sizeof(payload),
             wrongResponse) == Socks5UdpBuildResult::Valid);
         assert(sendto(udpRelay, reinterpret_cast<const char*>(wrongResponse.data()),
@@ -884,7 +890,7 @@ void TestSocks5UdpFlowRelayBridge() {
             static_cast<int>(wrongResponse.size()));
 
         std::vector<std::uint8_t> response;
-        assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv6,
             target, sizeof(target), 443, payload, sizeof(payload),
             response) == Socks5UdpBuildResult::Valid);
         assert(sendto(udpRelay, reinterpret_cast<const char*>(response.data()),
@@ -897,17 +903,18 @@ void TestSocks5UdpFlowRelayBridge() {
     });
 
     WfpSocks5UdpFlowRelay bridge;
-    sockaddr_in clientAddress{};
-    clientAddress.sin_family = AF_INET;
-    clientAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    clientAddress.sin_port = htons(40000);
-    auto context = MakeContext(FURIOUS_WFP_REDIRECT_FAMILY_V4,
+    sockaddr_in6 clientAddress{};
+    clientAddress.sin6_family = AF_INET6;
+    clientAddress.sin6_addr = in6addr_loopback;
+    clientAddress.sin6_port = htons(40000);
+    auto context = MakeContext(FURIOUS_WFP_REDIRECT_FAMILY_V6,
         FURIOUS_WFP_REDIRECT_PROTOCOL_UDP);
     context.OriginalPortNetworkOrder = htons(443);
-    context.OriginalAddress[0] = 203;
-    context.OriginalAddress[1] = 0;
-    context.OriginalAddress[2] = 113;
-    context.OriginalAddress[3] = 7;
+    std::memcpy(context.OriginalAddress,
+        std::array<std::uint8_t, 16>{
+            0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 7
+        }.data(), 16);
     const std::vector<std::uint8_t> redirectRecord{0x11, 0x22, 0x33};
     int error = 0;
     assert(bridge.Open(reinterpret_cast<const sockaddr*>(&tcpAddress),
