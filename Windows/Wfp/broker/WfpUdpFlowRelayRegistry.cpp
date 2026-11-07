@@ -438,7 +438,12 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
     // entry swapped into it, so the sweep remains O(n) without skipping flows.
     while (flows_.FindExpiredFrom(now, scanIndex, expiredFlowId)) {
         CloseFlowResources(expiredFlowId);
-        if (!flows_.RemoveAt(scanIndex, expiredFlowId)) break;
+        if (!flows_.RemoveAt(scanIndex, expiredFlowId)) {
+            // Prefer the identity-based fallback if the scan index became
+            // stale. Resources are already closed, so retaining the Flow
+            // entry would leave an unusable identity occupying flow quotas.
+            if (!flows_.Remove(expiredFlowId)) break;
+        }
         ++closed;
     }
     return closed;
