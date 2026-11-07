@@ -27,12 +27,15 @@ Copy-Item -LiteralPath $serviceSource -Destination (Join-Path $installDirectory 
 Copy-Item -LiteralPath $certificateSource -Destination (Join-Path $installDirectory 'FuriousWfpCallout.cer') -Force
 
 $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificateSource)
-$driverSignature = Get-AuthenticodeSignature -FilePath $driverSource
-if ($driverSignature.Status -ne 'Valid' -or $null -eq $driverSignature.SignerCertificate -or $driverSignature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
-    throw 'The WFP driver signature is invalid or does not match the bundled test certificate.'
-}
 Import-Certificate -FilePath $certificateSource -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
 Import-Certificate -FilePath $certificateSource -CertStoreLocation 'Cert:\LocalMachine\TrustedPublisher' | Out-Null
+$driverSignature = Get-AuthenticodeSignature -FilePath $driverSource
+if ($driverSignature.Status -ne 'Valid' -or $null -eq $driverSignature.SignerCertificate -or $driverSignature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+    foreach ($store in @('Root', 'TrustedPublisher')) {
+        Get-ChildItem -Path "Cert:\LocalMachine\$store" | Where-Object Thumbprint -eq $certificate.Thumbprint | Remove-Item -Force
+    }
+    throw 'The WFP driver signature is invalid or does not match the bundled test certificate.'
+}
 
 $bootConfig = (& bcdedit.exe /enum '{current}' 2>&1 | Out-String)
 $testSigningEnabled = $bootConfig -match '(?im)^\s*testsigning\s+Yes\s*$'
