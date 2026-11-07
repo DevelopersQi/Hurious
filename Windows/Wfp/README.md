@@ -54,7 +54,9 @@ WFP application routing is used only when system TUN mode is disabled. In
 full-tunnel mode, WFP Direct permits cannot bypass the installed TUN default
 route; Xray Native TUN continues to use its own process-routing rules. The
 current WFP UI accepts full executable paths and applies Proxy/Direct policy
-through the active Xray or Hysteria2 SOCKS inbound. Only TCP is supported.
+through a configured loopback Xray or Hysteria2 SOCKS inbound. Hysteria2
+must expose its `socks5.listen` endpoint. The broker currently supports
+SOCKS5 no-auth only. Only TCP is supported.
 
 A production redirect path additionally requires:
 - finish UI translation and validate policy changes/rollback for Proxy/Direct rules;

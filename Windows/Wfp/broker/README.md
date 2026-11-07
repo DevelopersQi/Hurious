@@ -19,6 +19,7 @@ long-running broker.
 The code deliberately never opens a direct socket to the original destination.
 The only upstream connection it creates is to the configured local SOCKS5
 inbound, so traffic continues through the selected Xray/Hysteria2 backend.
+Hysteria2 requires an explicit `socks5.listen` endpoint in its client config.
 
 ## Important integration boundary
 

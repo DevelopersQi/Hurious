@@ -1268,7 +1268,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             _('Rules are evaluated from top to bottom. The first matching app rule wins.')
         ))
         layout.addWidget(AppQLabel(
-            _('On Windows with system TUN mode disabled, full executable paths use WFP application routing. Proxy rules currently cover TCP; UDP support is not enabled yet. Xray Native TUN uses its own rules; Hysteria2/Tun2socks full-tunnel per-app routing is not enabled yet.')
+            _('On Windows with system TUN mode disabled, full executable paths use WFP application routing through a configured local SOCKS5 no-auth inbound. Proxy rules currently cover TCP; UDP support is not enabled yet. Xray Native TUN uses its own rules; Hysteria2/Tun2socks full-tunnel per-app routing is not enabled yet.')
         ))
         layout.addLayout(top)
         layout.addWidget(self.table, 1)
