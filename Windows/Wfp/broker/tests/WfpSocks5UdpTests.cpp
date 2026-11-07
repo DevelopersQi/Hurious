@@ -371,6 +371,61 @@ void TestUdpFlowManagerIpv6ScopeIdentity() {
     assert(manager.ActiveCount() == 0);
 }
 
+
+void TestUdpFlowManagerRejectsIpv6FamilyAndUnsafeTargets() {
+    WfpUdpFlowManager manager(8, 8, std::chrono::seconds(30));
+    auto context = MakeUdpRedirectContext(2301);
+    context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    std::memset(context.OriginalAddress, 0, sizeof(context.OriginalAddress));
+    context.OriginalAddress[0] = 0x20;
+    context.OriginalAddress[1] = 0x01;
+    context.OriginalAddress[2] = 0x0D;
+    context.OriginalAddress[3] = 0xB8;
+    context.OriginalAddress[15] = 0x2A;
+    const std::vector<std::uint8_t> record{0x71, 0x72};
+
+    sockaddr_in6 source{};
+    source.sin6_family = AF_INET6;
+    source.sin6_addr = in6addr_loopback;
+    source.sin6_port = htons(53101);
+    const auto now = WfpUdpFlowManager::Clock::now();
+    std::uint64_t flowId = 0;
+
+    // An IPv6 redirect context must never be attached to an IPv4 source.
+    auto source4 = FlowSource(53101);
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source4), sizeof(source4),
+        context, record, now, flowId) == WfpUdpFlowCreateResult::InvalidContext);
+
+    // The broker cannot safely route unspecified, multicast, or link-local
+    // IPv6 targets because they are not valid global unicast destinations.
+    auto unsafe = context;
+    std::memset(unsafe.OriginalAddress, 0, sizeof(unsafe.OriginalAddress));
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        unsafe, record, now, flowId) == WfpUdpFlowCreateResult::InvalidContext);
+
+    unsafe = context;
+    unsafe.OriginalAddress[0] = 0xFF;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        unsafe, record, now, flowId) == WfpUdpFlowCreateResult::InvalidContext);
+
+    unsafe = context;
+    unsafe.OriginalAddress[0] = 0xFE;
+    unsafe.OriginalAddress[1] = 0x80;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        unsafe, record, now, flowId) == WfpUdpFlowCreateResult::InvalidContext);
+
+    // A valid global-unicast IPv6 target is accepted for an IPv6 source.
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source), sizeof(source),
+        context, record, now, flowId) == WfpUdpFlowCreateResult::Created);
+    assert(flowId != 0);
+    assert(manager.Remove(flowId));
+}
+
 struct WfpUdpSendCapture final {
     bool called = false;
     sockaddr_storage destination{};
@@ -1217,6 +1272,7 @@ int main() {
     TestRedirectContextDecodeRequiresValidUdpMetadata();
     TestUdpFlowManagerIdentityLimitsAndExpiry();
     TestUdpFlowManagerIpv6ScopeIdentity();
+    TestUdpFlowManagerRejectsIpv6FamilyAndUnsafeTargets();
     TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay();
     TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams();
     TestWfpUdpResponseInjectionCarriesRedirectMetadata();
