@@ -578,17 +578,6 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
             }
         }
     }
-    if (ingress != INVALID_SOCKET) closesocket(ingress);
-    allowServerClose.store(true);
-    registry.CloseAll();
-    fakeSocksServer.join();
-    closesocket(tcpListener);
-    closesocket(udpRelay);
-
-    assert(handshakeReady);
-    assert(datagramForwarded);
-    assert(responseForwarded);
-
     // A datagram spoofed from a different local UDP source must be discarded
     // without destroying the established SOCKS association.
     SOCKET attacker = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -655,6 +644,18 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
     assert(!gWfpUdpSendCapture.called);
     assert(registry.ActiveCount() == 1);
     closesocket(attacker);
+    if (ingress != INVALID_SOCKET) closesocket(ingress);
+    allowServerClose.store(true);
+    registry.CloseAll();
+    fakeSocksServer.join();
+    closesocket(tcpListener);
+    closesocket(udpRelay);
+
+    assert(handshakeReady);
+    assert(datagramForwarded);
+    assert(responseForwarded);
+
+
 }
 
 void TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams() {
