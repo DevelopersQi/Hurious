@@ -614,54 +614,55 @@ def main():
             'and its binary redistribution license'
         )
 
-        # The Windows 10 release workflow builds this driver from the same
-        # commit and passes its exact path. Keep it in the single ZIP for
-        # inspection/future signed packaging; never auto-install an unsigned
-        # kernel driver or enable the WFP production gate.
+        # Package the complete WFP test runtime: service, test-signed driver,
+        # public test certificate, and elevated install/uninstall scripts.
         driverBinary = os.environ.get('FURIOUS_WFP_DRIVER_BINARY')
+        serviceBinary = os.environ.get('FURIOUS_WFP_SERVICE_BINARY')
+        certificateBinary = os.environ.get('FURIOUS_WFP_TEST_CERTIFICATE')
         requireWfpDriver = os.environ.get('FURIOUS_REQUIRE_WFP_DRIVER') == '1'
-        if requireWfpDriver and not driverBinary:
-            raise FileNotFoundError(
-                'The Windows 10 release requires the WFP driver build artifact'
-            )
-        if driverBinary:
-            driverSource = pathlib.Path(driverBinary).resolve()
-            if not driverSource.is_file():
-                raise FileNotFoundError(
-                    f'WFP driver binary does not exist: {driverSource}'
-                )
-            driverData = driverSource.read_bytes()
-            if len(driverData) < 0x40 or driverData[:2] != b'MZ':
-                raise ValueError('WFP driver has an invalid DOS/PE header')
-            peOffset = int.from_bytes(driverData[0x3C:0x40], 'little')
-            if (
-                peOffset + 6 > len(driverData)
-                or driverData[peOffset:peOffset + 4] != b'PE\0\0'
-                or int.from_bytes(driverData[peOffset + 4:peOffset + 6], 'little') != 0x8664
-            ):
-                raise ValueError('WFP driver is not a valid AMD64 PE image')
-
+        packageInputs = (driverBinary, serviceBinary, certificateBinary)
+        if requireWfpDriver and not all(packageInputs):
+            raise FileNotFoundError('The Windows 10 WFP test package requires driver, service, and test certificate outputs')
+        if any(packageInputs):
+            if not all(packageInputs):
+                raise FileNotFoundError('WFP package inputs are incomplete')
             driverPackage = distributionPath / 'drivers' / 'wfp'
             driverPackage.mkdir(parents=True, exist_ok=True)
-            packagedDriver = driverPackage / 'FuriousWfpCallout.sys'
-            shutil.copy2(driverSource, packagedDriver)
-            packageReadme = (
-                ROOT_DIR / 'Windows' / 'Wfp' / 'driver' / 'package' / 'README.txt'
-            )
+
+            def copyVerifiedAmd64Pe(sourceValue, destinationName, description):
+                source = pathlib.Path(sourceValue).resolve()
+                if not source.is_file():
+                    raise FileNotFoundError(f'{description} does not exist: {source}')
+                data = source.read_bytes()
+                if len(data) < 0x40 or data[:2] != b'MZ':
+                    raise ValueError(f'{description} has an invalid DOS/PE header')
+                peOffset = int.from_bytes(data[0x3C:0x40], 'little')
+                if (peOffset + 6 > len(data) or data[peOffset:peOffset + 4] != b'PE\0\0'
+                        or int.from_bytes(data[peOffset + 4:peOffset + 6], 'little') != 0x8664):
+                    raise ValueError(f'{description} is not a valid AMD64 PE image')
+                destination = driverPackage / destinationName
+                shutil.copy2(source, destination)
+                return destination
+
+            packagedDriver = copyVerifiedAmd64Pe(driverBinary, 'FuriousWfpCallout.sys', 'WFP callout driver')
+            packagedService = copyVerifiedAmd64Pe(serviceBinary, 'FuriousWfpService.exe', 'WFP user-mode service')
+            certificateSource = pathlib.Path(certificateBinary).resolve()
+            if not certificateSource.is_file():
+                raise FileNotFoundError(f'WFP test certificate does not exist: {certificateSource}')
+            shutil.copy2(certificateSource, driverPackage / 'FuriousWfpCallout.cer')
+            for scriptName in ('Install-WfpTest.ps1', 'Uninstall-WfpTest.ps1'):
+                scriptSource = ROOT_DIR / 'Windows' / 'Wfp' / 'package' / scriptName
+                if not scriptSource.is_file():
+                    raise FileNotFoundError(f'WFP package script is missing: {scriptSource}')
+                shutil.copy2(scriptSource, driverPackage / scriptName)
+            packageReadme = ROOT_DIR / 'Windows' / 'Wfp' / 'driver' / 'package' / 'README.txt'
             if not packageReadme.is_file():
-                raise FileNotFoundError(
-                    f'WFP package notice is missing: {packageReadme}'
-                )
+                raise FileNotFoundError(f'WFP package notice is missing: {packageReadme}')
             shutil.copy2(packageReadme, driverPackage / 'README.txt')
-            digest = hashlib.sha256(packagedDriver.read_bytes()).hexdigest()
-            (driverPackage / 'FuriousWfpCallout.sha256').write_text(
-                f'{digest}  FuriousWfpCallout.sys\n',
-                encoding='ascii',
-            )
-            logger.info(
-                'included the unsigned Windows 10 x64 WFP driver in '
-                'drivers/wfp; it is not installed or loaded by the application'
-            )
+            for filename in ('FuriousWfpCallout.sys', 'FuriousWfpService.exe'):
+                digest = hashlib.sha256((driverPackage / filename).read_bytes()).hexdigest()
+                (driverPackage / f'{filename}.sha256').write_text(f'{digest}  {filename}\n', encoding='ascii')
+            logger.info('included WFP service, test-signed driver, certificate, and install scripts')
 
         if winVerCompatible.casefold() == 'windows7':
             compatibilityDll = pathlib.Path(sys.executable).with_name(

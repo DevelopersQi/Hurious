@@ -32,7 +32,8 @@ ConnectionManager
 starts/stops the broker and publishes its real PID, dynamically bound TCP ports,
 selected Xray/Hysteria2 backend and current core PID exclusions through
 SET_ENDPOINT_CONFIG. The end-to-end path still requires Windows 10 x64 runtime
-validation and a signed driver package. Validate driver signing, SCM startup,
+validation. The test ZIP includes a self-signed driver and user-mode service
+installer; it is test-mode only and is not a production-signed package. Validate driver signing, SCM startup,
 filter rollback and unload behavior in a disposable Windows 10 x64 VM before
 enabling endpoint redirection.
 
@@ -62,6 +63,11 @@ current WFP UI accepts full executable paths and applies Proxy/Direct policy
 through a configured loopback Xray or Hysteria2 SOCKS inbound. Hysteria2
 must expose its `socks5.listen` endpoint. The broker currently supports
 SOCKS5 no-auth only. Only TCP is supported.
+
+The Windows 10 test ZIP builds and tests the native service, and includes an
+elevated installer/uninstaller plus a public self-signed test certificate.
+Installation requires TESTSIGNING and a reboot when the boot option is changed.
+The installer never disables Secure Boot. This is not an ordinary retail setup.
 
 A production redirect path additionally requires:
 - finish UI translation and validate policy changes/rollback for Proxy/Direct rules;

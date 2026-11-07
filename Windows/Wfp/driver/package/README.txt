@@ -1,23 +1,26 @@
-Furious WFP driver package notice
-=================================
+Furious WFP test package
+========================
 
-This ZIP contains FuriousWfpCallout.sys, built for Windows 10 x64 from the
-same source revision as the Furious application.
+This folder contains the Windows 10 x64 WFP user-mode service, matching
+kernel callout driver, self-signed test certificate, and elevated install
+and uninstall scripts.
 
-IMPORTANT: this is an UNSIGNED development/validation driver binary.
-It is included in the ZIP for packaging completeness and future validation
-only. Furious does not install, register, start, or load this driver.
+TEST-ONLY: the certificate is not chained to a Microsoft production root.
+Installation requires Windows 10 x64 test-signing mode. The installer
+requests TESTSIGNING and a reboot when needed. Secure Boot policy may reject
+that change. It never disables Secure Boot or Memory Integrity.
 
-A normal Windows 10 installation may reject this unsigned driver. Do not enable
-Windows test mode, disable Secure Boot, disable Memory Integrity, or weaken
-Windows security settings to use it.
+Run Install-WfpTest.ps1 from the extracted package. The script self-elevates,
+installs the certificate into LocalMachine Root and TrustedPublisher, copies
+the service and driver to Program Files, and registers the service. If a
+reboot is required, the service is configured to start after the next boot.
+Run Uninstall-WfpTest.ps1 to remove the service, driver service entry, and
+test certificate. TESTSIGNING is deliberately left unchanged because it is
+a system-wide setting that may be used by other test drivers.
 
-The WFP transparent-redirection feature remains disabled unless a separately
-signed and validated driver package is provided. Ordinary proxy backends remain
-available without this driver.
+WFP application routing in this build is TCP-only. UDP filters remain
+disabled; arbitrary unconnected UDP sendto/WSASendTo capture is not implemented.
+Real Windows 10 driver load/unload, rollback, IPv4/IPv6 traffic, crash recovery,
+Driver Verifier, and actual proxy traffic validation are still required.
 
-The current driver does not provide complete transparent interception of
-arbitrary unconnected UDP sendto/WSASendTo traffic. UDP production routing must
-remain disabled until end-to-end Windows 10 validation is complete.
-
-SHA-256 is recorded in FuriousWfpCallout.sha256.
+SHA-256 manifests are provided for the driver and service binaries.

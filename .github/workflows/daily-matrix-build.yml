@@ -709,19 +709,44 @@ jobs:
       - name: Set up NuGet for the Windows WFP driver
         uses: NuGet/setup-nuget@v2
 
-      - name: Build Windows 10 x64 WFP driver for ZIP inclusion
+      - name: Build and test Windows 10 x64 WFP service
+        if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
+        shell: pwsh
+        run: |
+          cmake -S Windows/Wfp/service -B build/wfp-service -A x64 -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build/wfp-service --config Release --parallel
+          ctest --test-dir build/wfp-service -C Release --output-on-failure
+          $service = Get-ChildItem build/wfp-service -Filter FuriousWfpService.exe -Recurse | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          if ($null -eq $service) { throw 'WFP service build did not produce FuriousWfpService.exe' }
+          Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_SERVICE_BINARY=$($service.FullName)" -Encoding utf8
+          Write-Host "WFP service selected for ZIP: $($service.FullName)"
+
+      - name: Build and test-sign Windows 10 x64 WFP driver
+        if: runner.os == 'Windows' && matrix.id == 'windows10-amd64'
         shell: pwsh
         run: |
           nuget restore packages.config -PackagesDirectory packages
           msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
           $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse | Select-Object -First 1
-          if ($null -eq $driver) {
-            throw 'The Windows 10 x64 WFP driver build did not produce FuriousWfpCallout.sys'
-          }
+          if ($null -eq $driver) { throw 'WFP driver build did not produce FuriousWfpCallout.sys' }
+          $certificate = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Furious WFP Test Driver (non-production)' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(2)
+          $pfx = Join-Path $env:RUNNER_TEMP 'furious-wfp-test-signing.pfx'
+          $cer = Join-Path $env:RUNNER_TEMP 'FuriousWfpCallout.cer'
+          $password = ConvertTo-SecureString ([Guid]::NewGuid().ToString('N')) -AsPlainText -Force
+          Export-PfxCertificate -Cert $certificate -FilePath $pfx -Password $password | Out-Null
+          Export-Certificate -Cert $certificate -FilePath $cer | Out-Null
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signTool) { throw 'Windows SDK signtool.exe was not found' }
+          $plainPassword = [System.Net.NetworkCredential]::new('', $password).Password
+          & $signTool.FullName sign /fd SHA256 /f $pfx /p $plainPassword $driver.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Test signing the WFP driver failed' }
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' | Out-Null
+          & $signTool.FullName verify /pa /v $driver.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification of the test-signed WFP driver failed' }
           Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_DRIVER_BINARY=$($driver.FullName)" -Encoding utf8
-          Write-Host "WFP driver selected for ZIP: $($driver.FullName)"
+          Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_TEST_CERTIFICATE=$cer" -Encoding utf8
           Get-FileHash -LiteralPath $driver.FullName -Algorithm SHA256
-
       - name: Run deploy script
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
