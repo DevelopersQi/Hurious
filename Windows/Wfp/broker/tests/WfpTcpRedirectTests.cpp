@@ -8,6 +8,7 @@
 #include "../WfpSocks5UdpAssociationClient.h"
 #include "../WfpSocks5UdpRelayTransport.h"
 #include "../WfpSocks5UdpFlowRelay.h"
+#include "../WfpUdpFlowRelayRegistry.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
@@ -950,6 +951,32 @@ void TestSocks5UdpFlowRelayBridge() {
     WSACleanup();
 }
 
+void TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata() {
+    using namespace furious::wfp::broker;
+    WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(10));
+    sockaddr_in socks{};
+    socks.sin_family = AF_INET;
+    socks.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socks.sin_port = htons(1080);
+    assert(registry.Configure(reinterpret_cast<const sockaddr*>(&socks),
+        sizeof(socks)));
+    WfpUdpReceivedMessage message{};
+    auto* source = reinterpret_cast<sockaddr_in*>(&message.sourceAddress);
+    source->sin_family = AF_INET;
+    source->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    source->sin_port = htons(53000);
+    message.sourceAddressLength = sizeof(sockaddr_in);
+    const std::uint8_t payload[] = {1, 2, 3};
+    message.payloadLength = sizeof(payload);
+    std::uint64_t flowId = 0;
+    assert(registry.ProcessClientDatagram(message,
+        WfpUdpFlowRelayRegistry::Clock::now(), &flowId) ==
+        WfpUdpFlowRelayRegistryResult::MissingRedirectMetadata);
+    assert(flowId == 0 && registry.ActiveCount() == 0);
+    std::vector<WfpUdpRelaySocket> sockets;
+    assert(registry.GetRelaySockets(sockets) && sockets.empty());
+}
+
 void TestWfpUdpFlowManager() {
     using namespace furious::wfp::broker;
     using Clock = WfpUdpFlowManager::Clock;
@@ -1337,6 +1364,7 @@ int main() {
     TestSocks5UdpFlowRelayCancellationRegistration();
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
+    TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata();
     TestWfpUdpMessageReceive();
     TestWfpUdpRedirectRecordAncillaryData();
     TestSocks5UdpAssociateControlMessages();

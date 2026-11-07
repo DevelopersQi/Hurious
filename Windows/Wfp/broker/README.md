@@ -108,3 +108,8 @@ The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, I
 - IPv4/IPv6 endpoints are validated; unspecified, multicast and invalid source endpoints are rejected. IPv6 WFP ancillary metadata uses the IPv6 protocol level.
 - Local fake-SOCKS tests cover association handshake, payload forwarding, mismatched response destination rejection, and deterministic control/socket teardown.
 - The bridge is a tested primitive only. It is not yet hosted by a UDP broker listener or connected to the WFP flow table/IPC endpoint. UDP filters remain disabled.
+
+
+## UDP flow relay registry (not yet activated)
+
+`WfpUdpFlowRelayRegistry` is the single-I/O-thread owner for per-flow relay instances. It validates first-packet WFP metadata, bounds flow creation through `WfpUdpFlowManager`, owns relay lifetimes, exposes the relay UDP sockets for an event loop, forwards upstream responses with the preserved redirect metadata, and closes relay resources before removing expired flow IDs. It is a broker integration primitive only; no UDP listener or WFP UDP filters are enabled yet.
