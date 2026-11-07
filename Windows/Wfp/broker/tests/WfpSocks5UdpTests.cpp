@@ -1584,6 +1584,65 @@ void TestIpv6Socks5UdpRelayRoundTripAndResponseInjection() {
     assert(relayVerified.load() && responseSent.load() && injected);
 }
 
+
+void TestRegistryRejectsPendingUdpQueueOverflow() {
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(listener != INVALID_SOCKET);
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(listener, reinterpret_cast<const sockaddr*>(&socksAddress),
+        static_cast<int>(sizeof(socksAddress))) == 0);
+    assert(listen(listener, 1) == 0);
+    int socksLength = static_cast<int>(sizeof(socksAddress));
+    assert(getsockname(listener, reinterpret_cast<sockaddr*>(&socksAddress),
+        &socksLength) == 0);
+
+    WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(10));
+    assert(registry.Configure(reinterpret_cast<const sockaddr*>(&socksAddress),
+        static_cast<int>(sizeof(socksAddress)), 3000));
+
+    WfpUdpReceivedMessage message{};
+    auto source = FlowSource(50110);
+    source.sin_addr.s_addr = htonl(0xC000020A); // 192.0.2.10
+    std::memcpy(&message.sourceAddress, &source, sizeof(source));
+    message.sourceAddressLength = static_cast<int>(sizeof(source));
+    message.payloadLength = 4;
+    message.redirectRecord = {0x31, 0x32, 0x33};
+    const auto context = MakeUdpRedirectContext(1010);
+    message.redirectContext.resize(sizeof(context));
+    std::memcpy(message.redirectContext.data(), &context, sizeof(context));
+    const std::array<std::uint8_t, 4> payload{'d', 'a', 't', 'a'};
+
+    std::uint64_t flowId = 0;
+    auto result = registry.ProcessClientDatagram(message, payload.data(),
+        WfpUdpFlowRelayRegistry::Clock::now(), &flowId);
+    assert(result == WfpUdpFlowRelayRegistryResult::Pending);
+    assert(flowId != 0);
+
+    // One initial packet plus three following packets fit the per-flow cap.
+    for (int index = 0; index < 3; ++index) {
+        std::uint64_t queuedFlowId = 0;
+        result = registry.ProcessClientDatagram(message, payload.data(),
+            WfpUdpFlowRelayRegistry::Clock::now() +
+                std::chrono::milliseconds(index + 1),
+            &queuedFlowId);
+        assert(result == WfpUdpFlowRelayRegistryResult::Pending);
+        assert(queuedFlowId == flowId);
+    }
+
+    // The fifth packet must fail closed and release the flow rather than
+    // growing an unbounded queue or silently accepting a packet it cannot keep.
+    std::uint64_t rejectedFlowId = 0;
+    result = registry.ProcessClientDatagram(message, payload.data(),
+        WfpUdpFlowRelayRegistry::Clock::now() + std::chrono::milliseconds(5),
+        &rejectedFlowId);
+    assert(result == WfpUdpFlowRelayRegistryResult::PendingQueueFull);
+    assert(registry.ActiveCount() == 0);
+    registry.CloseAll();
+    closesocket(listener);
+}
+
 int main() {
     WSADATA winsockData{};
     assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
@@ -1603,6 +1662,7 @@ int main() {
     TestNonblockingSocks5UdpHandshake();
     TestRegistryExpiryClosesPendingHandshakeResources();
     TestRegistryCloseAllCancelsPendingHandshake();
+    TestRegistryRejectsPendingUdpQueueOverflow();
     WSACleanup();
     return 0;
 }
