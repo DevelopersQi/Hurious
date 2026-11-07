@@ -10,6 +10,7 @@ long-running broker.
 - Recover the original IPv4/IPv6 destination without string parsing.
 - Re-apply the opaque redirect-record chain to a new socket before connect.
 - Negotiate a no-auth SOCKS5 session and issue a binary IPv4/IPv6 CONNECT.
+- Reject authenticated Xray/Hysteria2 SOCKS inbounds; username/password negotiation is not implemented yet.
 - Relay TCP data in both directions with half-close support and an idle timeout.
 - Bind IPv4 and IPv6 loopback listeners on dynamically assigned ports, keeping an available family active if the other is disabled by the host.
 - Bound queued and active sessions, with worker threads and coordinated shutdown.

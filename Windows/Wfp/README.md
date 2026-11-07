@@ -21,7 +21,9 @@ connect-redirect filters. The driver redirects only applications with an install
 and a valid endpoint. Direct rules remain direct. Proxy filters fail closed if
 the endpoint is missing or a redirect operation fails. The service hosts a native TCP broker and exposes it through authenticated IPC.
 The broker obtains original-destination context, preserves WFP redirect records,
-connects to a loopback SOCKS5 inbound, and relays TCP streams. ConnectionManager
+connects to a loopback SOCKS5 no-auth inbound, and relays TCP streams. Authenticated
+SOCKS inbounds are rejected until username/password negotiation is implemented.
+ConnectionManager
 starts/stops the broker and publishes its real PID, dynamically bound TCP ports,
 selected Xray/Hysteria2 backend and current core PID exclusions through
 SET_ENDPOINT_CONFIG. The end-to-end path still requires Windows 10 x64 runtime
