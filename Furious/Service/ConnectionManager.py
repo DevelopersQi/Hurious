@@ -1258,7 +1258,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpPolicyBackend = int(backend) if hasProxyRules else 0
 
         if hasProxyRules and self._wfpActiveConfiguration is not None:
-            self._startWfpBroker(self._wfpActiveConfiguration)
+            self._startWfpBroker(
+                self._wfpActiveConfiguration, resetExisting=False
+            )
 
         return requestId
 
@@ -1278,7 +1280,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         controller.stopBroker()
         return controller.clearPolicy()
 
-    def _startWfpBroker(self, configuration):
+    def _startWfpBroker(self, configuration, resetExisting=True):
         """Start the TCP broker only for a supported socket-owning proxy core."""
         if sys.platform != 'win32':
             return None
@@ -1293,10 +1295,11 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         try:
             controller = self._getWfpIpcController()
-            # Invalidate any endpoint left by a previous core before inspecting
-            # the new upstream. Unsupported or malformed backends must not reuse it.
-            controller.clearEndpointConfig()
-            controller.stopBroker()
+            if resetExisting:
+                # Invalidate any endpoint left by a previous core before inspecting
+                # the new upstream. Unsupported or malformed backends must not reuse it.
+                controller.clearEndpointConfig()
+                controller.stopBroker()
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
             self._wfpEndpointPending.clear()
