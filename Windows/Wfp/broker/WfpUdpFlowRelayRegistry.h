@@ -94,6 +94,7 @@ private:
     // Global accounting prevents many simultaneous handshakes exhausting memory.
     static constexpr std::size_t kMaximumPendingDatagramsPerFlow = 4;
     static constexpr std::size_t kMaximumPendingDatagramBytes = 4 * 1024 * 1024;
+    std::size_t PendingDatagramCount(std::uint64_t flowId) const noexcept;
     std::unordered_map<std::uint64_t, std::deque<std::vector<std::uint8_t>>> pendingDatagrams_;
     std::size_t pendingDatagramBytes_ = 0;
     // Ready relays keep UDP datagrams when sendto reports WSAEWOULDBLOCK.
