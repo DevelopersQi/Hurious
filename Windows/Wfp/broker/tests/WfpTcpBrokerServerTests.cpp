@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <vector>
+#include <thread>
 
 void TestBrokerServerLifecycle() {
     sockaddr_in socksAddress{};
@@ -47,6 +48,37 @@ void TestBrokerServerLifecycle() {
         4));
     assert(server.IsRunning());
     server.Stop();
+}
+
+
+void TestBrokerConcurrentStartStopIsSerialized() {
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socksAddress.sin_port = htons(10808);
+
+    furious::wfp::broker::TcpBrokerServer server;
+    std::thread starter([&]() {
+        for (size_t index = 0; index < 12; ++index) {
+            if (server.Start(
+                    reinterpret_cast<const sockaddr*>(&socksAddress),
+                    sizeof(socksAddress), true, false, 1, 8)) {
+                server.Stop();
+            }
+        }
+    });
+    std::thread stopper([&]() {
+        for (size_t index = 0; index < 24; ++index) {
+            server.Stop();
+        }
+    });
+
+    starter.join();
+    stopper.join();
+    server.Stop();
+    assert(!server.IsRunning());
+    assert(server.ListenerPorts().ipv4 == 0);
+    assert(server.ListenerPorts().ipv6 == 0);
 }
 
 void TestBrokerStopsWhileAcceptingConnections() {
