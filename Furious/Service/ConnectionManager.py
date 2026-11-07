@@ -1040,10 +1040,17 @@ class ConnectionStartOperation(QtCore.QObject):
 
         self._setStage(ConnectionStartStage.Committing)
 
+        primaryRuntime = self.attempt.runtimes[0] if self.attempt.runtimes else None
         self.attempt.commit(self.exitCallback)
         if not self.proxyModeOnly:
             self.manager._wfpActiveConfiguration = self.attempt.runtimeConfiguration
+            self.manager._wfpActiveRuntime = primaryRuntime
             self.manager._startWfpBroker(self.attempt.runtimeConfiguration)
+        elif self.manager._wfpPolicyHasProxyRules:
+            if self.manager._wfpBrokerEndpoint is not None:
+                self.manager._publishWfpEndpointConfig()
+            elif self.manager._wfpActiveConfiguration is not None:
+                self.manager._startWfpBroker(self.manager._wfpActiveConfiguration)
         self._terminal = True
 
         self._setStage(ConnectionStartStage.Succeeded)
@@ -1128,6 +1135,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpPolicyHasProxyRules = False
         self._wfpPolicyBackend = 0
         self._wfpActiveConfiguration = None
+        self._wfpActiveRuntime = None
         self._wfpIpcController = None
         self._wfpBrokerPending = {}
         self._wfpBrokerEndpoint = None
@@ -1685,10 +1693,17 @@ class ConnectionManager(Mixins.CleanupOnExit):
             ):
                 return False
 
+        primaryRuntime = attempt.runtimes[0] if attempt.runtimes else None
         attempt.commit()
         if not proxyModeOnly:
             self._wfpActiveConfiguration = attempt.runtimeConfiguration
+            self._wfpActiveRuntime = primaryRuntime
             self._startWfpBroker(attempt.runtimeConfiguration)
+        elif self._wfpPolicyHasProxyRules:
+            if self._wfpBrokerEndpoint is not None:
+                self._publishWfpEndpointConfig()
+            elif self._wfpActiveConfiguration is not None:
+                self._startWfpBroker(self._wfpActiveConfiguration)
 
         return True
 
@@ -2080,9 +2095,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         self._leases.remove(lease)
         self._advanceWfpRuntimeGeneration()
-        if isinstance(runtime, Tun2socks):
-            # Tun2socks is not a socket-owning proxy core; its exit does not
-            # invalidate the broker's core-PID exclusion list.
+        if isinstance(runtime, Tun2socks) or runtime is not self._wfpActiveRuntime:
+            # A non-primary runtime exit changes the generation but not the
+            # selected SOCKS upstream. Refresh the live exclusion snapshot.
             self._wfpBrokerPending = {
                 requestId: (backend, self.wfpRuntimeSnapshot.generation)
                 for requestId, (backend, _generation) in self._wfpBrokerPending.items()
@@ -2090,12 +2105,13 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._publishWfpEndpointConfig()
         else:
             if self._wfpIpcController is not None:
-                # A core exit invalidates the old upstream and PID snapshot.
+                # The selected core exit invalidates its upstream and PID list.
                 self._wfpIpcController.clearEndpointConfig()
                 self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
             self._wfpActiveConfiguration = None
+            self._wfpActiveRuntime = None
 
     def stopAll(self):
         """Stop every managed proxy-core and TUN runtime."""
@@ -2114,6 +2130,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
         self._wfpActiveConfiguration = None
+        self._wfpActiveRuntime = None
 
     def cleanup(self):
         """Release resources owned by the core manager."""
