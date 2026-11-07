@@ -29,7 +29,10 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::Open(
     const sockaddr* originalClient, int originalClientLength,
     const FURIOUS_WFP_REDIRECT_CONTEXT& context,
     const std::vector<std::uint8_t>& redirectRecord,
-    DWORD timeoutMilliseconds, int* errorCode) noexcept {
+    DWORD timeoutMilliseconds, int* errorCode,
+    ActiveSocketRegister registerSocket,
+    ActiveSocketUnregister unregisterSocket,
+    void* callbackContext) noexcept {
     if (errorCode) *errorCode = 0;
     if (IsOpen()) return WfpSocks5UdpFlowRelayResult::AlreadyOpen;
     bool validDestination = false;
@@ -64,7 +67,8 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::Open(
         return WfpSocks5UdpFlowRelayResult::SocketOpenFailed;
     }
     const auto opened = association_.Open(socksAddress, socksAddressLength,
-        udpSocket_, timeoutMilliseconds, &error);
+        udpSocket_, timeoutMilliseconds, &error,
+        registerSocket, unregisterSocket, callbackContext);
     if (opened != Socks5UdpAssociationClientOpenResult::Opened) {
         if (errorCode) *errorCode = error;
         Close();

@@ -711,6 +711,38 @@ void TestSocks5UdpRelayTransportLoopback() {
     WSACleanup();
 }
 
+void TestSocks5UdpFlowRelayCancellationRegistration() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    sockaddr_in socks{};
+    socks.sin_family = AF_INET;
+    socks.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socks.sin_port = htons(1080);
+    sockaddr_in client{};
+    client.sin_family = AF_INET;
+    client.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    client.sin_port = htons(40000);
+    auto context = MakeContext(FURIOUS_WFP_REDIRECT_FAMILY_V4,
+        FURIOUS_WFP_REDIRECT_PROTOCOL_UDP);
+    context.OriginalAddress[0] = 203;
+    context.OriginalAddress[2] = 113;
+    context.OriginalAddress[3] = 7;
+    const std::vector<std::uint8_t> record{1, 2, 3};
+    SocketRegistrationProbe probe;
+    WfpSocks5UdpFlowRelay bridge;
+    int error = 0;
+    assert(bridge.Open(reinterpret_cast<const sockaddr*>(&socks), sizeof(socks),
+        reinterpret_cast<const sockaddr*>(&client), sizeof(client), context,
+        record, 1000, &error, &RejectSocketRegistration,
+        &CountSocketUnregistration, &probe) ==
+        WfpSocks5UdpFlowRelayResult::AssociationOpenFailed);
+    assert(error == WSA_OPERATION_ABORTED);
+    assert(probe.registerCalls == 1 && probe.unregisterCalls == 0);
+    assert(!bridge.IsOpen());
+    WSACleanup();
+}
+
 void TestSocks5UdpFlowRelayRejectsInvalidEndpoints() {
     using namespace furious::wfp::broker;
     WfpSocks5UdpFlowRelay bridge;
@@ -1005,14 +1037,15 @@ void TestWfpUdpFlowManager() {
     assert(expiredRegistrationId == firstId);
     assert(manager.ActiveCount() == 2); // Expired resources remain owned until swept.
 
-    std::vector<std::uint64_t> expiredFlowIds;
-    assert(manager.SweepExpired(now + std::chrono::seconds(14), expiredFlowIds) == 1);
-    assert(expiredFlowIds.size() == 1 && expiredFlowIds[0] == secondId);
-    assert(manager.ActiveCount() == 1);
     assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source), sizeof(source),
-        now + std::chrono::seconds(19), touchedId) == TouchResult::Expired);
-    assert(touchedId == firstId && manager.ActiveCount() == 1);
-    assert(manager.Remove(touchedId));
+        now + std::chrono::seconds(20), touchedId) == TouchResult::Expired);
+    assert(touchedId == firstId && manager.ActiveCount() == 2);
+    assert(manager.Remove(touchedId)); // Owner closes the relay before removing its flow.
+    assert(manager.ActiveCount() == 1);
+
+    std::vector<std::uint64_t> expiredFlowIds;
+    assert(manager.SweepExpired(now + std::chrono::seconds(20), expiredFlowIds) == 1);
+    assert(expiredFlowIds.size() == 1 && expiredFlowIds[0] == secondId);
     assert(manager.ActiveCount() == 0);
 
     sockaddr_in oversizedSource = source;
@@ -1299,6 +1332,7 @@ int main() {
     TestSocks5UdpRelayTransportLoopback();
     TestSocks5UdpFlowRelayBridge();
     TestSocks5UdpFlowRelayRejectsInvalidEndpoints();
+    TestSocks5UdpFlowRelayCancellationRegistration();
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpMessageReceive();

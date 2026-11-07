@@ -25,7 +25,10 @@ public:
         const sockaddr* originalClient, int originalClientLength,
         const FURIOUS_WFP_REDIRECT_CONTEXT& context,
         const std::vector<std::uint8_t>& redirectRecord,
-        DWORD timeoutMilliseconds = 5000, int* errorCode = nullptr) noexcept;
+        DWORD timeoutMilliseconds = 5000, int* errorCode = nullptr,
+        ActiveSocketRegister registerSocket = nullptr,
+        ActiveSocketUnregister unregisterSocket = nullptr,
+        void* callbackContext = nullptr) noexcept;
 
     void Close() noexcept;
     bool IsOpen() const noexcept;
