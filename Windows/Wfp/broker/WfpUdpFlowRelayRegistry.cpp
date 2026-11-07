@@ -574,11 +574,17 @@ void WfpUdpFlowRelayRegistry::DiscardOutboundDatagrams(
 }
 
 void WfpUdpFlowRelayRegistry::CloseFlowResources(std::uint64_t flowId) noexcept {
-    DiscardPendingDatagrams(flowId);
-    DiscardOutboundDatagrams(flowId);
+    // Remove both queues before rebuilding the shared byte counters. Calling
+    // the individual discard helpers here would scan every surviving queue
+    // twice for one flow teardown.
+    const bool removedPending = pendingDatagrams_.erase(flowId) != 0;
+    const bool removedOutbound = outboundDatagrams_.erase(flowId) != 0;
+    if (removedPending || removedOutbound)
+        RecalculateQueueByteCounts();
+
     const auto found = relays_.find(flowId);
     if (found != relays_.end()) {
-        found->second->Close();
+        if (found->second) found->second->Close();
         relays_.erase(found);
     }
 }
