@@ -1206,6 +1206,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
             host, port = parseHostPort(endpoint)
             controller = self._getWfpIpcController()
+            # The previous endpoint may contain a stale PID exclusion list.
+            # Disable redirection before starting a broker for this generation.
+            controller.clearEndpointConfig()
             controller.queryStatus()
             requestId = controller.startBroker(host, int(port))
             if requestId is not None:
@@ -1994,13 +1997,21 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         self._leases.remove(lease)
         self._advanceWfpRuntimeGeneration()
-        if self._wfpIpcController is not None:
-            # Any core exit invalidates the old exclusion snapshot. Disable
-            # redirection before the next runtime publishes a fresh endpoint.
-            self._wfpIpcController.clearEndpointConfig()
-            self._wfpIpcController.stopBroker()
-        self._wfpBrokerEndpoint = None
-        self._wfpBrokerPending.clear()
+        if isinstance(runtime, Tun2socks):
+            # Tun2socks is not a socket-owning proxy core; its exit does not
+            # invalidate the broker's core-PID exclusion list.
+            self._wfpBrokerPending = {
+                requestId: (backend, self.wfpRuntimeSnapshot.generation)
+                for requestId, (backend, _generation) in self._wfpBrokerPending.items()
+            }
+            self._publishWfpEndpointConfig()
+        else:
+            if self._wfpIpcController is not None:
+                # A core exit invalidates the old upstream and PID snapshot.
+                self._wfpIpcController.clearEndpointConfig()
+                self._wfpIpcController.stopBroker()
+            self._wfpBrokerEndpoint = None
+            self._wfpBrokerPending.clear()
 
     def stopAll(self):
         """Stop every managed proxy-core and TUN runtime."""
