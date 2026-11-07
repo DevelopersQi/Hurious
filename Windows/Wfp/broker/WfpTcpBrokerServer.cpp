@@ -267,6 +267,27 @@ void TcpBrokerServer::WorkerLoop() noexcept {
     }
 }
 
+bool TcpBrokerServer::RegisterSocketForCancellation(
+    void* context, SOCKET socket) noexcept {
+    if (context == nullptr || socket == INVALID_SOCKET) return false;
+    auto* server = static_cast<TcpBrokerServer*>(context);
+    std::lock_guard<std::mutex> lock(server->activeMutex_);
+    if (server->stopping_.load()) return false;
+    try {
+        return server->activeSockets_.insert(socket).second;
+    } catch (...) {
+        return false;
+    }
+}
+
+void TcpBrokerServer::UnregisterSocketForCancellation(
+    void* context, SOCKET socket) noexcept {
+    if (context == nullptr || socket == INVALID_SOCKET) return;
+    auto* server = static_cast<TcpBrokerServer*>(context);
+    std::lock_guard<std::mutex> lock(server->activeMutex_);
+    server->activeSockets_.erase(socket);
+}
+
 void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
     {
         std::lock_guard<std::mutex> lock(activeMutex_);
@@ -291,7 +312,10 @@ void TcpBrokerServer::ProcessClient(SOCKET client) noexcept {
             reinterpret_cast<const sockaddr*>(&socksAddress_),
             socksAddressLength_,
             redirected,
-            &error);
+            &error,
+            &TcpBrokerServer::RegisterSocketForCancellation,
+            &TcpBrokerServer::UnregisterSocketForCancellation,
+            this);
     }
 
     if (upstream != INVALID_SOCKET) {
