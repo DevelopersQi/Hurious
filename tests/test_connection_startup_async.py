@@ -282,7 +282,7 @@ class ConnectionStartupAsyncTest(TestCase):
             mock.patch.object(manager, '_startWfpBroker') as startBroker,
         ):
             rules = [{
-                'path': r'C:\\Apps\\proxy.exe',
+                'path': r'C:\Apps\proxy.exe',
                 'priority': 1,
                 'action': 'proxy',
             }]
@@ -336,7 +336,7 @@ class ConnectionStartupAsyncTest(TestCase):
             mock.patch.object(manager, '_startWfpBroker') as startBroker,
         ):
             requestId = manager.setWfpApplicationPolicy([{
-                'path': r'C:\\Apps\\proxy.exe',
+                'path': r'C:\Apps\proxy.exe',
                 'priority': 1,
                 'action': 'proxy',
             }], backend=1)
