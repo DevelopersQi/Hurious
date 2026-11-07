@@ -1,3 +1,4 @@
+import struct
 import unittest
 from types import SimpleNamespace
 
@@ -20,7 +21,7 @@ class WfpEndpointConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(len(payload), 76)
-        values = __import__("struct").unpack("<IIIIIIQHHHHI8I", payload)
+        values = struct.unpack("<IIIIIIQHHHHI8I", payload)
         self.assertEqual(values[:7], (76, 2, 2, 7, 4321, 0, 23))
         self.assertEqual(values[7:12], (32001, 0, 32002, 0, 2))
         self.assertEqual(values[12:], (1111, 2222, 0, 0, 0, 0, 0, 0))
