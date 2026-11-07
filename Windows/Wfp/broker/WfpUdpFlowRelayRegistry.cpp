@@ -111,7 +111,10 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
     auto found = relays_.find(flowId);
     if (touch == WfpUdpFlowTouchResult::Found) {
         if (found == relays_.end()) {
-            flows_.Remove(flowId);
+            // The flow identity must not outlive any associated queue state.
+            // CloseFlow also removes stale pending/outbound queues if the
+            // registry was left partially populated by an earlier failure.
+            CloseFlow(flowId);
             return WfpUdpFlowRelayRegistryResult::FlowNotFound;
         }
         auto pending = pendingDatagrams_.find(flowId);
@@ -153,8 +156,13 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
         found = relays_.find(flowId);
         if (found == relays_.end()) {
             WfpUdpFlowSnapshot snapshot{};
-            if (!flows_.GetSnapshot(flowId, snapshot))
+            if (!flows_.GetSnapshot(flowId, snapshot)) {
+                // GetSnapshot copies the redirect record and can fail under
+                // memory pressure. Roll back the newly registered identity
+                // immediately instead of leaving an unserviceable orphan flow.
+                CloseFlow(flowId);
                 return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+            }
             std::unique_ptr<WfpSocks5UdpFlowRelay> relay;
             try {
                 relay = std::make_unique<WfpSocks5UdpFlowRelay>();
