@@ -38,6 +38,7 @@ import csv
 import os
 import subprocess
 import ctypes
+import ntpath
 
 from .Routing import (
     cleanRoutingRule,
@@ -1444,6 +1445,12 @@ class ApplicationRoutingDialog(AppQTransientDialog):
                 QMessageBox.warning(
                     self, _('Protected Process'),
                     _('Proxy core and Furious processes cannot be added to application rules.'),
+                )
+                return
+            if PLATFORM == 'Windows' and not ntpath.isabs(process):
+                QMessageBox.warning(
+                    self, _('Full Executable Path Required'),
+                    _('Use Browse EXE or Add Running App to select an application with a full executable path.'),
                 )
                 return
             rules.append({
