@@ -1134,6 +1134,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpIpcController = None
         self._wfpBrokerPending = {}
         self._wfpEndpointPending = {}
+        self._wfpPolicyPending = {}
+        self._wfpPolicyReady = False
         self._wfpBrokerEndpoint = None
 
     def _getWfpIpcController(self):
@@ -1165,6 +1167,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
                 if command in ('set-policy', 'clear-policy'):
+                    self._wfpPolicyPending.clear()
+                    self._wfpPolicyReady = False
+                    self._wfpBrokerPending.clear()
                     self._wfpPolicyHasProxyRules = False
                     self._wfpPolicyBackend = 0
                 if self._wfpIpcController is not None:
@@ -1178,8 +1183,16 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 logger.debug('ignoring a stale WFP TCP broker start response')
                 return
             backend, requestedGeneration = pending
-            if requestedGeneration != self.wfpRuntimeSnapshot.generation:
-                logger.debug('ignoring WFP TCP broker response for a stale runtime generation')
+            if (
+                not self._wfpPolicyReady
+                or not self._wfpPolicyHasProxyRules
+                or backend != self._wfpPolicyBackend
+                or requestedGeneration != self.wfpRuntimeSnapshot.generation
+            ):
+                logger.debug('ignoring a WFP TCP broker response for an inactive policy/runtime')
+                if self._wfpIpcController is not None:
+                    self._wfpIpcController.clearEndpointConfig()
+                    self._wfpIpcController.stopBroker()
                 return
             self._wfpBrokerEndpoint = (
                 backend,
@@ -1204,7 +1217,16 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 return
             logger.info('WFP TCP redirect endpoint configuration updated')
         elif command == 'set-policy':
+            requestedPolicyGeneration = self._wfpPolicyPending.pop(requestId, None)
+            if requestedPolicyGeneration != self._wfpPolicyGeneration:
+                logger.debug('ignoring a stale WFP application policy completion')
+                return
+            self._wfpPolicyReady = True
             logger.info('WFP application routing policy updated')
+            if self._wfpPolicyHasProxyRules and self._wfpActiveConfiguration is not None:
+                self._startWfpBroker(
+                    self._wfpActiveConfiguration, resetExisting=False
+                )
         elif command == 'clear-policy':
             logger.info('WFP application routing policy cleared')
         elif command == 'stop-broker':
@@ -1242,6 +1264,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
+        self._wfpPolicyPending.clear()
+        self._wfpPolicyReady = False
         controller.clearEndpointConfig()
         controller.stopBroker()
 
@@ -1251,12 +1275,11 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         self._wfpPolicyHasProxyRules = hasProxyRules
         self._wfpPolicyBackend = int(backend) if hasProxyRules else 0
+        self._wfpPolicyPending[requestId] = generation
 
-        if hasProxyRules and self._wfpActiveConfiguration is not None:
-            self._startWfpBroker(
-                self._wfpActiveConfiguration, resetExisting=False
-            )
-
+        # Broker activation waits for the native filter transaction to commit.
+        # Starting it earlier can publish a live endpoint for a policy that
+        # later fails to install, or race a newer policy replacement.
         return requestId
 
     def clearWfpApplicationPolicy(self):
@@ -1268,9 +1291,13 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._nextWfpPolicyGeneration()
         self._wfpPolicyHasProxyRules = False
         self._wfpPolicyBackend = 0
+        self._wfpPolicyReady = False
+        self._wfpPolicyPending.clear()
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
+        self._wfpPolicyPending.clear()
+        self._wfpPolicyReady = False
         controller.clearEndpointConfig()
         controller.stopBroker()
         return controller.clearPolicy()
@@ -1285,7 +1312,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             except Exception:
                 logger.exception('failed to disable WFP application routing in TUN mode')
             return None
-        if not self._wfpPolicyHasProxyRules:
+        if not self._wfpPolicyHasProxyRules or not self._wfpPolicyReady:
             return None
 
         try:
