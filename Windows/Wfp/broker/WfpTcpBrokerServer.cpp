@@ -208,7 +208,10 @@ void TcpBrokerServer::AcceptLoop() noexcept {
                 continue;
             }
 
-            for (;;) {
+            // Do not let a continuous stream of inbound connections starve Stop().
+            // The listener is nonblocking, so this loop must re-check the stop
+            // signal between accepts instead of draining forever under load.
+            while (!stopping_.load()) {
                 SOCKET client = accept(listener, nullptr, nullptr);
                 if (client == INVALID_SOCKET) {
                     const int error = WSAGetLastError();
