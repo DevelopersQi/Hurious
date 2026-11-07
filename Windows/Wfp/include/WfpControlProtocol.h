@@ -9,7 +9,7 @@
 #include "WfpBrokerProtocol.h"
 
 #define FURIOUS_WFP_IPC_MAGIC 0x46575043u /* "FWPC" */
-#define FURIOUS_WFP_IPC_VERSION 2u
+#define FURIOUS_WFP_IPC_VERSION 3u
 #define FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE (512u * 1024u)
 
 #define FURIOUS_WFP_IPC_COMMAND_STATUS 1u
@@ -20,6 +20,8 @@
 #define FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG 6u
 #define FURIOUS_WFP_IPC_COMMAND_START_BROKER 7u
 #define FURIOUS_WFP_IPC_COMMAND_STOP_BROKER 8u
+#define FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER 9u
+#define FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER 10u
 
 #pragma pack(push, 1)
 typedef struct FURIOUS_WFP_IPC_HEADER {
@@ -38,6 +40,8 @@ typedef struct FURIOUS_WFP_IPC_RESPONSE {
     uint32_t BrokerProcessId;
     uint16_t TcpPortV4;
     uint16_t TcpPortV6;
+    uint16_t UdpPortV4;
+    uint16_t UdpPortV6;
 } FURIOUS_WFP_IPC_RESPONSE;
 #pragma pack(pop)
 
@@ -46,7 +50,7 @@ typedef struct FURIOUS_WFP_IPC_RESPONSE {
 
 namespace furious::wfp::ipc {
 
-static_assert(sizeof(FURIOUS_WFP_IPC_RESPONSE) == 40, "IPC response ABI must be 40 bytes");
+static_assert(sizeof(FURIOUS_WFP_IPC_RESPONSE) == 44, "IPC response ABI must be 44 bytes");
 
 enum class ValidationResult {
     Valid,
@@ -99,7 +103,9 @@ inline ValidationResult ValidateRequest(const void* message, size_t messageSize)
         header.Command != FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG &&
         header.Command != FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG &&
         header.Command != FURIOUS_WFP_IPC_COMMAND_START_BROKER &&
-        header.Command != FURIOUS_WFP_IPC_COMMAND_STOP_BROKER) {
+        header.Command != FURIOUS_WFP_IPC_COMMAND_STOP_BROKER &&
+        header.Command != FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER &&
+        header.Command != FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER) {
         return ValidationResult::UnsupportedCommand;
     }
     return ValidationResult::Valid;
