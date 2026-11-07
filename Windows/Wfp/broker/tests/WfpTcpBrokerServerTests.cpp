@@ -1,7 +1,9 @@
 #include "../WfpTcpBrokerServer.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstdint>
+#include <vector>
 
 void TestBrokerServerLifecycle() {
     sockaddr_in socksAddress{};
@@ -45,4 +47,50 @@ void TestBrokerServerLifecycle() {
         4));
     assert(server.IsRunning());
     server.Stop();
+}
+
+void TestBrokerStopsWhileAcceptingConnections() {
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socksAddress.sin_port = htons(10808);
+
+    furious::wfp::broker::TcpBrokerServer server;
+    assert(server.Start(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress),
+        true,
+        false,
+        2,
+        64));
+
+    const auto ports = server.ListenerPorts();
+    assert(ports.ipv4 != 0);
+
+    std::vector<SOCKET> clients;
+    for (size_t index = 0; index < 32; ++index) {
+        SOCKET client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        assert(client != INVALID_SOCKET);
+        sockaddr_in target{};
+        target.sin_family = AF_INET;
+        target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        target.sin_port = htons(ports.ipv4);
+        if (connect(client, reinterpret_cast<const sockaddr*>(&target),
+                sizeof(target)) == SOCKET_ERROR) {
+            closesocket(client);
+            break;
+        }
+        clients.push_back(client);
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    server.Stop();
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    assert(elapsed < std::chrono::seconds(5));
+
+    for (SOCKET client : clients) {
+        closesocket(client);
+    }
+    assert(!server.IsRunning());
+    assert(server.ListenerPorts().ipv4 == 0);
 }
