@@ -614,6 +614,55 @@ def main():
             'and its binary redistribution license'
         )
 
+        # The Windows 10 release workflow builds this driver from the same
+        # commit and passes its exact path. Keep it in the single ZIP for
+        # inspection/future signed packaging; never auto-install an unsigned
+        # kernel driver or enable the WFP production gate.
+        driverBinary = os.environ.get('FURIOUS_WFP_DRIVER_BINARY')
+        requireWfpDriver = os.environ.get('FURIOUS_REQUIRE_WFP_DRIVER') == '1'
+        if requireWfpDriver and not driverBinary:
+            raise FileNotFoundError(
+                'The Windows 10 release requires the WFP driver build artifact'
+            )
+        if driverBinary:
+            driverSource = pathlib.Path(driverBinary).resolve()
+            if not driverSource.is_file():
+                raise FileNotFoundError(
+                    f'WFP driver binary does not exist: {driverSource}'
+                )
+            driverData = driverSource.read_bytes()
+            if len(driverData) < 0x40 or driverData[:2] != b'MZ':
+                raise ValueError('WFP driver has an invalid DOS/PE header')
+            peOffset = int.from_bytes(driverData[0x3C:0x40], 'little')
+            if (
+                peOffset + 6 > len(driverData)
+                or driverData[peOffset:peOffset + 4] != b'PE\\0\\0'
+                or int.from_bytes(driverData[peOffset + 4:peOffset + 6], 'little') != 0x8664
+            ):
+                raise ValueError('WFP driver is not a valid AMD64 PE image')
+
+            driverPackage = distributionPath / 'drivers' / 'wfp'
+            driverPackage.mkdir(parents=True, exist_ok=True)
+            packagedDriver = driverPackage / 'FuriousWfpCallout.sys'
+            shutil.copy2(driverSource, packagedDriver)
+            packageReadme = (
+                ROOT_DIR / 'Windows' / 'Wfp' / 'driver' / 'package' / 'README.txt'
+            )
+            if not packageReadme.is_file():
+                raise FileNotFoundError(
+                    f'WFP package notice is missing: {packageReadme}'
+                )
+            shutil.copy2(packageReadme, driverPackage / 'README.txt')
+            digest = hashlib.sha256(packagedDriver.read_bytes()).hexdigest()
+            (driverPackage / 'FuriousWfpCallout.sha256').write_text(
+                f'{digest}  FuriousWfpCallout.sys\\n',
+                encoding='ascii',
+            )
+            logger.info(
+                'included the unsigned Windows 10 x64 WFP driver in '
+                'drivers/wfp; it is not installed or loaded by the application'
+            )
+
         if winVerCompatible.casefold() == 'windows7':
             compatibilityDll = pathlib.Path(sys.executable).with_name(
                 WINDOWS_7_COMPATIBILITY_DLL_NAME
