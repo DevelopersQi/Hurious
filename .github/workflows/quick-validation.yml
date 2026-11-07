@@ -43,6 +43,15 @@ jobs:
       - name: Run WFP IPC protocol tests
         run: ctest --test-dir build/wfp-service -C Release --output-on-failure
 
+      - name: Configure WFP TCP and UDP brokers
+        run: cmake -S Windows/Wfp/broker -B build/wfp-broker -A x64
+
+      - name: Build WFP TCP and UDP brokers and tests
+        run: cmake --build build/wfp-broker --config Release
+
+      - name: Run WFP TCP, SOCKS5 UDP, and UDP broker tests
+        run: ctest --test-dir build/wfp-broker -C Release --output-on-failure
+
   windows-wfp-driver-build:
     name: Windows x64 WFP kernel driver build
     runs-on: windows-2025

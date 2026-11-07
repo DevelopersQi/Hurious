@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 project(FuriousWfpTcpBroker LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "The WFP TCP broker is Windows-only.")
+    message(FATAL_ERROR "The WFP broker is Windows-only.")
 endif()
 
 add_library(FuriousWfpTcpBroker STATIC
@@ -18,9 +18,11 @@ add_library(FuriousWfpTcpBroker STATIC
     WfpSocks5UdpRelayTransport.cpp
     WfpSocks5UdpFlowRelay.cpp
     WfpUdpFlowRelayRegistry.cpp
+    WfpUdpBrokerServer.cpp
     WfpTcpRedirect.h
     WfpTcpBrokerServer.cpp
     WfpTcpBrokerServer.h
+    WfpUdpBrokerServer.h
 )
 target_compile_features(FuriousWfpTcpBroker PUBLIC cxx_std_17)
 target_compile_definitions(FuriousWfpTcpBroker PUBLIC
@@ -37,10 +39,26 @@ if(BUILD_TESTING)
         tests/WfpTcpRedirectTests.cpp
         tests/WfpTcpBrokerServerTests.cpp
     )
-    target_compile_features(FuriousWfpTcpBrokerTests PRIVATE cxx_std_17)
-    target_link_libraries(FuriousWfpTcpBrokerTests PRIVATE FuriousWfpTcpBroker)
-    if(MSVC)
-        target_compile_options(FuriousWfpTcpBrokerTests PRIVATE /W4 /WX /permissive-)
-    endif()
+    add_executable(FuriousWfpSocks5UdpTests
+        tests/WfpSocks5UdpTests.cpp
+    )
+    add_executable(FuriousWfpUdpBrokerServerTests
+        tests/WfpUdpBrokerServerTests.cpp
+    )
+
+    foreach(test_target IN ITEMS
+            FuriousWfpTcpBrokerTests
+            FuriousWfpSocks5UdpTests
+            FuriousWfpUdpBrokerServerTests)
+        target_compile_features(${test_target} PRIVATE cxx_std_17)
+        target_link_libraries(${test_target} PRIVATE FuriousWfpTcpBroker)
+        if(MSVC)
+            # Keep assert-based checks active in Release CI builds.
+            target_compile_options(${test_target} PRIVATE /W4 /WX /permissive- /UNDEBUG)
+        endif()
+    endforeach()
+
     add_test(NAME FuriousWfpTcpBrokerTests COMMAND FuriousWfpTcpBrokerTests)
+    add_test(NAME FuriousWfpSocks5UdpTests COMMAND FuriousWfpSocks5UdpTests)
+    add_test(NAME FuriousWfpUdpBrokerServerTests COMMAND FuriousWfpUdpBrokerServerTests)
 endif()
