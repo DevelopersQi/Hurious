@@ -782,17 +782,35 @@ void TestSocks5UdpFlowRelayBridge() {
     std::thread fakeSocksServer([&]() {
         SOCKET control = accept(listener, nullptr, nullptr);
         assert(control != INVALID_SOCKET);
+        const auto receiveExact = [](SOCKET socket, char* buffer, int length) {
+            int offset = 0;
+            while (offset < length) {
+                const int received = recv(socket, buffer + offset, length - offset, 0);
+                if (received <= 0) return false;
+                offset += received;
+            }
+            return true;
+        };
+        const auto sendExact = [](SOCKET socket, const char* buffer, int length) {
+            int offset = 0;
+            while (offset < length) {
+                const int sent = send(socket, buffer + offset, length - offset, 0);
+                if (sent <= 0) return false;
+                offset += sent;
+            }
+            return true;
+        };
         std::uint8_t greeting[3]{};
-        assert(recv(control, reinterpret_cast<char*>(greeting), sizeof(greeting), 0) ==
-            static_cast<int>(sizeof(greeting)));
+        assert(receiveExact(control, reinterpret_cast<char*>(greeting),
+            static_cast<int>(sizeof(greeting))));
         assert(greeting[0] == 5 && greeting[1] == 1 && greeting[2] == 0);
         const std::uint8_t methodReply[] = {5, 0};
-        assert(send(control, reinterpret_cast<const char*>(methodReply),
-            sizeof(methodReply), 0) == static_cast<int>(sizeof(methodReply)));
+        assert(sendExact(control, reinterpret_cast<const char*>(methodReply),
+            static_cast<int>(sizeof(methodReply))));
 
         std::uint8_t request[10]{};
-        assert(recv(control, reinterpret_cast<char*>(request), sizeof(request), 0) ==
-            static_cast<int>(sizeof(request)));
+        assert(receiveExact(control, reinterpret_cast<char*>(request),
+            static_cast<int>(sizeof(request))));
         assert(request[0] == 5 && request[1] == 3 && request[3] == 1);
         assert(request[8] != 0 || request[9] != 0);
 
@@ -802,8 +820,8 @@ void TestSocks5UdpFlowRelayBridge() {
             static_cast<std::uint8_t>(port >> 8),
             static_cast<std::uint8_t>(port & 0xFF)
         };
-        assert(send(control, reinterpret_cast<const char*>(reply),
-            sizeof(reply), 0) == static_cast<int>(sizeof(reply)));
+        assert(sendExact(control, reinterpret_cast<const char*>(reply),
+            static_cast<int>(sizeof(reply))));
 
         std::uint8_t packet[256]{};
         sockaddr_in client{};

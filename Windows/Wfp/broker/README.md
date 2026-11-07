@@ -97,3 +97,14 @@ The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, I
 - Rejects non-loopback relay endpoints and address-family mismatches to prevent accidental external relay targets.
 - Keeps the TCP control socket open for the UDP association lifetime, supports cancellation registration, and detects peer closure without blocking.
 - A fake local SOCKS5 server test validates the handshake, advertised UDP port, relay endpoint selection, and control-channel teardown.
+
+
+## Per-flow SOCKS5 UDP bridge (implemented, not activated)
+
+- A flow bridge owns one wildcard-bound ephemeral UDP socket and one loopback-only upstream SOCKS5 UDP ASSOCIATE control connection.
+- Each client payload is wrapped with the original destination address and port from the validated WFP redirect context, then sent only to the negotiated relay endpoint.
+- Relay responses are accepted only from that exact relay endpoint and only when the SOCKS5 response source address/port matches the original WFP destination.
+- The original client endpoint and opaque WFP redirect record/context are retained so the response can be sent back with the correct source identity through the redirected ingress socket.
+- IPv4/IPv6 endpoints are validated; unspecified, multicast and invalid source endpoints are rejected. IPv6 WFP ancillary metadata uses the IPv6 protocol level.
+- Local fake-SOCKS tests cover association handshake, payload forwarding, mismatched response destination rejection, and deterministic control/socket teardown.
+- The bridge is a tested primitive only. It is not yet hosted by a UDP broker listener or connected to the WFP flow table/IPC endpoint. UDP filters remain disabled.

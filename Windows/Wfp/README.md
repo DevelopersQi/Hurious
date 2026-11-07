@@ -84,3 +84,6 @@ remains independent and must not be silently replaced by WFP.
 Use Visual Studio 2022 with the matching Windows 10 SDK and Windows Driver Kit.
 Build and test the driver on a disposable Windows 10 x64 VM with test signing.
 Never install an experimental callout driver on a production workstation.
+
+
+The broker now includes a per-flow SOCKS5 UDP bridge primitive and loopback regression coverage. It preserves the original WFP destination and redirect metadata, validates the negotiated relay source and returned datagram destination, and owns its UDP socket/control connection lifecycle. This is not yet wired into a UDP listener or the service endpoint configuration; UDP remains disabled in WFP filters and IPC.

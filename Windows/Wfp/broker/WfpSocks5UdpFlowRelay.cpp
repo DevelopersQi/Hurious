@@ -167,6 +167,10 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::ForwardUpstreamResponse(
     if (bytesSent) *bytesSent = 0;
     if (!IsOpen() || response.payload == nullptr)
         return WfpSocks5UdpFlowRelayResult::NotReady;
+    if (!association_.IsControlAlive()) {
+        Close();
+        return WfpSocks5UdpFlowRelayResult::ControlClosed;
+    }
     if (!MatchesOriginalDestination(response))
         return WfpSocks5UdpFlowRelayResult::UnexpectedDestination;
     const int error = SendWfpUdpMessage(ingress, sendMessage,
