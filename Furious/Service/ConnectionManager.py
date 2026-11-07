@@ -1326,7 +1326,11 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 socksConfig = runtimeConfiguration.get('socks5', {})
                 if not isinstance(socksConfig, dict):
                     socksConfig = {}
-                if socksConfig.get('username') or socksConfig.get('password'):
+                if (
+                    socksConfig.get('username')
+                    or socksConfig.get('password')
+                    or socksConfig.get('auth')
+                ):
                     logger.warning(
                         'WFP TCP broker requires a no-auth Hysteria2 SOCKS5 inbound'
                     )
@@ -1342,6 +1346,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 # The native broker currently implements SOCKS5 no-auth only.
                 inbounds = runtimeConfiguration.get('inbounds', [])
                 for inbound in inbounds if isinstance(inbounds, list) else ():
+                    if not isinstance(inbound, dict):
+                        continue
                     if str(inbound.get('protocol', '')).casefold() != 'socks':
                         continue
                     settings = inbound.get('settings', {})
