@@ -38,38 +38,37 @@ Socks5UdpBuildResult BuildSocks5UdpAssociateReply(
     Socks5UdpAddressType type, const std::uint8_t* address,
     std::size_t addressLength, std::uint16_t port,
     std::vector<std::uint8_t>& output) noexcept {
-    return BuildSocks5UdpDatagram(type, address, addressLength, port,
-        nullptr, 0, output, 22) == Socks5UdpBuildResult::Valid
-        ? (output[0] = 0x05, output[1] = 0x00, output[2] = 0x00,
-           Socks5UdpBuildResult::Valid)
-        : [&]() noexcept {
-            // Reuse the strict address/port encoder, then translate its
-            // four-byte UDP header into the three-byte SOCKS reply prefix.
-            output.clear();
-            if (address == nullptr) return Socks5UdpBuildResult::NullAddress;
-            if (port == 0) return Socks5UdpBuildResult::InvalidPort;
-            std::size_t expected = type == Socks5UdpAddressType::Ipv4 ? 4 :
-                type == Socks5UdpAddressType::Ipv6 ? 16 :
-                type == Socks5UdpAddressType::Domain ? addressLength : 0;
-            if (expected == 0 || expected != addressLength)
-                return type == Socks5UdpAddressType::Domain && addressLength == 0
-                    ? Socks5UdpBuildResult::EmptyDomain
-                    : Socks5UdpBuildResult::InvalidAddressLength;
-            try {
-                output.reserve(3 + (type == Socks5UdpAddressType::Domain ? 1 : 0)
-                    + addressLength + 2);
-                output.insert(output.end(), {0x05, 0x00, 0x00,
-                    static_cast<std::uint8_t>(type)});
-                if (type == Socks5UdpAddressType::Domain)
-                    output.push_back(static_cast<std::uint8_t>(addressLength));
-                output.insert(output.end(), address, address + addressLength);
-                output.push_back(static_cast<std::uint8_t>(port >> 8));
-                output.push_back(static_cast<std::uint8_t>(port & 0xFF));
-            } catch (...) {
-                output.clear();
-                return Socks5UdpBuildResult::AllocationFailure;
-            }
-            return Socks5UdpBuildResult::Valid;
-        }();
+    output.clear();
+    if (address == nullptr) return Socks5UdpBuildResult::NullAddress;
+    if (port == 0) return Socks5UdpBuildResult::InvalidPort;
+    switch (type) {
+    case Socks5UdpAddressType::Ipv4:
+        if (addressLength != 4) return Socks5UdpBuildResult::InvalidAddressLength;
+        break;
+    case Socks5UdpAddressType::Ipv6:
+        if (addressLength != 16) return Socks5UdpBuildResult::InvalidAddressLength;
+        break;
+    case Socks5UdpAddressType::Domain:
+        if (addressLength == 0) return Socks5UdpBuildResult::EmptyDomain;
+        if (addressLength > 255) return Socks5UdpBuildResult::InvalidAddressLength;
+        break;
+    default:
+        return Socks5UdpBuildResult::InvalidAddressType;
+    }
+    try {
+        output.reserve(4 + (type == Socks5UdpAddressType::Domain ? 1 : 0)
+            + addressLength + 2);
+        output.insert(output.end(), {0x05, 0x00, 0x00,
+            static_cast<std::uint8_t>(type)});
+        if (type == Socks5UdpAddressType::Domain)
+            output.push_back(static_cast<std::uint8_t>(addressLength));
+        output.insert(output.end(), address, address + addressLength);
+        output.push_back(static_cast<std::uint8_t>(port >> 8));
+        output.push_back(static_cast<std::uint8_t>(port & 0xFF));
+    } catch (...) {
+        output.clear();
+        return Socks5UdpBuildResult::AllocationFailure;
+    }
+    return Socks5UdpBuildResult::Valid;
 }
 }

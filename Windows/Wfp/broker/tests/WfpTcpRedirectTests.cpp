@@ -286,7 +286,9 @@ void TestSocks5UdpAssociationLifecycle() {
     assert(!a.IsActive(t+std::chrono::seconds(30)));
     assert(a.AuthorizeClientDatagram(client, 10, t+std::chrono::seconds(30))==
         Socks5UdpAssociationResult::Inactive);
-    assert(a.Start(peer, 62000, std::chrono::seconds(5), 512, t));
+    assert(a.Start(peer, 62001, std::chrono::seconds(5), 512, t));
+    assert(a.AuthorizeClientDatagram(client, 10, t)==Socks5UdpAssociationResult::SourcePortMismatch);
+    client.port = 62001;
     assert(a.AuthorizeClientDatagram(client, 10, t)==Socks5UdpAssociationResult::Accepted);
     a.OnControlClosed();
     assert(!a.IsActive(t) && a.MaximumDatagramLength()==0);
@@ -328,6 +330,23 @@ void TestSocks5UdpAssociateControlMessages() {
     assert(reply == expected);
     assert(BuildSocks5UdpAssociateReply(Socks5UdpAddressType::Ipv4,
         address, sizeof(address), 0, reply) == Socks5UdpBuildResult::InvalidPort);
+    assert(reply.empty());
+    const std::uint8_t ipv6[] = {0x20,0x01,0x0D,0xB8,0,0,0,0,0,0,0,0,0,0,0,1};
+    assert(BuildSocks5UdpAssociateReply(Socks5UdpAddressType::Ipv6,
+        ipv6, sizeof(ipv6), 5353, reply) == Socks5UdpBuildResult::Valid);
+    assert(reply.size() == 22 && reply[0] == 5 && reply[1] == 0 &&
+        reply[3] == 4 && reply[20] == 0x14 && reply[21] == 0xE9);
+    const std::uint8_t domain[] = {'r','e','l','a','y','.','l','o','c','a','l'};
+    assert(BuildSocks5UdpAssociateReply(Socks5UdpAddressType::Domain,
+        domain, sizeof(domain), 40000, reply) == Socks5UdpBuildResult::Valid);
+    assert(reply.size() == 18 && reply[3] == 3 && reply[4] == sizeof(domain));
+    std::uint8_t tooLongDomain[256]{};
+    assert(BuildSocks5UdpAssociateReply(Socks5UdpAddressType::Domain,
+        tooLongDomain, sizeof(tooLongDomain), 40000, reply) ==
+        Socks5UdpBuildResult::InvalidAddressLength);
+    assert(reply.empty());
+    assert(BuildSocks5UdpAssociateReply(static_cast<Socks5UdpAddressType>(0x7F),
+        address, sizeof(address), 40000, reply) == Socks5UdpBuildResult::InvalidAddressType);
     assert(reply.empty());
 }
 
