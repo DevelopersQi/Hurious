@@ -6,6 +6,7 @@
 #include "../WfpSocks5UdpRedirectRecord.h"
 #include "../WfpUdpFlowManager.h"
 #include "../WfpSocks5UdpAssociationClient.h"
+#include "../WfpSocks5UdpRelayTransport.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
@@ -588,6 +589,98 @@ void TestSocks5UdpAssociationClientHandshake() {
     WSACleanup();
 }
 
+void TestSocks5UdpRelayTransportLoopback() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        SOCKET relay = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        SOCKET client = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        SOCKET attacker = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        assert(relay != INVALID_SOCKET && client != INVALID_SOCKET &&
+            attacker != INVALID_SOCKET);
+
+        sockaddr_in relayAddress{};
+        relayAddress.sin_family = AF_INET;
+        relayAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        relayAddress.sin_port = 0;
+        assert(bind(relay, reinterpret_cast<const sockaddr*>(&relayAddress),
+            sizeof(relayAddress)) == 0);
+        int relayLength = sizeof(relayAddress);
+        assert(getsockname(relay, reinterpret_cast<sockaddr*>(&relayAddress),
+            &relayLength) == 0);
+
+        const std::uint8_t target[] = {203, 0, 113, 7};
+        const std::uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
+        int error = 0;
+        assert(SendSocks5UdpToRelay(client,
+            reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+            Socks5UdpAddressType::Ipv4, target, sizeof(target), 5353,
+            payload, sizeof(payload), 1400, &error) == Socks5UdpRelayIoResult::Sent);
+        assert(error == 0);
+
+        std::uint8_t relayBuffer[128]{};
+        sockaddr_in clientAddress{};
+        int clientLength = sizeof(clientAddress);
+        const int requestLength = recvfrom(relay,
+            reinterpret_cast<char*>(relayBuffer), sizeof(relayBuffer), 0,
+            reinterpret_cast<sockaddr*>(&clientAddress), &clientLength);
+        assert(requestLength > 0);
+        Socks5UdpDatagramView request{};
+        assert(ParseSocks5UdpDatagram(relayBuffer,
+            static_cast<std::size_t>(requestLength), request) == Socks5UdpParseResult::Valid);
+        assert(request.addressType == Socks5UdpAddressType::Ipv4 &&
+            request.addressLength == sizeof(target) && request.port == 5353 &&
+            request.payloadLength == sizeof(payload));
+        assert(std::memcmp(request.address, target, sizeof(target)) == 0);
+        assert(std::memcmp(request.payload, payload, sizeof(payload)) == 0);
+
+        std::vector<std::uint8_t> response;
+        assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+            target, sizeof(target), 5353, payload, sizeof(payload),
+            response, 1400) == Socks5UdpBuildResult::Valid);
+        assert(sendto(relay, reinterpret_cast<const char*>(response.data()),
+            static_cast<int>(response.size()), 0,
+            reinterpret_cast<const sockaddr*>(&clientAddress), sizeof(clientAddress)) ==
+            static_cast<int>(response.size()));
+
+        std::uint8_t receiveBuffer[128]{};
+        Socks5UdpDatagramView received{};
+        std::size_t receivedLength = 0;
+        assert(ReceiveSocks5UdpFromRelay(client,
+            reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+            receiveBuffer, sizeof(receiveBuffer), received, receivedLength, &error) ==
+            Socks5UdpRelayIoResult::Received);
+        assert(error == 0 && receivedLength == response.size());
+        assert(received.port == 5353 && received.payloadLength == sizeof(payload));
+        assert(std::memcmp(received.payload, payload, sizeof(payload)) == 0);
+
+        // A datagram from any other source is rejected before parsing.
+        assert(sendto(attacker, reinterpret_cast<const char*>(response.data()),
+            static_cast<int>(response.size()), 0,
+            reinterpret_cast<const sockaddr*>(&clientAddress), sizeof(clientAddress)) ==
+            static_cast<int>(response.size()));
+        assert(ReceiveSocks5UdpFromRelay(client,
+            reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+            receiveBuffer, sizeof(receiveBuffer), received, receivedLength, &error) ==
+            Socks5UdpRelayIoResult::UnexpectedRelay);
+        assert(receivedLength == 0 && received.address == nullptr);
+
+        u_long nonblocking = 1;
+        assert(ioctlsocket(client, FIONBIO, &nonblocking) == 0);
+        assert(ReceiveSocks5UdpFromRelay(client,
+            reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+            receiveBuffer, sizeof(receiveBuffer), received, receivedLength, &error) ==
+            Socks5UdpRelayIoResult::WouldBlock);
+        assert(error == WSAEWOULDBLOCK);
+
+        closesocket(attacker);
+        closesocket(client);
+        closesocket(relay);
+    }
+    WSACleanup();
+}
+
 void TestWfpUdpFlowManager() {
     using namespace furious::wfp::broker;
     using Clock = WfpUdpFlowManager::Clock;
@@ -955,6 +1048,7 @@ int main() {
     TestSocks5UdpSocketOwnership();
     TestSocks5UdpAssociateReplyParser();
     TestSocks5UdpAssociationClientHandshake();
+    TestSocks5UdpRelayTransportLoopback();
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpMessageReceive();
