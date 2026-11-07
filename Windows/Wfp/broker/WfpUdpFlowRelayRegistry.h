@@ -66,6 +66,7 @@ public:
         int* errorCode = nullptr) noexcept;
 
     std::size_t SweepExpired(TimePoint now) noexcept;
+    std::size_t SweepClosedControls() noexcept;
     void CloseAll() noexcept;
     std::size_t ActiveCount() const noexcept;
     bool GetRelaySockets(std::vector<WfpUdpRelaySocket>& output) const noexcept;

@@ -950,11 +950,12 @@ void TestSocks5UdpFlowRelayBridge() {
     assert(response.payloadLength == sizeof(payload));
     assert(std::memcmp(response.payload, payload, sizeof(payload)) == 0);
     assert(bridge.IsOpen());
-    bridge.Close();
-    assert(!bridge.IsOpen());
     allowServerClose.store(true);
     fakeSocksServer.join();
     assert(serverOk.load());
+    assert(!bridge.IsControlAlive());
+    bridge.Close();
+    assert(!bridge.IsOpen());
     closesocket(udpRelay);
     closesocket(listener);
     WSACleanup();

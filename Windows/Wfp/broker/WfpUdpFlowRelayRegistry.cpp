@@ -227,6 +227,22 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
     return count;
 }
 
+std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
+    std::size_t closed = 0;
+    for (auto it = relays_.begin(); it != relays_.end();) {
+        if (it->second->IsControlAlive()) {
+            ++it;
+            continue;
+        }
+        const auto flowId = it->first;
+        it->second->Close();
+        it = relays_.erase(it);
+        flows_.Remove(flowId);
+        ++closed;
+    }
+    return closed;
+}
+
 void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
     const auto found = relays_.find(flowId);
     if (found != relays_.end()) {

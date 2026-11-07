@@ -45,6 +45,7 @@ public:
 
     SOCKET UdpSocket() const noexcept;
     SOCKET ControlSocket() const noexcept;
+    bool IsControlAlive() const noexcept;
     const sockaddr* OriginalClient() const noexcept;
     int OriginalClientLength() const noexcept;
 

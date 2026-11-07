@@ -193,6 +193,9 @@ SOCKET WfpSocks5UdpFlowRelay::UdpSocket() const noexcept {
 SOCKET WfpSocks5UdpFlowRelay::ControlSocket() const noexcept {
     return association_.ControlSocket();
 }
+bool WfpSocks5UdpFlowRelay::IsControlAlive() const noexcept {
+    return association_.IsControlAlive();
+}
 const sockaddr* WfpSocks5UdpFlowRelay::OriginalClient() const noexcept {
     return originalClientLength_ == 0 ? nullptr :
         reinterpret_cast<const sockaddr*>(&originalClient_);
