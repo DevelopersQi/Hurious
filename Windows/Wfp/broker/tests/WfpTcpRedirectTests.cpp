@@ -595,6 +595,11 @@ void TestWfpUdpFlowManager() {
         now + std::chrono::seconds(19), touchedId) == TouchResult::Expired);
     assert(manager.ActiveCount() == 0);
 
+    sockaddr_in oversizedSource = source;
+    assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&oversizedSource),
+        sizeof(sockaddr_storage), context, record, now, duplicateId) ==
+        CreateResult::InvalidSource);
+
     sockaddr_in invalidSource = source;
     invalidSource.sin_port = 0;
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&invalidSource),

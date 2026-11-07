@@ -19,14 +19,14 @@ bool WfpUdpFlowManager::IsValidSourceEndpoint(
     int endpointLength) noexcept {
     if (endpoint == nullptr) return false;
     if (endpoint->sa_family == AF_INET) {
-        if (endpointLength < static_cast<int>(sizeof(sockaddr_in))) return false;
+        if (endpointLength != static_cast<int>(sizeof(sockaddr_in))) return false;
         const auto* address = reinterpret_cast<const sockaddr_in*>(endpoint);
         const auto* bytes = reinterpret_cast<const std::uint8_t*>(&address->sin_addr);
         if (address->sin_port == 0 || bytes[0] == 0 || bytes[0] >= 224) return false;
         return true;
     }
     if (endpoint->sa_family == AF_INET6) {
-        if (endpointLength < static_cast<int>(sizeof(sockaddr_in6))) return false;
+        if (endpointLength != static_cast<int>(sizeof(sockaddr_in6))) return false;
         const auto* address = reinterpret_cast<const sockaddr_in6*>(endpoint);
         if (address->sin6_port == 0) return false;
         bool unspecified = true;
@@ -157,14 +157,17 @@ WfpUdpFlowCreateResult WfpUdpFlowManager::RegisterFirstDatagram(
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    for (std::size_t i = 0; i < entries_.size();) {
+        if (IsExpired(entries_[i], now)) {
+            entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
+        } else {
+            ++i;
+        }
+    }
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         auto& entry = entries_[i];
         if (!SameSourceEndpoint(entry.sourceEndpoint, entry.sourceEndpointLength,
                 sourceEndpoint, sourceEndpointLength)) continue;
-        if (IsExpired(entry, now)) {
-            entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
-            break;
-        }
         if (SameFlowIdentity(entry, redirectContext, redirectRecord)) {
             entry.lastActivity = now;
             flowId = entry.id;
