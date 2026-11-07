@@ -144,7 +144,7 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::ForwardUpstreamResponse(
     SOCKET ingress, LPFN_WSASENDMSG sendMessage,
     const Socks5UdpDatagramView& response, DWORD* bytesSent) noexcept {
     if (bytesSent) *bytesSent = 0;
-    if (!IsOpen() || response.payload == nullptr || response.payloadLength == 0)
+    if (!IsOpen() || response.payload == nullptr)
         return WfpSocks5UdpFlowRelayResult::NotReady;
     if (!MatchesOriginalDestination(response))
         return WfpSocks5UdpFlowRelayResult::UnexpectedDestination;

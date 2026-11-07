@@ -739,6 +739,7 @@ void TestSocks5UdpFlowRelayBridge() {
         &udpLength) == 0);
 
     std::atomic<bool> serverOk{false};
+    std::atomic<bool> allowServerClose{false};
     std::thread fakeSocksServer([&]() {
         SOCKET control = accept(listener, nullptr, nullptr);
         assert(control != INVALID_SOCKET);
@@ -754,7 +755,7 @@ void TestSocks5UdpFlowRelayBridge() {
         assert(recv(control, reinterpret_cast<char*>(request), sizeof(request), 0) ==
             static_cast<int>(sizeof(request)));
         assert(request[0] == 5 && request[1] == 3 && request[3] == 1);
-        assert(ntohs(*reinterpret_cast<const std::uint16_t*>(request + 8)) != 0);
+        assert(request[8] != 0 || request[9] != 0);
 
         const std::uint16_t port = ntohs(udpAddress.sin_port);
         const std::uint8_t reply[] = {
@@ -801,6 +802,7 @@ void TestSocks5UdpFlowRelayBridge() {
             reinterpret_cast<const sockaddr*>(&client), sizeof(client)) ==
             static_cast<int>(response.size()));
         serverOk.store(true);
+        while (!allowServerClose.load()) std::this_thread::yield();
         closesocket(control);
     });
 
@@ -851,6 +853,7 @@ void TestSocks5UdpFlowRelayBridge() {
     assert(bridge.IsOpen());
     bridge.Close();
     assert(!bridge.IsOpen());
+    allowServerClose.store(true);
     fakeSocksServer.join();
     assert(serverOk.load());
     closesocket(udpRelay);
