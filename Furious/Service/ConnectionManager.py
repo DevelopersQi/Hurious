@@ -1263,15 +1263,15 @@ class ConnectionManager(Mixins.CleanupOnExit):
         if sys.platform != 'win32' or not self._wfpPolicyHasProxyRules:
             return None
 
-        controller = self._getWfpIpcController()
-        # Invalidate any endpoint left by a previous core before inspecting
-        # the new upstream. Unsupported or malformed backends must not reuse it.
-        controller.clearEndpointConfig()
-        controller.stopBroker()
-        self._wfpBrokerEndpoint = None
-        self._wfpBrokerPending.clear()
-
         try:
+            controller = self._getWfpIpcController()
+            # Invalidate any endpoint left by a previous core before inspecting
+            # the new upstream. Unsupported or malformed backends must not reuse it.
+            controller.clearEndpointConfig()
+            controller.stopBroker()
+            self._wfpBrokerEndpoint = None
+            self._wfpBrokerPending.clear()
+
             factory = getPluginRegistry().factoryForConfig(configuration)
             factoryId = str(getattr(factory, 'factoryId', '')).casefold()
             backend = {
