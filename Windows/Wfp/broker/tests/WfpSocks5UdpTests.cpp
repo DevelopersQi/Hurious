@@ -375,6 +375,10 @@ void TestNonblockingSocks5UdpHandshake() {
     assert(getsockname(listener, reinterpret_cast<sockaddr*>(&bindAddress),
         &bindLength) == 0);
 
+    Socks5UdpSocket udpSocket;
+    const auto udpOpen = udpSocket.Open(Socks5UdpEndpointFamily::Ipv4);
+    assert(udpOpen == Socks5UdpSocketOpenResult::Opened);
+
     std::thread fakeSocksServer([listener]() {
         fd_set readable;
         FD_ZERO(&readable);
@@ -410,14 +414,18 @@ void TestNonblockingSocks5UdpHandshake() {
         closesocket(peer);
     });
 
-    Socks5UdpSocket udpSocket;
-    assert(udpSocket.Open(Socks5UdpEndpointFamily::Ipv4) ==
-        Socks5UdpSocketOpenResult::Opened);
     Socks5UdpAssociationClient association;
     const auto begin = association.BeginOpen(
         reinterpret_cast<const sockaddr*>(&bindAddress),
         static_cast<int>(sizeof(bindAddress)), udpSocket, 4000);
-    assert(begin == Socks5UdpAssociationAsyncResult::Pending);
+    if (begin != Socks5UdpAssociationAsyncResult::Pending) {
+        association.Close();
+        fakeSocksServer.join();
+        udpSocket.Close();
+        closesocket(listener);
+        assert(begin == Socks5UdpAssociationAsyncResult::Pending);
+        return;
+    }
 
     auto result = Socks5UdpAssociationAsyncResult::Pending;
     const auto deadline = std::chrono::steady_clock::now() +
