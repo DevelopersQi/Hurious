@@ -60,7 +60,10 @@ def collect_live_proxy_process_ids(runtimes, is_excluded_runtime=None):
             # An uncertain process state is never safe to exclude from redirect.
             continue
 
-        process_id = getattr(runtime, "processId", None)
+        try:
+            process_id = getattr(runtime, "processId", None)
+        except Exception:
+            continue
         if (
             isinstance(process_id, int)
             and not isinstance(process_id, bool)
