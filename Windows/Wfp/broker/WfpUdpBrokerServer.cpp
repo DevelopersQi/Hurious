@@ -110,10 +110,21 @@ bool UdpBrokerServer::Start(const sockaddr* socksAddress, int socksAddressLength
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return false;
     winsockStarted_ = true;
 
+    try {
+        // Respect the caller's global flow limit. Keep the per-process cap
+        // bounded and never larger than the global cap.
+        registry_ = std::make_unique<WfpUdpFlowRelayRegistry>(
+            maximumFlows, (std::min)(maximumFlows, static_cast<std::size_t>(16)));
+    } catch (...) {
+        WSACleanup();
+        winsockStarted_ = false;
+        return false;
+    }
+
     bool anyIngress = false;
     if (enableIpv4) anyIngress = CreateIngress(AF_INET, ipv4_) || anyIngress;
     if (enableIpv6) anyIngress = CreateIngress(AF_INET6, ipv6_) || anyIngress;
-    if (!anyIngress || !registry_.Configure(socksAddress, socksAddressLength)) {
+    if (!anyIngress || !registry_->Configure(socksAddress, socksAddressLength)) {
         CloseIngress(ipv4_);
         CloseIngress(ipv6_);
         WSACleanup();

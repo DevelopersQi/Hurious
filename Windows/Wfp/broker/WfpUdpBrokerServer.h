@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -49,7 +50,7 @@ private:
     Ingress ipv4_{};
     Ingress ipv6_{};
     UdpBrokerListenerPorts ports_{};
-    WfpUdpFlowRelayRegistry registry_;
+    std::unique_ptr<WfpUdpFlowRelayRegistry> registry_;
     std::thread ioThread_;
 };
 
