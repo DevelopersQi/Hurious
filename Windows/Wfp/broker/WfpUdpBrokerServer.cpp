@@ -121,10 +121,14 @@ bool UdpBrokerServer::Start(const sockaddr* socksAddress, int socksAddressLength
         return false;
     }
 
-    bool anyIngress = false;
-    if (enableIpv4) anyIngress = CreateIngress(AF_INET, ipv4_) || anyIngress;
-    if (enableIpv6) anyIngress = CreateIngress(AF_INET6, ipv6_) || anyIngress;
-    if (!anyIngress || !registry_->Configure(socksAddress, socksAddressLength)) {
+    // Listener-family selection is part of the broker contract. Do not
+    // silently downgrade a dual-stack request to one family: the service may
+    // otherwise publish endpoint flags that cannot be honored by this broker.
+    const bool ipv4Ready = !enableIpv4 || CreateIngress(AF_INET, ipv4_);
+    const bool ipv6Ready = !enableIpv6 || CreateIngress(AF_INET6, ipv6_);
+    if (!ipv4Ready || !ipv6Ready ||
+        (ipv4_.socket == INVALID_SOCKET && ipv6_.socket == INVALID_SOCKET) ||
+        !registry_->Configure(socksAddress, socksAddressLength)) {
         CloseIngress(ipv4_);
         CloseIngress(ipv6_);
         WSACleanup();
