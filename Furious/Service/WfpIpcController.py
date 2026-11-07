@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from queue import Queue
-from threading import Lock, Thread
+from threading import Lock, Thread, current_thread
 from itertools import count
 
 from PySide6 import QtCore
@@ -44,11 +44,14 @@ class _WfpIpcWorker:
 
     def close(self):
         with self._stateLock:
-            if self._closed:
-                return
+            if not self._closed:
+                self._closed = True
+                self._queue.put(self._STOP)
 
-            self._closed = True
-            self._queue.put(self._STOP)
+        # IPC requests are bounded; wait briefly so queued endpoint-clear and
+        # broker-stop operations can finish before the application exits.
+        if current_thread() is not self._thread:
+            self._thread.join(timeout=3.0)
 
     def _run(self):
         client = None
