@@ -69,6 +69,10 @@ public:
         TimePoint now,
         std::uint64_t& flowId) noexcept;
 
+    // Checks the idle lease without extending it. Used for untrusted upstream
+    // traffic so a response cannot keep an otherwise idle flow alive.
+    bool IsActive(std::uint64_t flowId, TimePoint now) const noexcept;
+
     bool GetSnapshot(std::uint64_t flowId, WfpUdpFlowSnapshot& output) const noexcept;
     bool Remove(std::uint64_t flowId) noexcept;
     std::size_t SweepExpired(TimePoint now) noexcept;

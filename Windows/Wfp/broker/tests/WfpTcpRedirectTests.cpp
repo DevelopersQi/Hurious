@@ -1067,6 +1067,12 @@ void TestWfpUdpFlowManager() {
     assert(snapshot.redirectRecord == record);
     assert(snapshot.sourceEndpoint.ss_family == AF_INET);
 
+    const auto lastActivity = snapshot.lastActivity;
+    assert(manager.IsActive(firstId, now + std::chrono::seconds(18)));
+    assert(!manager.IsActive(firstId, now + std::chrono::seconds(19)));
+    assert(manager.GetSnapshot(firstId, snapshot));
+    assert(snapshot.lastActivity == lastActivity); // IsActive must never refresh idle time.
+
     std::uint64_t expiredRegistrationId = 0;
     assert(manager.RegisterFirstDatagram(reinterpret_cast<const sockaddr*>(&source),
         sizeof(source), context, record, now + std::chrono::seconds(20),

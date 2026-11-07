@@ -185,19 +185,12 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
     std::uint64_t flowId, SOCKET ingress, LPFN_WSASENDMSG sendMessage,
     std::uint8_t* buffer, std::size_t capacity, TimePoint now,
     int* errorCode) noexcept {
-    (void)now;
     const auto found = relays_.find(flowId);
     if (found == relays_.end()) return WfpUdpFlowRelayRegistryResult::FlowNotFound;
 
-    // Do not forward a response for a flow whose idle lease has already
-    // expired. Touch before receiving/forwarding so late upstream traffic
-    // cannot resurrect an expired flow after its relay should be closed.
-    std::uint64_t touchedFlowId = 0;
-    const auto touchResult = flows_.Touch(
-        found->second->OriginalClient(),
-        found->second->OriginalClientLength(), now, touchedFlowId);
-    if (touchResult != WfpUdpFlowTouchResult::Found ||
-        touchedFlowId != flowId) {
+    // Upstream traffic is not client activity. Check the lease without
+    // refreshing it, otherwise unsolicited responses can keep idle flows alive.
+    if (!flows_.IsActive(flowId, now)) {
         CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::FlowNotFound;
     }
@@ -228,6 +221,18 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::HandleUpstreamResponse(
     if (forwarded != WfpSocks5UdpFlowRelayResult::Ready) {
         CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ForwardFailed;
+    }
+
+    // Only a validated response that was actually forwarded may extend the
+    // flow lease. The broker owns this registry on one I/O thread.
+    std::uint64_t touchedFlowId = 0;
+    const auto touchResult = flows_.Touch(
+        found->second->OriginalClient(),
+        found->second->OriginalClientLength(), now, touchedFlowId);
+    if (touchResult != WfpUdpFlowTouchResult::Found ||
+        touchedFlowId != flowId) {
+        CloseFlow(flowId);
+        return WfpUdpFlowRelayRegistryResult::FlowNotFound;
     }
     return WfpUdpFlowRelayRegistryResult::Ready;
 }

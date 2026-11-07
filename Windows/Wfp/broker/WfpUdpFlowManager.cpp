@@ -227,6 +227,19 @@ WfpUdpFlowTouchResult WfpUdpFlowManager::Touch(
     return WfpUdpFlowTouchResult::NotFound;
 }
 
+bool WfpUdpFlowManager::IsActive(
+    std::uint64_t flowId,
+    TimePoint now) const noexcept {
+    if (flowId == 0) return false;
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& entry : entries_) {
+        if (entry.id == flowId) {
+            return !IsExpired(entry, now);
+        }
+    }
+    return false;
+}
+
 bool WfpUdpFlowManager::GetSnapshot(
     std::uint64_t flowId,
     WfpUdpFlowSnapshot& output) const noexcept {
