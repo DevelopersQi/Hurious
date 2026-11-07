@@ -399,7 +399,11 @@ void TestUdpFlowManagerIpv6ScopeIdentity() {
 
     sockaddr_in6 source{};
     source.sin6_family = AF_INET6;
-    source.sin6_addr = in6addr_loopback;
+    // Link-local IPv6 addresses require an interface scope. Use a real
+    // fe80::/10 source so scope identity is exercised, not just stored.
+    source.sin6_addr.s6_addr[0] = 0xFE;
+    source.sin6_addr.s6_addr[1] = 0x80;
+    source.sin6_addr.s6_addr[15] = 0x01;
     source.sin6_port = htons(53001);
     source.sin6_scope_id = 7;
 
