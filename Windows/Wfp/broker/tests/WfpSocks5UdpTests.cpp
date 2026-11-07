@@ -5,6 +5,7 @@
 #include "../WfpSocks5UdpAssociationClient.h"
 #include "../WfpSocks5UdpSocket.h"
 #include "../WfpSocks5UdpRedirectRecord.h"
+#include "../WfpUdpFlowManager.h"
 #include "../../include/WfpRedirectProtocol.h"
 
 #include <winsock2.h>
@@ -192,6 +193,111 @@ void TestRedirectContextDecodeRequiresValidUdpMetadata() {
     bytes.pop_back();
     assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
         WfpUdpRedirectContextDecodeResult::InvalidSize);
+}
+
+FURIOUS_WFP_REDIRECT_CONTEXT MakeUdpRedirectContext(
+    FURIOUS_WFP_U32 processId, FURIOUS_WFP_U32 priority = 1) {
+    FURIOUS_WFP_REDIRECT_CONTEXT context{};
+    context.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    context.Size = sizeof(context);
+    context.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    context.OriginalPortNetworkOrder = htons(443);
+    context.OriginalAddress[0] = 198;
+    context.OriginalAddress[1] = 51;
+    context.OriginalAddress[2] = 100;
+    context.OriginalAddress[3] = 8;
+    context.OriginalProcessId = processId;
+    context.RulePriority = priority;
+    context.PolicyGeneration = 12;
+    return context;
+}
+
+sockaddr_in FlowSource(std::uint16_t port) {
+    sockaddr_in source{};
+    source.sin_family = AF_INET;
+    source.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    source.sin_port = htons(port);
+    return source;
+}
+
+void TestUdpFlowManagerIdentityLimitsAndExpiry() {
+    using Clock = WfpUdpFlowManager::Clock;
+    const auto now = Clock::now();
+    WfpUdpFlowManager manager(2, 1, std::chrono::seconds(10));
+    const auto context = MakeUdpRedirectContext(1001);
+    const std::vector<std::uint8_t> record{0x10, 0x20, 0x30};
+    auto source1 = FlowSource(50001);
+    std::uint64_t flow1 = 0;
+
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source1), sizeof(source1),
+        context, record, now, flow1) == WfpUdpFlowCreateResult::Created);
+    assert(flow1 != 0);
+    std::uint64_t existingId = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source1), sizeof(source1),
+        context, record, now + std::chrono::seconds(1), existingId) ==
+        WfpUdpFlowCreateResult::ExistingFlow);
+    assert(existingId == flow1);
+
+    auto conflictingContext = context;
+    conflictingContext.RulePriority = 2;
+    std::uint64_t conflictId = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source1), sizeof(source1),
+        conflictingContext, record, now, conflictId) ==
+        WfpUdpFlowCreateResult::SourceEndpointConflict);
+
+    WfpUdpFlowSnapshot snapshot{};
+    assert(manager.GetSnapshot(flow1, snapshot));
+    assert(snapshot.id == flow1);
+    assert(snapshot.redirectContext.OriginalProcessId == 1001);
+    assert(snapshot.redirectRecord == record);
+
+    auto source2 = FlowSource(50002);
+    std::uint64_t flow2 = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source2), sizeof(source2),
+        context, record, now, flow2) ==
+        WfpUdpFlowCreateResult::PerProcessLimitReached);
+
+    auto context2 = MakeUdpRedirectContext(1002);
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source2), sizeof(source2),
+        context2, record, now, flow2) == WfpUdpFlowCreateResult::Created);
+    assert(manager.ActiveCount() == 2);
+
+    auto source3 = FlowSource(50003);
+    auto context3 = MakeUdpRedirectContext(1003);
+    std::uint64_t flow3 = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source3), sizeof(source3),
+        context3, record, now, flow3) ==
+        WfpUdpFlowCreateResult::FlowLimitReached);
+
+    std::uint64_t touchedId = 0;
+    assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source1),
+        sizeof(source1), now + std::chrono::seconds(2), touchedId) ==
+        WfpUdpFlowTouchResult::Found);
+    assert(touchedId == flow1);
+    assert(manager.IsActive(flow1, now + std::chrono::seconds(9)));
+    assert(!manager.IsActive(flow1, now + std::chrono::seconds(12)));
+
+    std::vector<std::uint64_t> expired;
+    assert(manager.SweepExpired(now + std::chrono::seconds(12), expired) == 2);
+    assert(expired.size() == 2);
+    assert(manager.Remove(flow1));
+    assert(manager.Remove(flow2));
+    assert(manager.ActiveCount() == 0);
+
+    auto invalidContext = MakeUdpRedirectContext(1004);
+    invalidContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_TCP;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source3), sizeof(source3),
+        invalidContext, record, now, flow3) ==
+        WfpUdpFlowCreateResult::InvalidContext);
 }
 
 void TestAssociationSourcePinningAndExpiry() {
@@ -386,6 +492,7 @@ int main() {
     TestDatagramRejectsMalformedInput();
     TestAssociateControlMessages();
     TestRedirectContextDecodeRequiresValidUdpMetadata();
+    TestUdpFlowManagerIdentityLimitsAndExpiry();
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
     TestNonblockingSocks5UdpHandshake();
