@@ -203,6 +203,11 @@ int SendNonblocking(
     size_t offset = 0;
     const ULONGLONG deadline = GetTickCount64() + timeoutMilliseconds;
     while (offset < size) {
+        // Enforce one absolute deadline across successful partial writes,
+        // interrupted sends, and writable-socket waits.
+        if (GetTickCount64() >= deadline) {
+            return WSAETIMEDOUT;
+        }
         const int sent = send(
             socket, data + offset,
             static_cast<int>(std::min(
