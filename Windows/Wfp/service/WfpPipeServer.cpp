@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\FuriousWfpService.v2";
+constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\FuriousWfpService.v3";
 constexpr wchar_t kPipeSddl[] = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)";
 
 bool IsAuthorizedClient(HANDLE pipe) noexcept {
