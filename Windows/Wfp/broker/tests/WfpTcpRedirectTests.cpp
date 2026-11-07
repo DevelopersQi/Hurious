@@ -1134,7 +1134,7 @@ void TestWfpUdpFlowManager() {
     assert(concurrent.ActiveCount() == 1);
 }
  
-WsaRecvMsgResult FakeRecvMsgWithoutSource(
+INT WSAAPI FakeRecvMsgWithoutSource(
     SOCKET, LPWSAMSG message, LPDWORD bytesReceived,
     LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE) {
     if (message != nullptr) message->name = nullptr;
