@@ -372,13 +372,13 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
         expiredScanIndex, nextExpired));
     assert(nextExpired == flow1 || nextExpired == flow2);
     const auto firstExpired = nextExpired;
-    assert(manager.Remove(firstExpired));
+    assert(manager.RemoveAt(expiredScanIndex, firstExpired));
     // Removing the current item shifts the next item into the same index.
     // The cursor must not advance or it would skip adjacent expired entries.
     assert(manager.FindExpiredFrom(now + std::chrono::seconds(12),
         expiredScanIndex, nextExpired));
     assert(nextExpired != 0 && nextExpired != firstExpired);
-    assert(manager.Remove(nextExpired));
+    assert(manager.RemoveAt(expiredScanIndex, nextExpired));
     assert(!manager.FindExpiredFrom(now + std::chrono::seconds(12),
         expiredScanIndex, nextExpired));
     assert(nextExpired == 0);

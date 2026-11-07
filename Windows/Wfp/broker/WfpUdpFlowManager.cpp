@@ -275,7 +275,8 @@ bool WfpUdpFlowManager::Remove(std::uint64_t flowId) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         if (entries_[i].id != flowId) continue;
-        entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
+        if (i + 1 != entries_.size()) entries_[i] = std::move(entries_.back());
+        entries_.pop_back();
         return true;
     }
     return false;
@@ -291,6 +292,16 @@ bool WfpUdpFlowManager::FindExpired(
         return true;
     }
     return false;
+}
+
+bool WfpUdpFlowManager::RemoveAt(
+    std::size_t index, std::uint64_t flowId) noexcept {
+    if (flowId == 0) return false;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (index >= entries_.size() || entries_[index].id != flowId) return false;
+    if (index + 1 != entries_.size()) entries_[index] = std::move(entries_.back());
+    entries_.pop_back();
+    return true;
 }
 
 bool WfpUdpFlowManager::FindExpiredFrom(

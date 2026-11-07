@@ -75,6 +75,8 @@ public:
 
     bool GetSnapshot(std::uint64_t flowId, WfpUdpFlowSnapshot& output) const noexcept;
     bool Remove(std::uint64_t flowId) noexcept;
+    // Removes a previously located entry in O(1); the ID guards stale indices.
+    bool RemoveAt(std::size_t index, std::uint64_t flowId) noexcept;
     // Finds one expired flow without allocating; caller closes resources then removes it.
     bool FindExpired(TimePoint now, std::uint64_t& expiredFlowId) const noexcept;
     // Continues an allocation-free scan after the last removed entry. Keep the

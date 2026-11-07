@@ -414,7 +414,8 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
     // position visits the element shifted into it, so a full sweep is O(n)
     // rather than repeatedly rescanning the already-visited prefix.
     while (flows_.FindExpiredFrom(now, scanIndex, expiredFlowId)) {
-        CloseFlow(expiredFlowId);
+        CloseFlowResources(expiredFlowId);
+        if (!flows_.RemoveAt(scanIndex, expiredFlowId)) break;
         ++closed;
     }
     return closed;
@@ -522,7 +523,7 @@ void WfpUdpFlowRelayRegistry::DiscardOutboundDatagrams(
     outboundDatagrams_.erase(found);
 }
 
-void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
+void WfpUdpFlowRelayRegistry::CloseFlowResources(std::uint64_t flowId) noexcept {
     DiscardPendingDatagrams(flowId);
     DiscardOutboundDatagrams(flowId);
     const auto found = relays_.find(flowId);
@@ -530,6 +531,10 @@ void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
         found->second->Close();
         relays_.erase(found);
     }
+}
+
+void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
+    CloseFlowResources(flowId);
     flows_.Remove(flowId);
 }
 
