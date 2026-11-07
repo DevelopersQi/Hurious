@@ -152,15 +152,15 @@ static UINT32 FuriousGetCalloutId(ULONG index)
 }
 
 static VOID NTAPI FuriousProcessNotify(
-    HANDLE parentProcessId,
+    PEPROCESS process,
     HANDLE processId,
-    BOOLEAN create)
+    PPS_CREATE_NOTIFY_INFO createInfo)
 {
     KIRQL oldIrql;
     ULONG processIdValue;
 
-    UNREFERENCED_PARAMETER(parentProcessId);
-    if (create) {
+    UNREFERENCED_PARAMETER(process);
+    if (createInfo != NULL) {
         return;
     }
 
@@ -586,7 +586,7 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
                 DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
                     "FuriousWfpCallout: process notify removal retry, status=0x%08X\\n", status);
                 KeDelayExecutionThread(KernelMode, FALSE, &retryDelay);
-                status = PsSetCreateProcessNotifyRoutine(FuriousProcessNotify, TRUE);
+                status = PsSetCreateProcessNotifyRoutineEx(FuriousProcessNotify, TRUE);
             }
             gProcessNotifyRegistered = FALSE;
         }
@@ -693,7 +693,7 @@ NTSTATUS DriverEntry(
         status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
         if (NT_SUCCESS(status)) {
             FuriousSetCalloutRegistered(1, TRUE, calloutId);
-            status = PsSetCreateProcessNotifyRoutine(FuriousProcessNotify, FALSE);
+            status = PsSetCreateProcessNotifyRoutineEx(FuriousProcessNotify, FALSE);
             if (NT_SUCCESS(status)) {
                 gProcessNotifyRegistered = TRUE;
                 gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
