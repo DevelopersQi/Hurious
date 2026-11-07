@@ -1225,7 +1225,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             if pending is None:
                 logger.debug('ignoring a stale WFP TCP broker start response')
                 return
-            backend, requestedGeneration = pending
+            backend, requestedGeneration = pending[:2]
             if (
                 not self._wfpPolicyReady
                 or not self._wfpPolicyHasProxyRules
@@ -1267,7 +1267,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             if pending is None:
                 logger.debug('ignoring a stale WFP UDP broker start response')
                 return
-            backend, requestedGeneration = pending
+            backend, requestedGeneration = pending[:2]
             if (
                 not self._wfpPolicyReady
                 or not self._wfpPolicyHasProxyRules
