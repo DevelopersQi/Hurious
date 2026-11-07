@@ -220,6 +220,12 @@ class WfpIpcClientTest(unittest.TestCase):
         client.clearPolicy()
         self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
                          COMMAND_CLEAR_POLICY)
+        client.setPolicy([], 0, 1)
+        self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
+                         COMMAND_SET_POLICY)
+        client.clearPolicy()
+        self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
+                         COMMAND_CLEAR_POLICY)
 
 
 if __name__ == "__main__":

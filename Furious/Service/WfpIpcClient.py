@@ -177,7 +177,7 @@ def pack_application_routing_policy(rules, backend, policy_generation):
         if not isinstance(item, dict):
             raise TypeError("each application rule must be a mapping")
         path = str(item.get("image_path", item.get("path", ""))).strip()
-        if not ntpath.isabs(path) or "\\x00" in path:
+        if not ntpath.isabs(path) or chr(0) in path:
             raise ValueError("application image path must be an absolute Windows path")
         if any(ord(ch) < 0x20 or ch in "*?" for ch in path):
             raise ValueError("application image path contains invalid characters")
