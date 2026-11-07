@@ -348,7 +348,271 @@ Socks5UdpAssociationClientOpenResult Socks5UdpAssociationClient::Open(
         return fail(Socks5UdpAssociationClientOpenResult::NonblockingFailed,
             WSAGetLastError());
     }
+    asyncState_ = Socks5UdpAssociationAsyncState::Ready;
     return Socks5UdpAssociationClientOpenResult::Opened;
+}
+
+
+Socks5UdpAssociationAsyncResult Socks5UdpAssociationClient::BeginOpen(
+    const sockaddr* socksAddress, int socksAddressLength,
+    const Socks5UdpSocket& localUdpSocket, DWORD timeoutMilliseconds,
+    int* errorCode, ActiveSocketRegister registerSocket,
+    ActiveSocketUnregister unregisterSocket, void* callbackContext) noexcept {
+    if (errorCode != nullptr) *errorCode = 0;
+    if (controlSocket_ != INVALID_SOCKET ||
+        asyncState_ != Socks5UdpAssociationAsyncState::Idle) {
+        if (errorCode != nullptr) *errorCode = WSAEALREADY;
+        return Socks5UdpAssociationAsyncResult::AlreadyStarted;
+    }
+    if (socksAddress == nullptr || !IsLoopbackAddress(socksAddress) ||
+        !localUdpSocket.IsOpen() || localUdpSocket.LocalPort() == 0 ||
+        timeoutMilliseconds == 0 ||
+        ((registerSocket == nullptr) != (unregisterSocket == nullptr))) {
+        if (errorCode != nullptr) *errorCode = WSAEINVAL;
+        return Socks5UdpAssociationAsyncResult::InvalidArgument;
+    }
+    const int expectedLength = socksAddress->sa_family == AF_INET
+        ? sizeof(sockaddr_in)
+        : socksAddress->sa_family == AF_INET6 ? sizeof(sockaddr_in6) : 0;
+    const auto expectedFamily = socksAddress->sa_family == AF_INET
+        ? Socks5UdpEndpointFamily::Ipv4 : Socks5UdpEndpointFamily::Ipv6;
+    if (expectedLength == 0 || socksAddressLength < expectedLength ||
+        localUdpSocket.Family() != expectedFamily) {
+        if (errorCode != nullptr) *errorCode = WSAEAFNOSUPPORT;
+        return Socks5UdpAssociationAsyncResult::InvalidArgument;
+    }
+    const std::uint16_t socksPort = socksAddress->sa_family == AF_INET
+        ? ntohs(reinterpret_cast<const sockaddr_in*>(socksAddress)->sin_port)
+        : ntohs(reinterpret_cast<const sockaddr_in6*>(socksAddress)->sin6_port);
+    if (socksPort == 0) {
+        if (errorCode != nullptr) *errorCode = WSAEINVAL;
+        return Socks5UdpAssociationAsyncResult::InvalidArgument;
+    }
+
+    controlSocket_ = socket(socksAddress->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    if (controlSocket_ == INVALID_SOCKET) {
+        const int error = WSAGetLastError();
+        if (errorCode != nullptr) *errorCode = error;
+        asyncState_ = Socks5UdpAssociationAsyncState::Failed;
+        asyncError_ = error;
+        return Socks5UdpAssociationAsyncResult::Failed;
+    }
+    if (registerSocket != nullptr) {
+        if (!registerSocket(callbackContext, controlSocket_)) {
+            closesocket(controlSocket_);
+            controlSocket_ = INVALID_SOCKET;
+            if (errorCode != nullptr) *errorCode = WSA_OPERATION_ABORTED;
+            asyncState_ = Socks5UdpAssociationAsyncState::Failed;
+            asyncError_ = WSA_OPERATION_ABORTED;
+            return Socks5UdpAssociationAsyncResult::Failed;
+        }
+        registered_ = true;
+        unregisterSocket_ = unregisterSocket;
+        callbackContext_ = callbackContext;
+    }
+    u_long nonblocking = 1;
+    if (ioctlsocket(controlSocket_, FIONBIO, &nonblocking) == SOCKET_ERROR) {
+        const int error = WSAGetLastError();
+        if (errorCode != nullptr) *errorCode = error;
+        Close();
+        asyncState_ = Socks5UdpAssociationAsyncState::Failed;
+        asyncError_ = error;
+        return Socks5UdpAssociationAsyncResult::Failed;
+    }
+    std::memcpy(&socksAddress_, socksAddress, static_cast<std::size_t>(expectedLength));
+    socksAddressLength_ = expectedLength;
+    asyncDeadline_ = GetTickCount64() + timeoutMilliseconds;
+    asyncRequestLength_ = 0;
+    asyncSendOffset_ = 0;
+    asyncReplySize_ = 0;
+    asyncReplyExpected_ = 4;
+    asyncError_ = 0;
+
+    if (socksAddress->sa_family == AF_INET) {
+        const std::uint16_t port = localUdpSocket.LocalPort();
+        const std::uint8_t request[] = {5, 3, 0, 1, 127, 0, 0, 1,
+            static_cast<std::uint8_t>(port >> 8), static_cast<std::uint8_t>(port)};
+        std::memcpy(asyncRequest_.data(), request, sizeof(request));
+        asyncRequestLength_ = sizeof(request);
+    } else {
+        const std::uint16_t port = localUdpSocket.LocalPort();
+        asyncRequest_.fill(0);
+        asyncRequest_[0] = 5; asyncRequest_[1] = 3; asyncRequest_[2] = 0;
+        asyncRequest_[3] = 4; asyncRequest_[19] = 1;
+        asyncRequest_[20] = static_cast<std::uint8_t>(port >> 8);
+        asyncRequest_[21] = static_cast<std::uint8_t>(port);
+        asyncRequestLength_ = 22;
+    }
+
+    const int connectResult = connect(controlSocket_, socksAddress, expectedLength);
+    if (connectResult == 0) {
+        asyncState_ = Socks5UdpAssociationAsyncState::SendingGreeting;
+    } else {
+        const int error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK || error == WSAEINPROGRESS ||
+            error == WSAEALREADY) {
+            asyncState_ = Socks5UdpAssociationAsyncState::Connecting;
+        } else {
+            if (errorCode != nullptr) *errorCode = error;
+            Close();
+            asyncState_ = Socks5UdpAssociationAsyncState::Failed;
+            asyncError_ = error;
+            return Socks5UdpAssociationAsyncResult::Failed;
+        }
+    }
+    return Socks5UdpAssociationAsyncResult::Pending;
+}
+
+Socks5UdpAssociationAsyncResult Socks5UdpAssociationClient::Advance(
+    bool readable, bool writable, int* errorCode) noexcept {
+    if (errorCode != nullptr) *errorCode = 0;
+    if (asyncState_ == Socks5UdpAssociationAsyncState::Ready)
+        return Socks5UdpAssociationAsyncResult::Ready;
+    if (asyncState_ == Socks5UdpAssociationAsyncState::Failed) {
+        if (errorCode != nullptr) *errorCode = asyncError_;
+        return Socks5UdpAssociationAsyncResult::Failed;
+    }
+    if (asyncState_ == Socks5UdpAssociationAsyncState::Idle)
+        return Socks5UdpAssociationAsyncResult::InvalidArgument;
+    if (GetTickCount64() >= asyncDeadline_) {
+        asyncError_ = WSAETIMEDOUT;
+        Close();
+        asyncState_ = Socks5UdpAssociationAsyncState::Failed;
+        asyncError_ = WSAETIMEDOUT;
+        if (errorCode != nullptr) *errorCode = asyncError_;
+        return Socks5UdpAssociationAsyncResult::Failed;
+    }
+
+    const auto fail = [this, errorCode](int error) noexcept {
+        asyncError_ = error == 0 ? WSAECONNRESET : error;
+        Close();
+        asyncState_ = Socks5UdpAssociationAsyncState::Failed;
+        if (errorCode != nullptr) *errorCode = asyncError_;
+        return Socks5UdpAssociationAsyncResult::Failed;
+    };
+
+    for (unsigned transitions = 0; transitions < 8; ++transitions) {
+        if (asyncState_ == Socks5UdpAssociationAsyncState::Connecting) {
+            if (!readable && !writable) return Socks5UdpAssociationAsyncResult::Pending;
+            int socketError = 0, length = sizeof(socketError);
+            if (getsockopt(controlSocket_, SOL_SOCKET, SO_ERROR,
+                    reinterpret_cast<char*>(&socketError), &length) == SOCKET_ERROR)
+                return fail(WSAGetLastError());
+            if (socketError != 0) return fail(socketError);
+            asyncState_ = Socks5UdpAssociationAsyncState::SendingGreeting;
+            continue;
+        }
+        if (asyncState_ == Socks5UdpAssociationAsyncState::SendingGreeting ||
+            asyncState_ == Socks5UdpAssociationAsyncState::SendingAssociateRequest) {
+            if (!writable) return Socks5UdpAssociationAsyncResult::Pending;
+            const std::uint8_t greeting[] = {5, 1, 0};
+            const std::uint8_t* bytes = asyncState_ == Socks5UdpAssociationAsyncState::SendingGreeting
+                ? greeting : asyncRequest_.data();
+            const std::size_t length = asyncState_ == Socks5UdpAssociationAsyncState::SendingGreeting
+                ? sizeof(greeting) : asyncRequestLength_;
+            const int sent = send(controlSocket_,
+                reinterpret_cast<const char*>(bytes + asyncSendOffset_),
+                static_cast<int>(length - asyncSendOffset_), 0);
+            if (sent == SOCKET_ERROR) {
+                const int error = WSAGetLastError();
+                if (error == WSAEWOULDBLOCK || error == WSAEINTR)
+                    return Socks5UdpAssociationAsyncResult::Pending;
+                return fail(error);
+            }
+            if (sent == 0) return fail(WSAECONNRESET);
+            asyncSendOffset_ += static_cast<std::size_t>(sent);
+            if (asyncSendOffset_ < length) return Socks5UdpAssociationAsyncResult::Pending;
+            asyncSendOffset_ = 0;
+            if (asyncState_ == Socks5UdpAssociationAsyncState::SendingGreeting)
+                asyncState_ = Socks5UdpAssociationAsyncState::ReceivingMethod;
+            else {
+                asyncState_ = Socks5UdpAssociationAsyncState::ReceivingAssociateReply;
+                asyncReplySize_ = 0;
+                asyncReplyExpected_ = 4;
+            }
+            continue;
+        }
+        if (asyncState_ == Socks5UdpAssociationAsyncState::ReceivingMethod) {
+            if (!readable) return Socks5UdpAssociationAsyncResult::Pending;
+            std::uint8_t method[2]{};
+            const int received = recv(controlSocket_, reinterpret_cast<char*>(method), 2, 0);
+            if (received == SOCKET_ERROR) {
+                const int error = WSAGetLastError();
+                if (error == WSAEWOULDBLOCK || error == WSAEINTR)
+                    return Socks5UdpAssociationAsyncResult::Pending;
+                return fail(error);
+            }
+            if (received == 0) return fail(WSAECONNRESET);
+            if (received != 2) {
+                // Keep protocol reads atomic by buffering a split method reply.
+                asyncReply_[asyncReplySize_++] = method[0];
+                asyncState_ = Socks5UdpAssociationAsyncState::ReceivingMethod;
+                return Socks5UdpAssociationAsyncResult::Pending;
+            }
+            if (method[0] != 5 || method[1] != 0) return fail(WSAEACCES);
+            asyncState_ = Socks5UdpAssociationAsyncState::SendingAssociateRequest;
+            asyncSendOffset_ = 0;
+            continue;
+        }
+        if (asyncState_ == Socks5UdpAssociationAsyncState::ReceivingAssociateReply) {
+            if (!readable) return Socks5UdpAssociationAsyncResult::Pending;
+            std::size_t target = asyncReplyExpected_ - asyncReplySize_;
+            const int received = recv(controlSocket_,
+                reinterpret_cast<char*>(asyncReply_.data() + asyncReplySize_),
+                static_cast<int>(target), 0);
+            if (received == SOCKET_ERROR) {
+                const int error = WSAGetLastError();
+                if (error == WSAEWOULDBLOCK || error == WSAEINTR)
+                    return Socks5UdpAssociationAsyncResult::Pending;
+                return fail(error);
+            }
+            if (received == 0) return fail(WSAECONNRESET);
+            asyncReplySize_ += static_cast<std::size_t>(received);
+            if (asyncReplySize_ < asyncReplyExpected_)
+                return Socks5UdpAssociationAsyncResult::Pending;
+            if (asyncReplySize_ == 4) {
+                switch (asyncReply_[3]) {
+                case 1: asyncReplyExpected_ = 10; break;
+                case 4: asyncReplyExpected_ = 22; break;
+                case 3: asyncReplyExpected_ = 5; break;
+                default: return fail(WSAEPROTONOSUPPORT);
+                }
+            } else if (asyncReplySize_ == 5 && asyncReply_[3] == 3) {
+                if (asyncReply_[4] == 0) return fail(WSAEPROTONOSUPPORT);
+                asyncReplyExpected_ = 7 + asyncReply_[4];
+            }
+            if (asyncReplySize_ < asyncReplyExpected_)
+                return Socks5UdpAssociationAsyncResult::Pending;
+
+            Socks5UdpAssociateReplyView reply{};
+            if (ParseSocks5UdpAssociateReply(asyncReply_.data(), asyncReplySize_, reply) !=
+                Socks5UdpAssociateReplyResult::Valid)
+                return fail(reply.replyCode == 0 ? WSAEPROTONOSUPPORT : WSAECONNREFUSED);
+            if (!BuildRelayEndpoint(reinterpret_cast<const sockaddr*>(&socksAddress_),
+                    reply, relayAddress_, relayAddressLength_))
+                return fail(WSAEAFNOSUPPORT);
+            asyncState_ = Socks5UdpAssociationAsyncState::Ready;
+            return Socks5UdpAssociationAsyncResult::Ready;
+        }
+        return Socks5UdpAssociationAsyncResult::Pending;
+    }
+    return Socks5UdpAssociationAsyncResult::Pending;
+}
+
+Socks5UdpAssociationAsyncState Socks5UdpAssociationClient::AsyncState() const noexcept {
+    return asyncState_;
+}
+
+bool Socks5UdpAssociationClient::WantsRead() const noexcept {
+    return asyncState_ == Socks5UdpAssociationAsyncState::Connecting ||
+        asyncState_ == Socks5UdpAssociationAsyncState::ReceivingMethod ||
+        asyncState_ == Socks5UdpAssociationAsyncState::ReceivingAssociateReply;
+}
+
+bool Socks5UdpAssociationClient::WantsWrite() const noexcept {
+    return asyncState_ == Socks5UdpAssociationAsyncState::Connecting ||
+        asyncState_ == Socks5UdpAssociationAsyncState::SendingGreeting ||
+        asyncState_ == Socks5UdpAssociationAsyncState::SendingAssociateRequest;
 }
 
 void Socks5UdpAssociationClient::Close() noexcept {
@@ -365,6 +629,14 @@ void Socks5UdpAssociationClient::Close() noexcept {
     }
     relayAddress_ = sockaddr_storage{};
     relayAddressLength_ = 0;
+    socksAddress_ = sockaddr_storage{};
+    socksAddressLength_ = 0;
+    asyncDeadline_ = 0;
+    asyncRequestLength_ = asyncSendOffset_ = 0;
+    asyncReplySize_ = 0;
+    asyncReplyExpected_ = 4;
+    asyncState_ = Socks5UdpAssociationAsyncState::Idle;
+    asyncError_ = 0;
 }
 
 bool Socks5UdpAssociationClient::IsOpen() const noexcept {
