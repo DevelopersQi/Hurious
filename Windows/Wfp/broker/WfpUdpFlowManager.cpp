@@ -33,9 +33,10 @@ bool WfpUdpFlowManager::IsValidSourceEndpoint(
         if (address->sin6_port == 0) return false;
         const auto* bytes = address->sin6_addr.u.Byte;
         const bool linkLocal = bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80;
-        // A link-local IPv6 endpoint is ambiguous without its interface zone.
-        // Reject it rather than accidentally sharing a relay across interfaces.
-        if (linkLocal && address->sin6_scope_id == 0) return false;
+        // Scope IDs identify the interface zone for link-local addresses only.
+        // Require one for link-local endpoints and reject stray zones on global
+        // or loopback endpoints so aliases cannot create parallel flow identities.
+        if (linkLocal != (address->sin6_scope_id != 0)) return false;
         bool unspecified = true;
         for (std::uint8_t byte : address->sin6_addr.u.Byte) {
             if (byte != 0) { unspecified = false; break; }

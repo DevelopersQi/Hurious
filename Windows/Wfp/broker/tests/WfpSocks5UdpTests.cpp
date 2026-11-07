@@ -434,6 +434,14 @@ void TestUdpFlowManagerIpv6ScopeIdentity() {
     assert(globalFlow != 0);
     assert(manager.Remove(globalFlow));
 
+    // A global-unicast endpoint must not carry a link-local interface zone.
+    auto globalWithScope = globalSource;
+    globalWithScope.sin6_scope_id = 7;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&globalWithScope), sizeof(globalWithScope),
+        context, record, now, rejectedFlow) == WfpUdpFlowCreateResult::InvalidSource);
+    assert(rejectedFlow == 0);
+
     // Unspecified and multicast source endpoints are never valid flow keys.
     auto invalidSource = source;
     invalidSource.sin6_addr = in6addr_any;
