@@ -79,6 +79,7 @@ void TestRejectsInvalidOrUdpContext() {
 } // namespace
 
 void TestBrokerServerLifecycle();
+void TestBrokerConcurrentStartStopIsSerialized();
 void TestBrokerStopsWhileAcceptingConnections();
 
 int main() {
@@ -86,6 +87,7 @@ int main() {
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
     TestBrokerServerLifecycle();
+    TestBrokerConcurrentStartStopIsSerialized();
     TestBrokerStopsWhileAcceptingConnections();
     return 0;
 }
