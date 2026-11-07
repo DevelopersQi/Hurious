@@ -1296,8 +1296,6 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
-        self._wfpPolicyPending.clear()
-        self._wfpPolicyReady = False
         controller.clearEndpointConfig()
         controller.stopBroker()
         return controller.clearPolicy()
