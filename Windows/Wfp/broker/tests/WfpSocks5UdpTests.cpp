@@ -1155,6 +1155,65 @@ void TestAssociationManagerQuotasAndCleanup() {
     assert(manager.ActiveCount() == 0);
 }
 
+void TestRegistryExpiryClosesPendingHandshakeResources() {
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(listener != INVALID_SOCKET);
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(listener, reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress)) == 0);
+    assert(listen(listener, 1) == 0);
+    int addressLength = static_cast<int>(sizeof(socksAddress));
+    assert(getsockname(listener, reinterpret_cast<sockaddr*>(&socksAddress),
+        &addressLength) == 0);
+
+    WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(1));
+    assert(registry.Configure(reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress), 3000));
+
+    WfpUdpReceivedMessage message{};
+    const auto source = FlowSource(50061);
+    std::memcpy(&message.sourceAddress, &source, sizeof(source));
+    message.sourceAddressLength = static_cast<int>(sizeof(source));
+    message.payloadLength = 4;
+    message.redirectRecord = {0x51, 0x52};
+    const auto context = MakeUdpRedirectContext(2002);
+    message.redirectContext.resize(sizeof(context));
+    std::memcpy(message.redirectContext.data(), &context, sizeof(context));
+    const std::array<std::uint8_t, 4> payload{'e', 'x', 'p', 'r'};
+
+    const auto createdAt = WfpUdpFlowRelayRegistry::Clock::now();
+    std::uint64_t flowId = 0;
+    assert(registry.ProcessClientDatagram(message, payload.data(), createdAt,
+        &flowId) == WfpUdpFlowRelayRegistryResult::Pending);
+    assert(flowId != 0);
+    assert(registry.ActiveCount() == 1);
+
+    std::vector<WfpUdpRelaySocket> beforeExpiry;
+    assert(registry.GetRelaySockets(beforeExpiry));
+    assert(beforeExpiry.size() == 1);
+    assert(beforeExpiry.front().flowId == flowId);
+    assert(beforeExpiry.front().handshaking);
+    assert(beforeExpiry.front().controlSocket != INVALID_SOCKET);
+    assert(beforeExpiry.front().socket != INVALID_SOCKET);
+
+    // Expiring a flow during a pending SOCKS handshake must close both its
+    // UDP relay socket and TCP control socket, and discard the buffered first
+    // datagram. Advancing the stale flow afterwards must be harmless.
+    assert(registry.SweepExpired(createdAt + std::chrono::seconds(2)) == 1);
+    assert(registry.ActiveCount() == 0);
+    std::vector<WfpUdpRelaySocket> afterExpiry;
+    assert(registry.GetRelaySockets(afterExpiry));
+    assert(afterExpiry.empty());
+    assert(registry.AdvancePendingFlow(flowId, true, true) ==
+        WfpUdpFlowRelayRegistryResult::FlowNotFound);
+
+    registry.CloseAll();
+    closesocket(listener);
+}
+
+
 void TestRegistryCloseAllCancelsPendingHandshake() {
     SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     assert(listener != INVALID_SOCKET);
@@ -1279,6 +1338,7 @@ int main() {
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
     TestNonblockingSocks5UdpHandshake();
+    TestRegistryExpiryClosesPendingHandshakeResources();
     TestRegistryCloseAllCancelsPendingHandshake();
     WSACleanup();
     return 0;
