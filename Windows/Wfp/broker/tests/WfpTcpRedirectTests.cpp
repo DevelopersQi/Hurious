@@ -451,6 +451,60 @@ void TestSocks5UdpSocketOwnership() {
     WSACleanup();
 }
 
+void TestWfpUdpMessageReceive() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        SOCKET receiver = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        SOCKET sender = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        assert(receiver != INVALID_SOCKET && sender != INVALID_SOCKET);
+
+        sockaddr_in receiverAddress{};
+        receiverAddress.sin_family = AF_INET;
+        receiverAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        receiverAddress.sin_port = 0;
+        assert(bind(receiver, reinterpret_cast<const sockaddr*>(&receiverAddress),
+            sizeof(receiverAddress)) == 0);
+        int receiverAddressLength = sizeof(receiverAddress);
+        assert(getsockname(receiver, reinterpret_cast<sockaddr*>(&receiverAddress),
+            &receiverAddressLength) == 0);
+        assert(ntohs(receiverAddress.sin_port) != 0);
+
+        LPFN_WSARECVMSG receiveMessage = nullptr;
+        assert(ResolveWsaRecvMsg(receiver, &receiveMessage) == 0);
+        assert(receiveMessage != nullptr);
+
+        const std::uint8_t expected[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+        assert(sendto(sender, reinterpret_cast<const char*>(expected),
+            sizeof(expected), 0, reinterpret_cast<const sockaddr*>(&receiverAddress),
+            sizeof(receiverAddress)) == sizeof(expected));
+
+        std::uint8_t payload[64]{};
+        std::vector<char> control(WSA_CMSG_SPACE(1024));
+        WfpUdpReceivedMessage received{};
+        int error = 0;
+        assert(ReceiveWfpUdpMessage(receiver, receiveMessage, payload,
+            sizeof(payload), control.data(), control.size(), received, &error) ==
+            WfpUdpReceiveResult::Received);
+        assert(error == 0 && received.payloadLength == sizeof(expected));
+        assert(received.sourceAddress.ss_family == AF_INET);
+        assert(std::memcmp(payload, expected, sizeof(expected)) == 0);
+        assert(received.redirectRecord.empty() && received.redirectContext.empty());
+
+        u_long nonblocking = 1;
+        assert(ioctlsocket(receiver, FIONBIO, &nonblocking) == 0);
+        assert(ReceiveWfpUdpMessage(receiver, receiveMessage, payload,
+            sizeof(payload), control.data(), control.size(), received, &error) ==
+            WfpUdpReceiveResult::WouldBlock);
+        assert(error == WSAEWOULDBLOCK);
+
+        closesocket(sender);
+        closesocket(receiver);
+    }
+    WSACleanup();
+}
+
 void TestWfpUdpRedirectRecordAncillaryData() {
     using namespace furious::wfp::broker;
     std::vector<std::uint8_t> extractedRecord;
@@ -571,6 +625,7 @@ int main() {
     TestSocks5UdpAssociationLifecycle();
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpSocketOwnership();
+    TestWfpUdpMessageReceive();
     TestWfpUdpRedirectRecordAncillaryData();
     TestSocks5UdpAssociateControlMessages();
     TestIpv4ConnectRequest();

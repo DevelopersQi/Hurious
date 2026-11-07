@@ -8,6 +8,25 @@
 
 namespace furious::wfp::broker {
 
+enum class WfpUdpReceiveResult {
+    Received,
+    WouldBlock,
+    Truncated,
+    InvalidSource,
+    InvalidRedirectMetadata,
+    InvalidArguments,
+    SocketError
+};
+
+struct WfpUdpReceivedMessage final {
+    sockaddr_storage sourceAddress{};
+    int sourceAddressLength = 0;
+    std::size_t payloadLength = 0;
+    DWORD flags = 0;
+    std::vector<std::uint8_t> redirectRecord;
+    std::vector<std::uint8_t> redirectContext;
+};
+
 enum class WfpUdpRedirectRecordResult {
     Present,
     NotPresent,
@@ -30,6 +49,16 @@ WfpUdpRedirectRecordResult ExtractWfpUdpRedirectRecord(
 WfpUdpRedirectRecordResult ExtractWfpUdpRedirectContext(
     const WSAMSG& message,
     std::vector<std::uint8_t>& output) noexcept;
+
+WfpUdpReceiveResult ReceiveWfpUdpMessage(
+    SOCKET socket,
+    LPFN_WSARECVMSG receiveMessage,
+    std::uint8_t* payloadBuffer,
+    std::size_t payloadCapacity,
+    char* controlBuffer,
+    std::size_t controlCapacity,
+    WfpUdpReceivedMessage& output,
+    int* errorCode = nullptr) noexcept;
 
 // Sends one UDP datagram, optionally attaching the first-packet redirect
 // record as an ancillary control message. Empty record means a later packet.

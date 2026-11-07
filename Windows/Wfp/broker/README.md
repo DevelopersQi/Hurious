@@ -69,3 +69,6 @@ The association registry is internally synchronized so control-session workers a
 - The broker resolves the Winsock `WSARecvMsg` and `WSASendMsg` extension functions, extracts and bounds both first-packet redirect records and callout context, and can attach both to the corresponding outbound UDP message.
 - Subsequent datagrams are allowed to omit the record; duplicate, malformed, empty, and oversized records are rejected.
 - This is the ancillary-data protocol layer only. It does not yet create UDP flow mappings, forward payloads to Xray/Hysteria2, or enable UDP WFP filters.
+
+
+The receive helper now captures the source endpoint, payload, redirect-record ancillary data, and redirect-context ancillary data from a single `WSARecvMsg` operation. It rejects truncated payload/control data and malformed metadata before exposing a packet to the relay layer. Loopback tests cover receive, source capture, extension resolution, and nonblocking `WSAEWOULDBLOCK`.

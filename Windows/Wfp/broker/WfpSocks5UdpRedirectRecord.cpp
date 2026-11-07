@@ -111,6 +111,82 @@ WfpUdpRedirectRecordResult ExtractWfpUdpRedirectContext(
     return ExtractControlData(message, IP_WFP_REDIRECT_CONTEXT, output);
 }
 
+WfpUdpReceiveResult ReceiveWfpUdpMessage(
+    SOCKET socket,
+    LPFN_WSARECVMSG receiveMessage,
+    std::uint8_t* payloadBuffer,
+    std::size_t payloadCapacity,
+    char* controlBuffer,
+    std::size_t controlCapacity,
+    WfpUdpReceivedMessage& output,
+    int* errorCode) noexcept {
+    output = WfpUdpReceivedMessage{};
+    if (errorCode != nullptr) *errorCode = 0;
+    if (socket == INVALID_SOCKET || receiveMessage == nullptr ||
+        payloadBuffer == nullptr || payloadCapacity == 0 ||
+        payloadCapacity > static_cast<std::size_t>(ULONG_MAX) ||
+        controlBuffer == nullptr || controlCapacity < WSA_CMSG_SPACE(0) ||
+        controlCapacity > static_cast<std::size_t>(ULONG_MAX)) {
+        if (errorCode != nullptr) *errorCode = WSAEINVAL;
+        return WfpUdpReceiveResult::InvalidArguments;
+    }
+
+    WSABUF payload{};
+    payload.buf = reinterpret_cast<char*>(payloadBuffer);
+    payload.len = static_cast<ULONG>(payloadCapacity);
+    WSAMSG message{};
+    message.name = reinterpret_cast<sockaddr*>(&output.sourceAddress);
+    message.namelen = sizeof(output.sourceAddress);
+    message.lpBuffers = &payload;
+    message.dwBufferCount = 1;
+    message.Control.buf = controlBuffer;
+    message.Control.len = static_cast<ULONG>(controlCapacity);
+
+    DWORD bytesReceived = 0;
+    if (receiveMessage(socket, &message, &bytesReceived, nullptr, nullptr) ==
+            SOCKET_ERROR) {
+        const int error = WSAGetLastError();
+        if (errorCode != nullptr) *errorCode = error;
+        if (error == WSAEWOULDBLOCK) return WfpUdpReceiveResult::WouldBlock;
+        if (error == WSAEMSGSIZE) return WfpUdpReceiveResult::Truncated;
+        return WfpUdpReceiveResult::SocketError;
+    }
+
+    if ((message.dwFlags & MSG_PARTIAL) != 0 ||
+        bytesReceived > payloadCapacity ||
+        message.Control.len >= controlCapacity) {
+        if (errorCode != nullptr) *errorCode = WSAEMSGSIZE;
+        return WfpUdpReceiveResult::Truncated;
+    }
+    if ((message.name->sa_family == AF_INET &&
+            message.namelen < static_cast<int>(sizeof(sockaddr_in))) ||
+        (message.name->sa_family == AF_INET6 &&
+            message.namelen < static_cast<int>(sizeof(sockaddr_in6))) ||
+        (message.name->sa_family != AF_INET && message.name->sa_family != AF_INET6)) {
+        if (errorCode != nullptr) *errorCode = WSAEAFNOSUPPORT;
+        return WfpUdpReceiveResult::InvalidSource;
+    }
+
+    const auto recordResult = ExtractWfpUdpRedirectRecord(
+        message, output.redirectRecord);
+    const auto contextResult = ExtractWfpUdpRedirectContext(
+        message, output.redirectContext);
+    const auto validMetadata = [](WfpUdpRedirectRecordResult result) noexcept {
+        return result == WfpUdpRedirectRecordResult::Present ||
+            result == WfpUdpRedirectRecordResult::NotPresent;
+    };
+    if (!validMetadata(recordResult) || !validMetadata(contextResult)) {
+        output = WfpUdpReceivedMessage{};
+        if (errorCode != nullptr) *errorCode = WSAEINVAL;
+        return WfpUdpReceiveResult::InvalidRedirectMetadata;
+    }
+
+    output.sourceAddressLength = message.namelen;
+    output.payloadLength = bytesReceived;
+    output.flags = message.dwFlags;
+    return WfpUdpReceiveResult::Received;
+}
+
 int SendWfpUdpMessage(
     SOCKET socket,
     LPFN_WSASENDMSG sendMessage,
