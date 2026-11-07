@@ -48,8 +48,14 @@ runtime, then sends those values and the current core PID snapshot to
 SET_ENDPOINT_CONFIG. Only TCP application filters are installed; UDP remains
 disabled until a dedicated UDP relay exists.
 
+WFP application routing is used only when system TUN mode is disabled. In
+full-tunnel mode, WFP Direct permits cannot bypass the installed TUN default
+route; Xray Native TUN continues to use its own process-routing rules. The
+current WFP UI accepts full executable paths and applies Proxy/Direct policy
+through the active Xray or Hysteria2 SOCKS inbound. Only TCP is supported.
+
 A production redirect path additionally requires:
-- application-routing policy editor and UI validation for Proxy/Direct rules;
+- finish UI translation and validate policy changes/rollback for Proxy/Direct rules;
 - service/driver installation, endpoint activation and rollback verified on
   Windows 10 x64;
 - restart, crash, PID reuse and stale endpoint recovery verified;
@@ -59,9 +65,10 @@ A production redirect path additionally requires:
 - DNS, QUIC, suspend/resume and network-change tests;
 - signed package, rollback and uninstall verification.
 
-Hysteria2 and Tun2socks must not advertise application-level routing until their
-backend adapters pass the full Windows integration gate. Xray's existing native-TUN
-process routing remains independent and must not be silently replaced by WFP.
+Hysteria2 supports WFP TCP application routing only when system TUN mode is
+disabled. Hysteria2 Native TUN and Tun2socks full-tunnel modes do not use WFP
+Direct/Proxy application rules yet. Xray's existing native-TUN process routing
+remains independent and must not be silently replaced by WFP.
 
 ## Build environment
 

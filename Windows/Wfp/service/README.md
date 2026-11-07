@@ -46,10 +46,11 @@ ConnectionManager publishes the broker PID, bound TCP listener ports, backend
 identifier, runtime generation and live Xray/Hysteria2 core PID exclusions in
 SET_ENDPOINT_CONFIG. A core exit clears the endpoint before stopping the broker;
 Tun2socks exit does not incorrectly remove the socket-owning core exclusion.
+ConnectionManager applies WFP application policy only when system TUN mode is
+disabled; full-tunnel Direct rules cannot bypass the installed TUN route.
 
 Before enabling this feature for general users:
-- expose and validate the application-routing policy editor and its Proxy/Direct
-  actions in the UI;
+- finish UI translation and verify that policy changes clearly report success or failure;
 - package a correctly signed driver beside the service executable and validate
   SCM start/stop behavior under the actual service account;
 - implement a dedicated UDP relay before installing UDP application filters;
