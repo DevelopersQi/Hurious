@@ -112,6 +112,25 @@ WfpUdpRedirectRecordResult ExtractWfpUdpRedirectContext(
     return ExtractControlData(message, IP_WFP_REDIRECT_CONTEXT, output);
 }
 
+WfpUdpRedirectContextDecodeResult DecodeWfpUdpRedirectContext(
+    const std::vector<std::uint8_t>& bytes,
+    FURIOUS_WFP_REDIRECT_CONTEXT& output) noexcept {
+    std::memset(&output, 0, sizeof(output));
+    if (bytes.size() != sizeof(FURIOUS_WFP_REDIRECT_CONTEXT)) {
+        return WfpUdpRedirectContextDecodeResult::InvalidSize;
+    }
+    std::memcpy(&output, bytes.data(), sizeof(output));
+    if (!furious::wfp::redirect::IsValidRedirectContext(output)) {
+        std::memset(&output, 0, sizeof(output));
+        return WfpUdpRedirectContextDecodeResult::InvalidContext;
+    }
+    if (output.Protocol != FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
+        std::memset(&output, 0, sizeof(output));
+        return WfpUdpRedirectContextDecodeResult::NotUdp;
+    }
+    return WfpUdpRedirectContextDecodeResult::Decoded;
+}
+
 WfpUdpReceiveResult ReceiveWfpUdpMessage(
     SOCKET socket,
     LPFN_WSARECVMSG receiveMessage,

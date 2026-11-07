@@ -72,3 +72,6 @@ The association registry is internally synchronized so control-session workers a
 
 
 The receive helper now captures the source endpoint, payload, redirect-record ancillary data, and redirect-context ancillary data from a single `WSARecvMsg` operation. It rejects truncated payload/control data and malformed metadata before exposing a packet to the relay layer. Loopback tests cover receive, source capture, extension resolution, and nonblocking `WSAEWOULDBLOCK`.
+
+
+The UDP ancillary context decoder validates the shared redirect ABI, exact structure size, magic/version, reserved fields, original endpoint fields, policy generation, and UDP protocol before exposing original destination and originating process metadata. TCP-tagged, malformed, or truncated contexts are rejected.

@@ -6,7 +6,16 @@
 #include <cstdint>
 #include <vector>
 
+#include "../include/WfpRedirectProtocol.h"
+
 namespace furious::wfp::broker {
+
+enum class WfpUdpRedirectContextDecodeResult {
+    Decoded,
+    InvalidSize,
+    InvalidContext,
+    NotUdp
+};
 
 enum class WfpUdpReceiveResult {
     Received,
@@ -49,6 +58,9 @@ WfpUdpRedirectRecordResult ExtractWfpUdpRedirectRecord(
 WfpUdpRedirectRecordResult ExtractWfpUdpRedirectContext(
     const WSAMSG& message,
     std::vector<std::uint8_t>& output) noexcept;
+WfpUdpRedirectContextDecodeResult DecodeWfpUdpRedirectContext(
+    const std::vector<std::uint8_t>& bytes,
+    FURIOUS_WFP_REDIRECT_CONTEXT& output) noexcept;
 
 WfpUdpReceiveResult ReceiveWfpUdpMessage(
     SOCKET socket,

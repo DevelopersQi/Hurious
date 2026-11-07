@@ -451,6 +451,63 @@ void TestSocks5UdpSocketOwnership() {
     WSACleanup();
 }
 
+void TestWfpUdpRedirectContextDecode() {
+    using namespace furious::wfp::broker;
+    FURIOUS_WFP_REDIRECT_CONTEXT context{};
+    context.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    context.Size = sizeof(context);
+    context.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    context.OriginalPortNetworkOrder = htons(53);
+    context.OriginalAddress[0] = 192;
+    context.OriginalAddress[1] = 0;
+    context.OriginalAddress[2] = 2;
+    context.OriginalAddress[3] = 53;
+    context.OriginalProcessId = 1234;
+    context.RulePriority = 10;
+    context.PolicyGeneration = 42;
+
+    std::vector<std::uint8_t> bytes(sizeof(context));
+    std::memcpy(bytes.data(), &context, sizeof(context));
+    FURIOUS_WFP_REDIRECT_CONTEXT decoded{};
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::Decoded);
+    assert(decoded.OriginalProcessId == context.OriginalProcessId);
+    assert(decoded.OriginalPortNetworkOrder == context.OriginalPortNetworkOrder);
+    assert(decoded.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V4);
+
+    auto invalidSize = bytes;
+    invalidSize.pop_back();
+    assert(DecodeWfpUdpRedirectContext(invalidSize, decoded) ==
+        WfpUdpRedirectContextDecodeResult::InvalidSize);
+    assert(decoded.Magic == 0);
+
+    auto invalidContext = context;
+    invalidContext.Magic = 0;
+    std::memcpy(bytes.data(), &invalidContext, sizeof(invalidContext));
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::InvalidContext);
+    assert(decoded.Magic == 0);
+
+    auto tcpContext = context;
+    tcpContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_TCP;
+    std::memcpy(bytes.data(), &tcpContext, sizeof(tcpContext));
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::NotUdp);
+    assert(decoded.Magic == 0);
+
+    auto ipv6Context = context;
+    ipv6Context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    for (std::size_t i = 0; i < sizeof(ipv6Context.OriginalAddress); ++i) {
+        ipv6Context.OriginalAddress[i] = static_cast<std::uint8_t>(i + 1);
+    }
+    std::memcpy(bytes.data(), &ipv6Context, sizeof(ipv6Context));
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::Decoded);
+    assert(decoded.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V6);
+}
+
 void TestWfpUdpMessageReceive() {
     using namespace furious::wfp::broker;
     WSADATA data{};
@@ -625,6 +682,7 @@ int main() {
     TestSocks5UdpAssociationLifecycle();
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpSocketOwnership();
+    TestWfpUdpRedirectContextDecode();
     TestWfpUdpMessageReceive();
     TestWfpUdpRedirectRecordAncillaryData();
     TestSocks5UdpAssociateControlMessages();
