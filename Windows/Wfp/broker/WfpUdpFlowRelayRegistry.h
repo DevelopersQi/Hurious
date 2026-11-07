@@ -54,7 +54,8 @@ public:
         void* callbackContext = nullptr) noexcept;
 
     WfpUdpFlowRelayRegistryResult ProcessClientDatagram(
-        const WfpUdpReceivedMessage& message, TimePoint now,
+        const WfpUdpReceivedMessage& message,
+        const std::uint8_t* payload, TimePoint now,
         std::uint64_t* flowId = nullptr, int* errorCode = nullptr) noexcept;
 
     WfpUdpFlowRelayRegistryResult HandleUpstreamResponse(

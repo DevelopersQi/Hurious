@@ -969,7 +969,7 @@ void TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata() {
     const std::uint8_t payload[] = {1, 2, 3};
     message.payloadLength = sizeof(payload);
     std::uint64_t flowId = 0;
-    assert(registry.ProcessClientDatagram(message,
+    assert(registry.ProcessClientDatagram(message, payload,
         WfpUdpFlowRelayRegistry::Clock::now(), &flowId) ==
         WfpUdpFlowRelayRegistryResult::MissingRedirectMetadata);
     assert(flowId == 0 && registry.ActiveCount() == 0);

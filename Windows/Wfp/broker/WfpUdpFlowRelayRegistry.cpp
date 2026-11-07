@@ -1,6 +1,7 @@
 #include "WfpUdpFlowRelayRegistry.h"
 
 #include <cstring>
+#include <ws2tcpip.h>
 
 namespace furious::wfp::broker {
 
@@ -51,14 +52,14 @@ bool WfpUdpFlowRelayRegistry::Configure(
 }
 
 WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
-    const WfpUdpReceivedMessage& message, TimePoint now,
+    const WfpUdpReceivedMessage& message, const std::uint8_t* payload, TimePoint now,
     std::uint64_t* outputFlowId, int* errorCode) noexcept {
     if (outputFlowId) *outputFlowId = 0;
     if (errorCode) *errorCode = 0;
     if (socksAddressLength_ == 0) return WfpUdpFlowRelayRegistryResult::NotConfigured;
     if (message.payloadLength > 65507 ||
-        (message.payloadLength != 0 && message.payloadLength > 0 &&
-            message.sourceAddressLength == 0)) {
+        (message.payloadLength != 0 && payload == nullptr) ||
+        message.sourceAddressLength == 0) {
         return WfpUdpFlowRelayRegistryResult::InvalidMessage;
     }
 
@@ -132,7 +133,7 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
             try {
                 found = relays_.emplace(flowId, std::move(relay)).first;
             } catch (...) {
-                relay->Close();
+                // The unique_ptr closes the relay if map insertion fails.
                 flows_.Remove(flowId);
                 return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
             }
@@ -142,9 +143,15 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
     if (found == relays_.end())
         return WfpUdpFlowRelayRegistryResult::FlowNotFound;
     const auto sent = found->second->SendClientPayload(
-        nullptr, 0, errorCode);
-    (void)sent;
-    // The caller supplies payload bytes separately through the overload below.
+        payload, message.payloadLength, errorCode);
+    if (sent == WfpSocks5UdpFlowRelayResult::ControlClosed) {
+        CloseFlow(flowId);
+        return WfpUdpFlowRelayRegistryResult::ControlClosed;
+    }
+    if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
+        CloseFlow(flowId);
+        return WfpUdpFlowRelayRegistryResult::SendFailed;
+    }
     if (outputFlowId) *outputFlowId = flowId;
     return WfpUdpFlowRelayRegistryResult::Ready;
 }
