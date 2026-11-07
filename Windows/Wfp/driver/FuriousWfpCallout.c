@@ -173,6 +173,26 @@ static VOID NTAPI FuriousProcessNotify(
         // for an unrelated process and redirect traffic to the wrong target.
         RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
         gEndpointConfigValid = FALSE;
+    } else if (gEndpointConfigValid) {
+        // Core PIDs are excluded to prevent the proxy from capturing its own
+        // outbound sockets. Remove an exited core immediately: otherwise PID
+        // reuse could exempt an unrelated process from application routing.
+        ULONG index;
+        for (index = 0; index < gEndpointConfig.ExcludedProcessCount; ++index) {
+            if (gEndpointConfig.ExcludedProcessIds[index] == processIdValue) {
+                ULONG moveIndex;
+                for (moveIndex = index;
+                     moveIndex + 1 < gEndpointConfig.ExcludedProcessCount;
+                     ++moveIndex) {
+                    gEndpointConfig.ExcludedProcessIds[moveIndex] =
+                        gEndpointConfig.ExcludedProcessIds[moveIndex + 1];
+                }
+                --gEndpointConfig.ExcludedProcessCount;
+                gEndpointConfig.ExcludedProcessIds[
+                    gEndpointConfig.ExcludedProcessCount] = 0;
+                break;
+            }
+        }
     }
     KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
 }
