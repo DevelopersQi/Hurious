@@ -1046,6 +1046,8 @@ void TestWfpUdpFlowManager() {
     std::vector<std::uint64_t> expiredFlowIds;
     assert(manager.SweepExpired(now + std::chrono::seconds(20), expiredFlowIds) == 1);
     assert(expiredFlowIds.size() == 1 && expiredFlowIds[0] == secondId);
+    assert(manager.ActiveCount() == 1); // Sweep only reports; it never drops live ownership.
+    assert(manager.Remove(secondId)); // Close relay resource before this explicit removal.
     assert(manager.ActiveCount() == 0);
 
     sockaddr_in oversizedSource = source;

@@ -263,8 +263,12 @@ bool WfpUdpFlowManager::Remove(std::uint64_t flowId) noexcept {
 }
 
 std::size_t WfpUdpFlowManager::SweepExpired(TimePoint now) noexcept {
-    std::vector<std::uint64_t> expiredFlowIds;
-    return SweepExpired(now, expiredFlowIds);
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::size_t expired = 0;
+    for (const auto& entry : entries_) {
+        if (IsExpired(entry, now)) ++expired;
+    }
+    return expired;
 }
 
 std::size_t WfpUdpFlowManager::SweepExpired(
@@ -273,19 +277,14 @@ std::size_t WfpUdpFlowManager::SweepExpired(
     expiredFlowIds.clear();
     std::lock_guard<std::mutex> lock(mutex_);
     try {
-        // Reserve before mutating the table. If allocation fails, leave all
-        // entries intact so the resource owner can retry cleanup next pass.
         expiredFlowIds.reserve(entries_.size());
     } catch (...) {
         return 0;
     }
-    for (std::size_t i = 0; i < entries_.size();) {
-        if (IsExpired(entries_[i], now)) {
-            expiredFlowIds.push_back(entries_[i].id);
-            entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
-        } else {
-            ++i;
-        }
+    // Do not erase here: the caller still owns sockets and control connections.
+    // Keep IDs discoverable until the owner closes resources and calls Remove().
+    for (const auto& entry : entries_) {
+        if (IsExpired(entry, now)) expiredFlowIds.push_back(entry.id);
     }
     return expiredFlowIds.size();
 }

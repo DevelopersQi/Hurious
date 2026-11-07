@@ -72,7 +72,8 @@ public:
     bool GetSnapshot(std::uint64_t flowId, WfpUdpFlowSnapshot& output) const noexcept;
     bool Remove(std::uint64_t flowId) noexcept;
     std::size_t SweepExpired(TimePoint now) noexcept;
-    // Returns removed IDs so the owner can close corresponding relay sockets.
+    // Reports expired IDs without erasing them. The owner must close relay resources,
+    // then call Remove() for each ID.
     std::size_t SweepExpired(TimePoint now,
         std::vector<std::uint64_t>& expiredFlowIds) noexcept;
     std::size_t ActiveCount() const noexcept;
