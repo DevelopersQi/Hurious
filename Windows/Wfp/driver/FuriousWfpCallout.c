@@ -437,11 +437,10 @@ static VOID NTAPI FuriousClassify(
         // redirecting these connections would break them or create proxy loops.
         if ((RtlUlongByteSwap(remote->sin_addr.S_un.S_addr) & 0xFF000000u) ==
             0x7F000000u) {
-            status = FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
             FwpsReleaseClassifyHandle0(classifyHandle);
             ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-            if (NT_SUCCESS(status)) FuriousContinue(classifyOut);
-            else FuriousBlock(classifyOut);
+            FuriousContinue(classifyOut);
             return;
         }
         redirectContext->OriginalPortNetworkOrder = remote->sin_port;
@@ -486,11 +485,10 @@ static VOID NTAPI FuriousClassify(
                 }
             }
             if (isLoopback) {
-                status = FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+                FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
                 FwpsReleaseClassifyHandle0(classifyHandle);
                 ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-                if (NT_SUCCESS(status)) FuriousContinue(classifyOut);
-                else FuriousBlock(classifyOut);
+                FuriousContinue(classifyOut);
                 return;
             }
         }
@@ -519,13 +517,8 @@ static VOID NTAPI FuriousClassify(
     connectRequest->localRedirectContext = redirectContext;
     connectRequest->localRedirectContextSize = sizeof(*redirectContext);
 
-    status = FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+    FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
     FwpsReleaseClassifyHandle0(classifyHandle);
-    if (!NT_SUCCESS(status)) {
-        ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
-        FuriousBlock(classifyOut);
-        return;
-    }
     classifyOut->actionType = FWP_ACTION_PERMIT;
     classifyOut->rights |= FWPS_RIGHT_ACTION_WRITE;
 }
