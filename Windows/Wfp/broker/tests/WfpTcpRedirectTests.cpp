@@ -998,7 +998,9 @@ void TestWfpUdpFlowManager() {
     assert(snapshot.redirectRecord == record);
     assert(snapshot.sourceEndpoint.ss_family == AF_INET);
 
-    assert(manager.SweepExpired(now + std::chrono::seconds(14)) == 1);
+    std::vector<std::uint64_t> expiredFlowIds;
+    assert(manager.SweepExpired(now + std::chrono::seconds(14), expiredFlowIds) == 1);
+    assert(expiredFlowIds.size() == 1 && expiredFlowIds[0] == secondId);
     assert(manager.ActiveCount() == 1);
     assert(manager.Touch(reinterpret_cast<const sockaddr*>(&source), sizeof(source),
         now + std::chrono::seconds(19), touchedId) == TouchResult::Expired);

@@ -263,17 +263,31 @@ bool WfpUdpFlowManager::Remove(std::uint64_t flowId) noexcept {
 }
 
 std::size_t WfpUdpFlowManager::SweepExpired(TimePoint now) noexcept {
+    std::vector<std::uint64_t> expiredFlowIds;
+    return SweepExpired(now, expiredFlowIds);
+}
+
+std::size_t WfpUdpFlowManager::SweepExpired(
+    TimePoint now,
+    std::vector<std::uint64_t>& expiredFlowIds) noexcept {
+    expiredFlowIds.clear();
     std::lock_guard<std::mutex> lock(mutex_);
-    std::size_t removed = 0;
+    try {
+        // Reserve before mutating the table. If allocation fails, leave all
+        // entries intact so the resource owner can retry cleanup next pass.
+        expiredFlowIds.reserve(entries_.size());
+    } catch (...) {
+        return 0;
+    }
     for (std::size_t i = 0; i < entries_.size();) {
         if (IsExpired(entries_[i], now)) {
+            expiredFlowIds.push_back(entries_[i].id);
             entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(i));
-            ++removed;
         } else {
             ++i;
         }
     }
-    return removed;
+    return expiredFlowIds.size();
 }
 
 std::size_t WfpUdpFlowManager::ActiveCount() const noexcept {
