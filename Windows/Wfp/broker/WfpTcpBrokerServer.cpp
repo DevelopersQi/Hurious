@@ -328,15 +328,15 @@ void TcpBrokerServer::Stop() noexcept {
         return;
     }
 
-    // Keep listener handle values stable until the accept thread leaves select().
-    if (ipv4Listener_ != INVALID_SOCKET) closesocket(ipv4Listener_);
-    if (ipv6Listener_ != INVALID_SOCKET) closesocket(ipv6Listener_);
-
+    // The accept thread owns the listener handles while it is in select()
+    // or accept(). Signal it to leave first; closing a socket concurrently
+    // with select() is not a reliable cancellation mechanism on Windows and
+    // can race with SOCKET value reuse by an unrelated socket.
     if (acceptThread_.joinable()) {
         acceptThread_.join();
     }
-    ipv4Listener_ = INVALID_SOCKET;
-    ipv6Listener_ = INVALID_SOCKET;
+    CloseSocket(ipv4Listener_);
+    CloseSocket(ipv6Listener_);
 
     {
         std::lock_guard<std::mutex> lock(queueMutex_);
