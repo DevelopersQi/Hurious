@@ -32,3 +32,11 @@ path still requires Windows integration tests and a signed driver package.
 The redirect-record blob is opaque and is copied without interpretation. The
 context is Furious-owned ABI data and is validated before its address and port
 are used. No redirect endpoint or listener is enabled by this library alone.
+
+
+## UDP relay preparation (parser only)
+
+- Parse SOCKS5 UDP datagrams with strict RSV, FRAG, ATYP, address-length and nonzero-port validation.
+- Expose a non-owning payload/address view for IPv4, IPv6 and domain targets; the caller retains buffer ownership.
+- Reject fragmented datagrams until bounded fragment reassembly is implemented.
+- This parser is not a UDP relay: it performs no DNS resolution, socket forwarding, association management, or WFP UDP redirection. UDP remains disabled at the IPC boundary.
