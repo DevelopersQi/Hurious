@@ -230,6 +230,26 @@ int main() {
     endpoint.UdpPortV6 = 10809;
     CHECK(IsValidEndpointConfig(endpoint));
 
+    // UDP redirect is deliberately unavailable until a UDP relay is implemented.
+    // Reject both the protocol flag and stale/nonzero UDP ports at the IPC boundary.
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &endpoint, sizeof(endpoint)) == ERROR_NOT_SUPPORTED);
+    auto tcpOnlyEndpoint = endpoint;
+    tcpOnlyEndpoint.Flags &= ~FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    tcpOnlyEndpoint.UdpPortV4 = 0;
+    tcpOnlyEndpoint.UdpPortV6 = 0;
+    CHECK(IsValidEndpointConfig(tcpOnlyEndpoint));
+    auto udpFlagOnlyEndpoint = tcpOnlyEndpoint;
+    udpFlagOnlyEndpoint.Flags |= FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
+          ERROR_NOT_SUPPORTED);
+    auto udpPortOnlyEndpoint = tcpOnlyEndpoint;
+    udpPortOnlyEndpoint.UdpPortV6 = 10809;
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &udpPortOnlyEndpoint, sizeof(udpPortOnlyEndpoint)) ==
+          ERROR_NOT_SUPPORTED);
+
     // Exited core PIDs must be removed from the redirect exclusion snapshot
     // before Windows can reuse those PIDs for unrelated applications.
     auto exclusions = endpoint;
