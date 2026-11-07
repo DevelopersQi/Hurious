@@ -249,6 +249,107 @@ class ConnectionStartupAsyncTest(TestCase):
         coreB.processId = 7654
         self.assertEqual(manager.wfpExcludedProcessIds, (7654,))
 
+    def testWfpBrokerWaitsForCommittedPolicyAndIgnoresStaleCompletion(self):
+        """Never start a redirect broker for a policy transaction not yet committed."""
+        manager = self._manager()
+        manager._wfpActiveConfiguration = _Configuration()
+
+        class _WfpController:
+            def __init__(self):
+                self.nextRequestId = 40
+                self.policyRequests = []
+
+            def clearEndpointConfig(self):
+                return 10
+
+            def stopBroker(self):
+                return 11
+
+            def setPolicy(self, rules, backend, generation):
+                self.nextRequestId += 1
+                self.policyRequests.append((self.nextRequestId, generation))
+                return self.nextRequestId
+
+        controller = _WfpController()
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.sys.platform',
+                'win32',
+            ),
+            mock.patch.object(
+                manager, '_getWfpIpcController', return_value=controller
+            ),
+            mock.patch.object(manager, '_startWfpBroker') as startBroker,
+        ):
+            rules = [{
+                'path': r'C:\\Apps\\proxy.exe',
+                'priority': 1,
+                'action': 'proxy',
+            }]
+            firstRequest = manager.setWfpApplicationPolicy(rules, backend=1)
+            self.assertFalse(manager._wfpPolicyReady)
+            startBroker.assert_not_called()
+
+            secondRequest = manager.setWfpApplicationPolicy(rules, backend=1)
+            self.assertNotEqual(firstRequest, secondRequest)
+            self.assertFalse(manager._wfpPolicyReady)
+            startBroker.assert_not_called()
+
+            manager._onWfpIpcRequestFinished(
+                firstRequest, 'set-policy', None, ''
+            )
+            startBroker.assert_not_called()
+
+            manager._onWfpIpcRequestFinished(
+                secondRequest, 'set-policy', None, ''
+            )
+            self.assertTrue(manager._wfpPolicyReady)
+            startBroker.assert_called_once_with(
+                manager._wfpActiveConfiguration,
+                resetExisting=False,
+            )
+
+    def testWfpPolicyFailurePreventsBrokerActivation(self):
+        """A failed native policy transaction must not activate a TCP endpoint."""
+        manager = self._manager()
+        manager._wfpActiveConfiguration = _Configuration()
+
+        class _WfpController:
+            def clearEndpointConfig(self):
+                return 10
+
+            def stopBroker(self):
+                return 11
+
+            def setPolicy(self, rules, backend, generation):
+                return 42
+
+        controller = _WfpController()
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.sys.platform',
+                'win32',
+            ),
+            mock.patch.object(
+                manager, '_getWfpIpcController', return_value=controller
+            ),
+            mock.patch.object(manager, '_startWfpBroker') as startBroker,
+        ):
+            requestId = manager.setWfpApplicationPolicy([{
+                'path': r'C:\\Apps\\proxy.exe',
+                'priority': 1,
+                'action': 'proxy',
+            }], backend=1)
+
+            manager._onWfpIpcRequestFinished(
+                requestId, 'set-policy', None, 'native transaction failed'
+            )
+
+            self.assertFalse(manager._wfpPolicyReady)
+            self.assertFalse(manager._wfpPolicyHasProxyRules)
+            self.assertEqual(manager._wfpPolicyPending, {})
+            startBroker.assert_not_called()
+
     def testLocalEndpointReadinessCompletesEarlyAndKeepsQtResponsive(self):
         """Commit as soon as a real listener accepts while timers still run."""
         server = self._server()
