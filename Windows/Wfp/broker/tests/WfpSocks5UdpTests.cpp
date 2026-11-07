@@ -247,7 +247,7 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
     std::uint64_t conflictId = 0;
     assert(manager.RegisterFirstDatagram(
         reinterpret_cast<const sockaddr*>(&source1), sizeof(source1),
-        conflictingContext, record, now, conflictId) ==
+        conflictingContext, record, now + std::chrono::seconds(2), conflictId) ==
         WfpUdpFlowCreateResult::SourceEndpointConflict);
 
     WfpUdpFlowSnapshot snapshot{};
