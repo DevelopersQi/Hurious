@@ -3717,5 +3717,21 @@ TRANSLATION = {
         ],
         "ZH": "当前选择的 Hysteria 2 配置不支持 Xray-core 原生 TUN。请选择“自动”或“Hysteria 2 原生 TUN”。",
         "isReviewed": "True"
+    },
+    "On Windows with system TUN mode disabled, full executable paths use WFP application routing. Proxy rules currently cover TCP; UDP support is not enabled yet. Xray Native TUN uses its own rules; Hysteria2/Tun2socks full-tunnel per-app routing is not enabled yet.": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "Windows 系统 TUN 模式关闭时，可通过 WFP 按完整 EXE 路径进行应用分流。代理规则目前仅支持 TCP，暂不支持 UDP。Xray 原生 TUN 使用自身的应用规则；Hysteria2/Tun2socks 全局 TUN 模式暂不支持应用级分流。",
+        "isReviewed": "True"
+    },
+    "Full Executable Path Required": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "需要完整的可执行文件路径",
+        "isReviewed": "True"
+    },
+    "Use Browse EXE or Add Running App to select an application with a full executable path.": {
+        "source": ["Furious.Backends.Xray.RoutingWindow"],
+        "ZH": "请使用“浏览 EXE”或“添加运行中的应用”选择具有完整可执行文件路径的应用。",
+        "isReviewed": "True"
     }
+
 }
