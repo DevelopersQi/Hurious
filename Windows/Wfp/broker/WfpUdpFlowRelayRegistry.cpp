@@ -223,8 +223,7 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
         CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ControlClosed;
     }
-    if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
-        *ioErrorCode == WSAEWOULDBLOCK) {
+    if (sent == WfpSocks5UdpFlowRelayResult::SendWouldBlock) {
         try {
             outboundDatagrams_.try_emplace(flowId);
         } catch (...) {
@@ -271,8 +270,7 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
         const auto& datagram = pending->second.front();
         const auto sent = relay->second->SendClientPayload(
             datagram.empty() ? nullptr : datagram.data(), datagram.size(), ioErrorCode);
-        if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
-            *ioErrorCode == WSAEWOULDBLOCK) {
+        if (sent == WfpSocks5UdpFlowRelayResult::SendWouldBlock) {
             // Handshake buffering transitions atomically to the writable-event
             // queue. Preserve the unsent suffix in FIFO order and keep the
             // combined global byte budget unchanged.
@@ -330,8 +328,7 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvanceQueuedClientDatagr
             CloseFlow(flowId);
             return WfpUdpFlowRelayRegistryResult::ControlClosed;
         }
-        if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
-            *sendError == WSAEWOULDBLOCK) {
+        if (sent == WfpSocks5UdpFlowRelayResult::SendWouldBlock) {
             return WfpUdpFlowRelayRegistryResult::Pending;
         }
         if (sent != WfpSocks5UdpFlowRelayResult::Ready) {

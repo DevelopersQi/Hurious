@@ -79,8 +79,11 @@ Socks5UdpRelayIoResult SendSocks5UdpToRelay(
             static_cast<int>(datagram.size()), 0,
             relayAddress, relayAddressLength);
         if (sent == SOCKET_ERROR) {
-            if (errorCode != nullptr) *errorCode = WSAGetLastError();
-            return Socks5UdpRelayIoResult::SocketError;
+            const int error = WSAGetLastError();
+            if (errorCode != nullptr) *errorCode = error;
+            return error == WSAEWOULDBLOCK
+                ? Socks5UdpRelayIoResult::SendWouldBlock
+                : Socks5UdpRelayIoResult::SocketError;
         }
         if (static_cast<std::size_t>(sent) != datagram.size()) {
             if (errorCode != nullptr) *errorCode = WSAEMSGSIZE;

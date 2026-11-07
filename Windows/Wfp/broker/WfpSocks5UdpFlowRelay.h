@@ -8,7 +8,7 @@ namespace furious::wfp::broker {
 
 enum class WfpSocks5UdpFlowRelayResult {
     Ready, Pending, AlreadyOpen, InvalidArgument, SocketOpenFailed, AssociationOpenFailed,
-    NotReady, ControlClosed, SendFailed, ReceivePending, ReceiveDropped, ReceiveFailed,
+    NotReady, ControlClosed, SendWouldBlock, SendFailed, ReceivePending, ReceiveDropped, ReceiveFailed,
     UnexpectedDestination, ForwardFailed
 };
 

@@ -9,6 +9,7 @@ namespace furious::wfp::broker {
 
 enum class Socks5UdpRelayIoResult {
     Sent,
+    SendWouldBlock,
     Received,
     WouldBlock,
     InvalidArgument,

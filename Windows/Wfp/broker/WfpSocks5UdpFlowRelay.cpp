@@ -234,9 +234,11 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::SendClientPayload(
         type, context_.OriginalAddress, addressLength,
         ntohs(context_.OriginalPortNetworkOrder), payload, payloadLength,
         kMaximumSocks5UdpDatagramSize, errorCode);
-    return result == Socks5UdpRelayIoResult::Sent
-        ? WfpSocks5UdpFlowRelayResult::Ready
-        : WfpSocks5UdpFlowRelayResult::SendFailed;
+    if (result == Socks5UdpRelayIoResult::Sent)
+        return WfpSocks5UdpFlowRelayResult::Ready;
+    if (result == Socks5UdpRelayIoResult::SendWouldBlock)
+        return WfpSocks5UdpFlowRelayResult::SendWouldBlock;
+    return WfpSocks5UdpFlowRelayResult::SendFailed;
 }
 
 WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::ReceiveUpstreamResponse(
