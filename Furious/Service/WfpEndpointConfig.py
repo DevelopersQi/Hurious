@@ -4,6 +4,7 @@ from Furious.Service.WfpIpcClient import (
     REDIRECT_FLAG_IPV4,
     REDIRECT_FLAG_IPV6,
     REDIRECT_FLAG_TCP,
+    REDIRECT_FLAG_UDP,
     pack_endpoint_config,
 )
 
@@ -14,6 +15,8 @@ def build_endpoint_config(
     broker_process_id,
     tcp_port_v4,
     tcp_port_v6,
+    udp_port_v4=0,
+    udp_port_v6=0,
 ):
     """Serialize a broker endpoint with the current immutable runtime snapshot."""
     excluded_process_ids = tuple(snapshot.excluded_process_ids)
@@ -28,12 +31,19 @@ def build_endpoint_config(
     if not flags & (REDIRECT_FLAG_IPV4 | REDIRECT_FLAG_IPV6):
         raise ValueError("the broker must expose at least one TCP listener")
 
+    if int(udp_port_v4) or int(udp_port_v6):
+        if bool(tcp_port_v4) != bool(udp_port_v4) or bool(tcp_port_v6) != bool(udp_port_v6):
+            raise ValueError("UDP listener families must match the configured TCP families")
+        flags |= REDIRECT_FLAG_UDP
+
     return pack_endpoint_config(
         backend=backend,
         flags=flags,
         proxy_process_id=broker_process_id,
         policy_generation=snapshot.generation,
         tcp_port_v4=tcp_port_v4,
+        udp_port_v4=udp_port_v4,
         tcp_port_v6=tcp_port_v6,
+        udp_port_v6=udp_port_v6,
         excluded_process_ids=excluded_process_ids,
     )

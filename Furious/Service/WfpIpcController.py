@@ -75,6 +75,10 @@ class _WfpIpcWorker:
                         result = client.startBroker(*arguments)
                     elif command == "stop-broker":
                         result = client.stopBroker()
+                    elif command == "start-udp-broker":
+                        result = client.startUdpBroker(*arguments)
+                    elif command == "stop-udp-broker":
+                        result = client.stopUdpBroker()
                     elif command == "set-endpoint":
                         result = client.setEndpointConfig(arguments[0])
                     elif command == "set-policy":
@@ -146,6 +150,16 @@ class WfpIpcController(QtCore.QObject):
     def stopBroker(self):
         """Stop the service-hosted TCP broker asynchronously."""
         return self._submit("stop-broker")
+
+    def startUdpBroker(self, socksHost, socksPort, listenIpv4=True, listenIpv6=True):
+        """Start the service-hosted UDP broker asynchronously."""
+        return self._submit(
+            "start-udp-broker", socksHost, socksPort, listenIpv4, listenIpv6
+        )
+
+    def stopUdpBroker(self):
+        """Stop the service-hosted UDP broker asynchronously."""
+        return self._submit("stop-udp-broker")
 
     def setEndpointConfig(self, payload):
         """Submit a native endpoint configuration asynchronously."""
