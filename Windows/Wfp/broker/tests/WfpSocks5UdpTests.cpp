@@ -370,6 +370,18 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
     assert(manager.Remove(flow2));
     assert(manager.ActiveCount() == 0);
 
+    // Shutdown clearing must remove live identities without relying on the
+    // allocating expired-ID collection path.
+    std::uint64_t shutdownFlow = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&source3), sizeof(source3),
+        context3, record, now, shutdownFlow) == WfpUdpFlowCreateResult::Created);
+    assert(manager.ActiveCount() == 1);
+    manager.Clear();
+    assert(manager.ActiveCount() == 0);
+    WfpUdpFlowSnapshot clearedSnapshot{};
+    assert(!manager.GetSnapshot(shutdownFlow, clearedSnapshot));
+
     auto invalidContext = MakeUdpRedirectContext(1004);
     invalidContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_TCP;
     assert(manager.RegisterFirstDatagram(

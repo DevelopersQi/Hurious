@@ -524,13 +524,18 @@ void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
 }
 
 void WfpUdpFlowRelayRegistry::CloseAll() noexcept {
+    // Close socket owners first, then discard any orphaned queue state. This
+    // path must not allocate: it is also used during shutdown and recovery
+    // after an allocation failure in the I/O loop.
     while (!relays_.empty()) {
         const auto id = relays_.begin()->first;
         CloseFlow(id);
     }
-    std::vector<std::uint64_t> remaining;
-    flows_.SweepExpired(TimePoint::max(), remaining);
-    for (const auto id : remaining) flows_.Remove(id);
+    pendingDatagrams_.clear();
+    outboundDatagrams_.clear();
+    pendingDatagramBytes_ = 0;
+    outboundDatagramBytes_ = 0;
+    flows_.Clear();
 }
 
 std::size_t WfpUdpFlowRelayRegistry::ActiveCount() const noexcept {
