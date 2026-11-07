@@ -7,6 +7,7 @@
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
+#include <cstring>
 #include <thread>
 
 #include <cassert>
