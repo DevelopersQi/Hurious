@@ -235,7 +235,9 @@ void UdpBrokerServer::Run() noexcept {
                     targets.push_back({PollKind::PendingControl,
                         relay.controlSocket, relay.flowId});
                 } else {
-                    descriptors.push_back({relay.socket, POLLRDNORM, 0});
+                    const SHORT udpEvents = static_cast<SHORT>(
+                        POLLRDNORM | (relay.wantsUdpWrite ? POLLWRNORM : 0));
+                    descriptors.push_back({relay.socket, udpEvents, 0});
                     targets.push_back({PollKind::RelayUdp, relay.socket, relay.flowId});
                     descriptors.push_back({relay.controlSocket, POLLRDNORM, 0});
                     targets.push_back({PollKind::ReadyControl,
@@ -302,12 +304,20 @@ void UdpBrokerServer::Run() noexcept {
                         return value.flowId == target.flowId;
                     });
                 if (relay != relays.end()) {
-                    Ingress& ingress = relay->clientAddressFamily == AF_INET6
-                        ? ipv6_ : ipv4_;
-                    if (ingress.socket != INVALID_SOCKET) {
-                        registry_->HandleUpstreamResponse(target.flowId,
-                            ingress.socket, ingress.sendMessage, response.data(),
-                            response.size(), WfpUdpFlowRelayRegistry::Clock::now());
+                    // Writable notifications drain client->SOCKS packets in FIFO
+                    // order. Keep the queue intact on WSAEWOULDBLOCK and resume
+                    // only when WSAPoll reports the socket writable again.
+                    if ((events & POLLWRNORM) != 0 && relay->wantsUdpWrite) {
+                        registry_->AdvanceQueuedClientDatagrams(target.flowId);
+                    }
+                    if ((events & POLLRDNORM) != 0) {
+                        Ingress& ingress = relay->clientAddressFamily == AF_INET6
+                            ? ipv6_ : ipv4_;
+                        if (ingress.socket != INVALID_SOCKET) {
+                            registry_->HandleUpstreamResponse(target.flowId,
+                                ingress.socket, ingress.sendMessage, response.data(),
+                                response.size(), WfpUdpFlowRelayRegistry::Clock::now());
+                        }
                     }
                 }
             } else if (target.kind == PollKind::ReadyControl) {

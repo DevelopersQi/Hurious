@@ -204,11 +204,37 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
 
     if (found == relays_.end())
         return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+    // Once a datagram is queued, later packets must join the same FIFO even
+    // if the socket becomes writable between ingress events.
+    if (outboundDatagrams_.find(flowId) != outboundDatagrams_.end()) {
+        if (!QueueOutboundDatagram(flowId, payload, message.payloadLength)) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::PendingQueueFull;
+        }
+        if (outputFlowId) *outputFlowId = flowId;
+        return WfpUdpFlowRelayRegistryResult::Pending;
+    }
+
     const auto sent = found->second->SendClientPayload(
         payload, message.payloadLength, errorCode);
     if (sent == WfpSocks5UdpFlowRelayResult::ControlClosed) {
         CloseFlow(flowId);
         return WfpUdpFlowRelayRegistryResult::ControlClosed;
+    }
+    if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
+        errorCode != nullptr && *errorCode == WSAEWOULDBLOCK) {
+        try {
+            outboundDatagrams_.try_emplace(flowId);
+        } catch (...) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
+        if (!QueueOutboundDatagram(flowId, payload, message.payloadLength)) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::PendingQueueFull;
+        }
+        if (outputFlowId) *outputFlowId = flowId;
+        return WfpUdpFlowRelayRegistryResult::Pending;
     }
     if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
         CloseFlow(flowId);
@@ -252,6 +278,39 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
         pending->second.pop_front();
     }
     pendingDatagrams_.erase(pending);
+    return WfpUdpFlowRelayRegistryResult::Ready;
+}
+
+WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvanceQueuedClientDatagrams(
+    std::uint64_t flowId, int* errorCode) noexcept {
+    if (errorCode) *errorCode = 0;
+    const auto relay = relays_.find(flowId);
+    const auto queued = outboundDatagrams_.find(flowId);
+    if (relay == relays_.end() || queued == outboundDatagrams_.end())
+        return WfpUdpFlowRelayRegistryResult::FlowNotFound;
+
+    while (!queued->second.empty()) {
+        const auto& datagram = queued->second.front();
+        const auto sent = relay->second->SendClientPayload(
+            datagram.empty() ? nullptr : datagram.data(), datagram.size(), errorCode);
+        if (sent == WfpSocks5UdpFlowRelayResult::ControlClosed) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::ControlClosed;
+        }
+        if (sent == WfpSocks5UdpFlowRelayResult::SendFailed &&
+            errorCode != nullptr && *errorCode == WSAEWOULDBLOCK) {
+            return WfpUdpFlowRelayRegistryResult::Pending;
+        }
+        if (sent != WfpSocks5UdpFlowRelayResult::Ready) {
+            CloseFlow(flowId);
+            return WfpUdpFlowRelayRegistryResult::SendFailed;
+        }
+        const auto size = datagram.size();
+        outboundDatagramBytes_ = size > outboundDatagramBytes_
+            ? 0 : outboundDatagramBytes_ - size;
+        queued->second.pop_front();
+    }
+    outboundDatagrams_.erase(queued);
     return WfpUdpFlowRelayRegistryResult::Ready;
 }
 
@@ -333,6 +392,7 @@ std::size_t WfpUdpFlowRelayRegistry::SweepClosedControls() noexcept {
         }
         const auto flowId = it->first;
         DiscardPendingDatagrams(flowId);
+        DiscardOutboundDatagrams(flowId);
         it->second->Close();
         it = relays_.erase(it);
         flows_.Remove(flowId);
@@ -375,8 +435,42 @@ void WfpUdpFlowRelayRegistry::DiscardPendingDatagrams(
     pendingDatagrams_.erase(found);
 }
 
+bool WfpUdpFlowRelayRegistry::QueueOutboundDatagram(
+    std::uint64_t flowId, const std::uint8_t* payload,
+    std::size_t payloadLength) noexcept {
+    auto found = outboundDatagrams_.find(flowId);
+    if (found == outboundDatagrams_.end() ||
+        found->second.size() >= kMaximumPendingDatagramsPerFlow ||
+        payloadLength > 65507 ||
+        outboundDatagramBytes_ > kMaximumPendingDatagramBytes ||
+        payloadLength > kMaximumPendingDatagramBytes - outboundDatagramBytes_ ||
+        (payloadLength != 0 && payload == nullptr)) return false;
+    try {
+        std::vector<std::uint8_t> datagram;
+        if (payloadLength != 0) datagram.assign(payload, payload + payloadLength);
+        found->second.push_back(std::move(datagram));
+        outboundDatagramBytes_ += payloadLength;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void WfpUdpFlowRelayRegistry::DiscardOutboundDatagrams(
+    std::uint64_t flowId) noexcept {
+    const auto found = outboundDatagrams_.find(flowId);
+    if (found == outboundDatagrams_.end()) return;
+    for (const auto& datagram : found->second) {
+        const auto size = datagram.size();
+        outboundDatagramBytes_ = size > outboundDatagramBytes_
+            ? 0 : outboundDatagramBytes_ - size;
+    }
+    outboundDatagrams_.erase(found);
+}
+
 void WfpUdpFlowRelayRegistry::CloseFlow(std::uint64_t flowId) noexcept {
     DiscardPendingDatagrams(flowId);
+    DiscardOutboundDatagrams(flowId);
     const auto found = relays_.find(flowId);
     if (found != relays_.end()) {
         found->second->Close();
@@ -407,10 +501,11 @@ bool WfpUdpFlowRelayRegistry::GetRelaySockets(
         for (const auto& item : relays_) {
             output.push_back({item.first, item.second->UdpSocket(),
                 item.second->ControlSocket(),
-                pendingDatagrams_.find(item.first) != pendingDatagrams_.end(),
+                item.second->IsOpening(),
                 item.second->WantsRead(), item.second->WantsWrite(),
                 item.second->OriginalClient() != nullptr
-                    ? item.second->OriginalClient()->sa_family : AF_UNSPEC});
+                    ? item.second->OriginalClient()->sa_family : AF_UNSPEC,
+                outboundDatagrams_.find(item.first) != outboundDatagrams_.end()});
         }
     } catch (...) {
         output.clear();

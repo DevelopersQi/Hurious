@@ -37,6 +37,7 @@ struct WfpUdpRelaySocket final {
     bool wantsRead = false;
     bool wantsWrite = false;
     int clientAddressFamily = AF_UNSPEC;
+    bool wantsUdpWrite = false;
 };
 
 // Single-I/O-thread owner for UDP flow state and per-flow SOCKS5 relay sockets.
@@ -69,6 +70,8 @@ public:
     WfpUdpFlowRelayRegistryResult AdvancePendingFlow(
         std::uint64_t flowId, bool readable, bool writable,
         int* errorCode = nullptr) noexcept;
+    WfpUdpFlowRelayRegistryResult AdvanceQueuedClientDatagrams(
+        std::uint64_t flowId, int* errorCode = nullptr) noexcept;
 
     WfpUdpFlowRelayRegistryResult HandleUpstreamResponse(
         std::uint64_t flowId, SOCKET redirectedIngressSocket,
@@ -93,9 +96,16 @@ private:
     static constexpr std::size_t kMaximumPendingDatagramBytes = 4 * 1024 * 1024;
     std::unordered_map<std::uint64_t, std::deque<std::vector<std::uint8_t>>> pendingDatagrams_;
     std::size_t pendingDatagramBytes_ = 0;
+    // Ready relays keep UDP datagrams when sendto reports WSAEWOULDBLOCK.
+    // This queue has the same per-flow/global bounds as handshake buffering.
+    std::unordered_map<std::uint64_t, std::deque<std::vector<std::uint8_t>>> outboundDatagrams_;
+    std::size_t outboundDatagramBytes_ = 0;
     bool QueuePendingDatagram(std::uint64_t flowId,
         const std::uint8_t* payload, std::size_t payloadLength) noexcept;
     void DiscardPendingDatagrams(std::uint64_t flowId) noexcept;
+    bool QueueOutboundDatagram(std::uint64_t flowId,
+        const std::uint8_t* payload, std::size_t payloadLength) noexcept;
+    void DiscardOutboundDatagrams(std::uint64_t flowId) noexcept;
     sockaddr_storage socksAddress_{};
     int socksAddressLength_ = 0;
     DWORD timeoutMilliseconds_ = 5000;
