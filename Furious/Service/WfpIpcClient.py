@@ -442,8 +442,14 @@ class WfpIpcClient:
             listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6,
         )
         response = self.request(COMMAND_START_BROKER, payload)
-        if response.broker_process_id == 0 or not (response.tcp_port_v4 or response.tcp_port_v6):
-            raise WfpIpcProtocolError("WFP broker started without valid PID/listener telemetry")
+        if (
+            response.broker_process_id == 0
+            or bool(response.tcp_port_v4) != bool(listen_ipv4)
+            or bool(response.tcp_port_v6) != bool(listen_ipv6)
+        ):
+            raise WfpIpcProtocolError(
+                "WFP TCP broker listener telemetry does not match requested address families"
+            )
         return response
 
     def stopBroker(self):
@@ -458,8 +464,14 @@ class WfpIpcClient:
             listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6,
         )
         response = self.request(COMMAND_START_UDP_BROKER, payload)
-        if response.broker_process_id == 0 or not (response.udp_port_v4 or response.udp_port_v6):
-            raise WfpIpcProtocolError("WFP UDP broker started without valid PID/listener telemetry")
+        if (
+            response.broker_process_id == 0
+            or bool(response.udp_port_v4) != bool(listen_ipv4)
+            or bool(response.udp_port_v6) != bool(listen_ipv6)
+        ):
+            raise WfpIpcProtocolError(
+                "WFP UDP broker listener telemetry does not match requested address families"
+            )
         return response
 
     def stopUdpBroker(self):

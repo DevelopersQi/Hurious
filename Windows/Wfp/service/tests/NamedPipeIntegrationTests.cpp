@@ -136,6 +136,54 @@ int main() {
         return Fail("Named-pipe STOP_UDP_BROKER exchange failed", stopEvent, server, worker);
     }
 
+    // Start both transports together and verify stopping UDP leaves the TCP
+    // broker/listener alive until the aggregate STOP_BROKER command.
+    const auto startTcpRequest = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_START_BROKER, 0x1234567Eu,
+        &udpBrokerRequest, sizeof(udpBrokerRequest));
+    response = {};
+    if (!Exchange(startTcpRequest.data(), static_cast<DWORD>(startTcpRequest.size()), &response) ||
+        response.Win32Status != ERROR_SUCCESS || response.BrokerProcessId == 0 ||
+        response.TcpPortV4 == 0 || response.TcpPortV6 != 0 ||
+        response.UdpPortV4 != 0 || response.UdpPortV6 != 0) {
+        return Fail("Named-pipe TCP broker start before UDP failed", stopEvent, server, worker);
+    }
+    const DWORD combinedBrokerPid = response.BrokerProcessId;
+    const WORD combinedTcpPort = response.TcpPortV4;
+
+    const auto startCombinedUdpRequest = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER, 0x1234567Fu,
+        &udpBrokerRequest, sizeof(udpBrokerRequest));
+    response = {};
+    if (!Exchange(startCombinedUdpRequest.data(), static_cast<DWORD>(startCombinedUdpRequest.size()), &response) ||
+        response.Win32Status != ERROR_SUCCESS ||
+        response.BrokerProcessId != combinedBrokerPid ||
+        response.TcpPortV4 != combinedTcpPort || response.UdpPortV4 == 0 ||
+        response.TcpPortV6 != 0 || response.UdpPortV6 != 0) {
+        return Fail("Named-pipe combined TCP/UDP broker start failed", stopEvent, server, worker);
+    }
+
+    const auto stopCombinedUdpRequest = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER, 0x12345680u);
+    response = {};
+    if (!Exchange(stopCombinedUdpRequest.data(), static_cast<DWORD>(stopCombinedUdpRequest.size()), &response) ||
+        response.Win32Status != ERROR_SUCCESS ||
+        response.BrokerProcessId != combinedBrokerPid ||
+        response.TcpPortV4 != combinedTcpPort ||
+        response.UdpPortV4 != 0 || response.UdpPortV6 != 0) {
+        return Fail("Stopping UDP broker unexpectedly stopped TCP broker", stopEvent, server, worker);
+    }
+
+    const auto stopCombinedBrokerRequest = MakeRequest(
+        FURIOUS_WFP_IPC_COMMAND_STOP_BROKER, 0x12345681u);
+    response = {};
+    if (!Exchange(stopCombinedBrokerRequest.data(), static_cast<DWORD>(stopCombinedBrokerRequest.size()), &response) ||
+        response.Win32Status != ERROR_SUCCESS || response.BrokerProcessId != 0 ||
+        response.TcpPortV4 != 0 || response.TcpPortV6 != 0 ||
+        response.UdpPortV4 != 0 || response.UdpPortV6 != 0) {
+        return Fail("Aggregate STOP_BROKER did not stop both transports", stopEvent, server, worker);
+    }
+
     FURIOUS_WFP_POLICY_HEADER policyHeader = {};
     policyHeader.Size = sizeof(policyHeader);
     policyHeader.AbiVersion = FURIOUS_WFP_POLICY_ABI_VERSION;

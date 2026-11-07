@@ -177,6 +177,24 @@ class WfpIpcClientTest(unittest.TestCase):
         with self.assertRaises(WfpIpcProtocolError):
             WfpIpcClient(_Transport(response_mutator=corrupt)).status()
 
+    def testTcpBrokerRejectsMissingRequestedListenerFamily(self):
+        def remove_ipv6_tcp_port(response):
+            return response[:38] + b"\\x00\\x00" + response[40:]
+
+        with self.assertRaisesRegex(WfpIpcProtocolError, "address families"):
+            WfpIpcClient(
+                _Transport(response_mutator=remove_ipv6_tcp_port)
+            ).startBroker("127.0.0.1", 10808)
+
+    def testUdpBrokerRejectsMissingRequestedListenerFamily(self):
+        def remove_ipv6_udp_port(response):
+            return response[:42] + b"\\x00\\x00" + response[44:]
+
+        with self.assertRaisesRegex(WfpIpcProtocolError, "address families"):
+            WfpIpcClient(
+                _Transport(response_mutator=remove_ipv6_udp_port)
+            ).startUdpBroker("127.0.0.1", 10808)
+
     def testResponseParserRejectsInconsistentBrokerTelemetry(self):
         request_id = 19
         malformed = struct.pack(
