@@ -405,16 +405,24 @@ inline DWORD DispatchCommand(uint32_t command,
             return ERROR_INVALID_PARAMETER;
         }
         return ClearEndpointConfig(engine);
-    case FURIOUS_WFP_IPC_COMMAND_SET_POLICY:
+    case FURIOUS_WFP_IPC_COMMAND_SET_POLICY: {
         if (payload == nullptr || payloadSize == 0) {
             return ERROR_INVALID_DATA;
         }
-        return GetPolicyStore().Set(payload, payloadSize, engine, IsUdpEndpointConfigured());
-    case FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY:
+        // Serialize policy replacement with endpoint/broker lifecycle changes.
+        // The endpoint lock is always acquired before the policy-store lock.
+        std::lock_guard<std::mutex> lock(EndpointConfigMutex());
+        const bool includeUdp = HasEndpointConfigSnapshot() &&
+            (EndpointConfigSnapshot().Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+        return GetPolicyStore().Set(payload, payloadSize, engine, includeUdp);
+    }
+    case FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY: {
         if (payloadSize != 0) {
             return ERROR_INVALID_PARAMETER;
         }
+        std::lock_guard<std::mutex> lock(EndpointConfigMutex());
         return GetPolicyStore().Clear(engine);
+    }
     default:
         return ERROR_INVALID_FUNCTION;
     }
