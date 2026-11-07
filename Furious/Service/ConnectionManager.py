@@ -1138,6 +1138,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpActiveRuntime = None
         self._wfpIpcController = None
         self._wfpBrokerPending = {}
+        self._wfpEndpointPending = {}
         self._wfpBrokerEndpoint = None
 
     def _getWfpIpcController(self):
@@ -1154,8 +1155,18 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Log asynchronous WFP control-plane results without affecting proxy state."""
         if error:
             logger.warning(f'WFP IPC {command} request failed: {error}')
-            if command in ('start-broker', 'set-endpoint', 'set-policy', 'clear-policy'):
+            if command == 'set-endpoint':
+                requestedGeneration = self._wfpEndpointPending.pop(requestId, None)
+                if requestedGeneration != self.wfpRuntimeSnapshot.generation:
+                    logger.debug('ignoring a stale WFP endpoint update failure')
+                    return
+                self._wfpBrokerEndpoint = None
+                if self._wfpIpcController is not None:
+                    self._wfpIpcController.clearEndpointConfig()
+                    self._wfpIpcController.stopBroker()
+            elif command in ('start-broker', 'set-policy', 'clear-policy'):
                 self._wfpBrokerPending.pop(requestId, None)
+                self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
                 if command in ('set-policy', 'clear-policy'):
                     self._wfpPolicyHasProxyRules = False
@@ -1191,6 +1202,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
             if self._wfpIpcController is not None:
                 self._wfpIpcController.clearEndpointConfig()
         elif command == 'set-endpoint':
+            requestedGeneration = self._wfpEndpointPending.pop(requestId, None)
+            if requestedGeneration != self.wfpRuntimeSnapshot.generation:
+                logger.debug('ignoring a stale WFP endpoint update completion')
+                return
             logger.info('WFP TCP redirect endpoint configuration updated')
         elif command == 'set-policy':
             logger.info('WFP application routing policy updated')
@@ -1239,6 +1254,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             # cleanup, so an old completion cannot re-enable a stale listener.
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
+            self._wfpEndpointPending.clear()
             controller.clearEndpointConfig()
             controller.stopBroker()
 
@@ -1255,6 +1271,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpPolicyBackend = 0
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
+        self._wfpEndpointPending.clear()
         requestId = controller.clearPolicy()
         controller.clearEndpointConfig()
         controller.stopBroker()
@@ -1273,6 +1290,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             controller.stopBroker()
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
+            self._wfpEndpointPending.clear()
 
             factory = getPluginRegistry().factoryForConfig(configuration)
             factoryId = str(getattr(factory, 'factoryId', '')).casefold()
@@ -1349,7 +1367,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpBrokerEndpoint = None
             return None
 
-        return self._wfpIpcController.setEndpointConfig(payload)
+        requestId = self._wfpIpcController.setEndpointConfig(payload)
+        if requestId is not None:
+            self._wfpEndpointPending[requestId] = snapshot.generation
+        return requestId
 
     def _advanceWfpRuntimeGeneration(self):
         """Advance the identity of the committed runtime ownership snapshot."""
@@ -2108,6 +2129,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 requestId: (backend, self.wfpRuntimeSnapshot.generation)
                 for requestId, (backend, _generation) in self._wfpBrokerPending.items()
             }
+            self._wfpEndpointPending.clear()
             self._publishWfpEndpointConfig()
         else:
             if self._wfpIpcController is not None:
@@ -2116,6 +2138,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
+            self._wfpEndpointPending.clear()
             self._wfpActiveConfiguration = None
             self._wfpActiveRuntime = None
 
@@ -2135,6 +2158,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpIpcController.stopBroker()
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
+        self._wfpEndpointPending.clear()
         self._wfpActiveConfiguration = None
         self._wfpActiveRuntime = None
 
