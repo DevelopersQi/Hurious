@@ -177,7 +177,9 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
                 if (!QueuePendingDatagram(flowId, payload, message.payloadLength))
                     throw std::bad_alloc();
             } catch (...) {
-                // Erasing the relay closes its UDP and TCP resources.
+                // Roll back both socket resources and any partially created
+                // queue entry; accounting must remain balanced on allocation failure.
+                DiscardPendingDatagrams(flowId);
                 relays_.erase(flowId);
                 flows_.Remove(flowId);
                 return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
