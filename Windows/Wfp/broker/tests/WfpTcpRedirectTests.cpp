@@ -670,6 +670,8 @@ void TestSocks5UdpAssociationClientAsyncHandshake() {
         }
         assert(result == Socks5UdpAssociationAsyncResult::Ready);
         assert(socketError == 0 && client.IsOpen() && client.IsControlAlive());
+        for (int wait = 0; wait < 100 && !serverOk.load(); ++wait)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         assert(serverOk.load());
         const auto* relay = reinterpret_cast<const sockaddr_in*>(client.RelayAddress());
         assert(relay != nullptr && relay->sin_family == AF_INET);
