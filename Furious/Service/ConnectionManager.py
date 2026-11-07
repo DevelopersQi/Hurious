@@ -1274,6 +1274,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpBrokerEndpoint = None
             self._wfpTcpBrokerEndpoint = None
             self._wfpUdpBrokerEndpoint = None
+            self._wfpUdpBrokerPending.clear()
+            self._wfpBrokerPending.clear()
             logger.debug('WFP TCP/UDP broker stop request completed')
         elif command == 'stop-udp-broker':
             self._wfpUdpBrokerEndpoint = None
@@ -1308,6 +1310,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
         # Disable the old endpoint before replacing the policy filters. This
         # prevents a new Proxy policy from briefly using an old backend.
         self._wfpBrokerEndpoint = None
+        self._wfpTcpBrokerEndpoint = None
+        self._wfpUdpBrokerEndpoint = None
+        self._wfpUdpBrokerPending.clear()
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
         self._wfpPolicyPending.clear()
@@ -1340,6 +1345,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpPolicyReady = False
         self._wfpPolicyPending.clear()
         self._wfpBrokerEndpoint = None
+        self._wfpTcpBrokerEndpoint = None
+        self._wfpUdpBrokerEndpoint = None
+        self._wfpUdpBrokerPending.clear()
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
         controller.clearEndpointConfig()
@@ -1367,6 +1375,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 controller.clearEndpointConfig()
                 controller.stopBroker()
             self._wfpBrokerEndpoint = None
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
+            self._wfpUdpBrokerPending.clear()
             self._wfpBrokerPending.clear()
             self._wfpEndpointPending.clear()
 
@@ -1471,6 +1482,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpIpcController.clearEndpointConfig()
                 self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
             return None
         self._wfpBrokerEndpoint = (
             backend, brokerPid, tcpPortV4, tcpPortV6, udpPortV4, udpPortV6
@@ -2289,6 +2302,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
         self._wfpBrokerEndpoint = None
+        self._wfpTcpBrokerEndpoint = None
+        self._wfpUdpBrokerEndpoint = None
+        self._wfpUdpBrokerPending.clear()
         self._wfpBrokerPending.clear()
         self._wfpEndpointPending.clear()
         self._wfpActiveConfiguration = None
