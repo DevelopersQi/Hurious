@@ -1,6 +1,7 @@
 #include "WfpUdpFlowRelayRegistry.h"
 
 #include <cstring>
+#include <new>
 #include <ws2tcpip.h>
 
 namespace furious::wfp::broker {
