@@ -165,7 +165,72 @@ void TestTunnelRejectsUnpairedCancellationCallbacks() {
 
 } // namespace
 
-void TestSocks5UdpParser();
+void TestSocks5UdpParser() {
+    using furious::wfp::broker::ParseSocks5UdpDatagram;
+    using furious::wfp::broker::Socks5UdpAddressType;
+    using furious::wfp::broker::Socks5UdpDatagramView;
+    using furious::wfp::broker::Socks5UdpParseResult;
+
+    Socks5UdpDatagramView view{};
+    const std::vector<std::uint8_t> ipv4 = {
+        0x00, 0x00, 0x00, 0x01, 192, 0, 2, 9, 0x01, 0xBB, 0xAA, 0xBB
+    };
+    assert(ParseSocks5UdpDatagram(ipv4.data(), ipv4.size(), view) ==
+        Socks5UdpParseResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Ipv4);
+    assert(view.addressLength == 4 && view.port == 443);
+    assert(view.payloadLength == 2 && view.payload[0] == 0xAA);
+
+    const std::vector<std::uint8_t> ipv6 = {
+        0x00, 0x00, 0x00, 0x04,
+        0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 1, 0x13, 0x88, 0x7F
+    };
+    assert(ParseSocks5UdpDatagram(ipv6.data(), ipv6.size(), view) ==
+        Socks5UdpParseResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Ipv6);
+    assert(view.addressLength == 16 && view.port == 5000);
+    assert(view.payloadLength == 1 && view.payload[0] == 0x7F);
+
+    const std::vector<std::uint8_t> domain = {
+        0x00, 0x00, 0x00, 0x03, 0x0B,
+        'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+        0x00, 0x35, 0x42
+    };
+    assert(ParseSocks5UdpDatagram(domain.data(), domain.size(), view) ==
+        Socks5UdpParseResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Domain);
+    assert(view.addressLength == 11 && view.port == 53);
+    assert(view.payloadLength == 1 && view.payload[0] == 0x42);
+
+    const std::vector<std::uint8_t> shortHeader = {0x00, 0x00, 0x00};
+    assert(ParseSocks5UdpDatagram(shortHeader.data(), shortHeader.size(), view) ==
+        Socks5UdpParseResult::Truncated);
+    const std::vector<std::uint8_t> invalidReserved = {
+        0x01, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0, 53
+    };
+    assert(ParseSocks5UdpDatagram(invalidReserved.data(), invalidReserved.size(), view) ==
+        Socks5UdpParseResult::InvalidReservedField);
+    const std::vector<std::uint8_t> fragmented = {0, 0, 1, 1, 127, 0, 0, 1, 0, 53};
+    assert(ParseSocks5UdpDatagram(fragmented.data(), fragmented.size(), view) ==
+        Socks5UdpParseResult::FragmentationUnsupported);
+    const std::vector<std::uint8_t> unknownType = {0, 0, 0, 2};
+    assert(ParseSocks5UdpDatagram(unknownType.data(), unknownType.size(), view) ==
+        Socks5UdpParseResult::UnsupportedAddressType);
+    const std::vector<std::uint8_t> emptyDomain = {0, 0, 0, 3, 0};
+    assert(ParseSocks5UdpDatagram(emptyDomain.data(), emptyDomain.size(), view) ==
+        Socks5UdpParseResult::EmptyDomain);
+    const std::vector<std::uint8_t> missingPort = {0, 0, 0, 1, 127, 0, 0, 1, 0};
+    assert(ParseSocks5UdpDatagram(missingPort.data(), missingPort.size(), view) ==
+        Socks5UdpParseResult::Truncated);
+    const std::vector<std::uint8_t> zeroPort = {0, 0, 0, 1, 127, 0, 0, 1, 0, 0};
+    assert(ParseSocks5UdpDatagram(zeroPort.data(), zeroPort.size(), view) ==
+        Socks5UdpParseResult::InvalidPort);
+    assert(ParseSocks5UdpDatagram(nullptr, 0, view) ==
+        Socks5UdpParseResult::NullDatagram);
+    assert(view.address == nullptr && view.payload == nullptr);
+}
+
 void TestBrokerServerLifecycle();
 void TestBrokerConcurrentStartStopIsSerialized();
 void TestBrokerStopsWhileAcceptingConnections();
