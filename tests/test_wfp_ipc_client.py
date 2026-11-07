@@ -117,6 +117,22 @@ class WfpIpcClientTest(unittest.TestCase):
         self.assertEqual(values[7:12], (2080, 0, 0, 0, 2))
         self.assertEqual(values[12:], (2345, 3456, 0, 0, 0, 0, 0, 0))
 
+    def testEndpointConfigSupportsDualStackTcpBrokerListeners(self):
+        payload = pack_endpoint_config(
+            backend=2,
+            flags=REDIRECT_FLAG_IPV4 | REDIRECT_FLAG_IPV6 | REDIRECT_FLAG_TCP,
+            proxy_process_id=4321,
+            policy_generation=17,
+            tcp_port_v4=32001,
+            tcp_port_v6=32002,
+            excluded_process_ids=(1111, 2222),
+        )
+
+        values = struct.unpack("<IIIIIIQHHHHI8I", payload)
+        self.assertEqual(values[:7], (76, 2, 2, 7, 4321, 0, 17))
+        self.assertEqual(values[7:12], (32001, 0, 32002, 0, 2))
+        self.assertEqual(values[12:], (1111, 2222, 0, 0, 0, 0, 0, 0))
+
     def testEndpointConfigRejectsInvalidExclusionLists(self):
         base = dict(
             backend=1,
