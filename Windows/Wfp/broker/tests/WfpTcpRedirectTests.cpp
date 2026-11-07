@@ -93,6 +93,8 @@ void CountSocketUnregistration(void* context, SOCKET) noexcept {
 }
 
 void TestTunnelRegistrationFailureCancelsBeforeConnect() {
+    WSADATA winsockData{};
+    assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
     sockaddr_in socksAddress{};
     socksAddress.sin_family = AF_INET;
     socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -123,9 +125,12 @@ void TestTunnelRegistrationFailureCancelsBeforeConnect() {
     assert(error == WSA_OPERATION_ABORTED);
     assert(probe.registerCalls == 1);
     assert(probe.unregisterCalls == 0);
+    WSACleanup();
 }
 
 void TestTunnelRejectsUnpairedCancellationCallbacks() {
+    WSADATA winsockData{};
+    assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
     sockaddr_in socksAddress{};
     socksAddress.sin_family = AF_INET;
     socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -152,6 +157,7 @@ void TestTunnelRejectsUnpairedCancellationCallbacks() {
     assert(error == WSAEINVAL);
     assert(probe.registerCalls == 0);
     assert(probe.unregisterCalls == 0);
+    WSACleanup();
 }
 
 } // namespace
