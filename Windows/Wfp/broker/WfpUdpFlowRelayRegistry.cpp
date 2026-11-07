@@ -411,7 +411,7 @@ std::size_t WfpUdpFlowRelayRegistry::SweepExpired(TimePoint now) noexcept {
     std::uint64_t expiredFlowId = 0;
     std::size_t scanIndex = 0;
     // CloseFlow removes the returned manager entry. Keeping scanIndex at that
-    // position visits the element shifted into it, so a full sweep is O(n)
+    // position visits the element swapped into it, so a full sweep is O(n)
     // rather than repeatedly rescanning the already-visited prefix.
     while (flows_.FindExpiredFrom(now, scanIndex, expiredFlowId)) {
         CloseFlowResources(expiredFlowId);
