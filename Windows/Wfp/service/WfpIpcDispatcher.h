@@ -180,6 +180,7 @@ inline DWORD SetEndpointConfig(
         return ERROR_INVALID_PARAMETER;
     const bool enableTcp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) != 0;
     const bool enableUdp = (config.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
+    if (enableUdp && engine == nullptr) return ERROR_INVALID_HANDLE;
     if (enableTcp) {
         auto& broker = GetTcpBrokerServer();
         if (!broker.IsRunning()) return ERROR_SERVICE_NOT_ACTIVE;
@@ -187,7 +188,6 @@ inline DWORD SetEndpointConfig(
             return ERROR_INVALID_PARAMETER;
     }
     if (enableUdp) {
-        if (engine == nullptr) return ERROR_INVALID_HANDLE;
         auto& broker = GetUdpBrokerServer();
         if (!broker.IsRunning()) return ERROR_SERVICE_NOT_ACTIVE;
         if (!UdpBrokerMatchesEndpoint(config, broker.ListenerPorts()))
