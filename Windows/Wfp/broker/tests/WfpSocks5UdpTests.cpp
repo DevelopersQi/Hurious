@@ -1035,6 +1035,92 @@ void TestAssociationManagerQuotasAndCleanup() {
     assert(manager.SweepExpired(now + std::chrono::seconds(6)) == 1);
     assert(manager.ActiveCount() == 0);
 }
+
+void TestRegistryCloseAllCancelsPendingHandshake() {
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(listener != INVALID_SOCKET);
+    sockaddr_in socksAddress{};
+    socksAddress.sin_family = AF_INET;
+    socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(listener, reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress)) == 0);
+    assert(listen(listener, 1) == 0);
+    int addressLength = static_cast<int>(sizeof(socksAddress));
+    assert(getsockname(listener, reinterpret_cast<sockaddr*>(&socksAddress),
+        &addressLength) == 0);
+
+    std::atomic<bool> acceptedAndReadGreeting{false};
+    std::atomic<bool> peerObservedClose{false};
+    std::thread fakeSocksServer([&]() {
+        fd_set readable;
+        FD_ZERO(&readable);
+        FD_SET(listener, &readable);
+        timeval acceptTimeout{3, 0};
+        if (select(0, &readable, nullptr, nullptr, &acceptTimeout) <= 0) return;
+        SOCKET peer = accept(listener, nullptr, nullptr);
+        if (peer == INVALID_SOCKET) return;
+
+        std::array<std::uint8_t, 3> greeting{};
+        if (ReceiveExactSocket(peer, greeting.data(), greeting.size()) &&
+            greeting == std::array<std::uint8_t, 3>{5, 1, 0}) {
+            acceptedAndReadGreeting.store(true);
+            fd_set peerReadable;
+            FD_ZERO(&peerReadable);
+            FD_SET(peer, &peerReadable);
+            timeval closeTimeout{2, 0};
+            if (select(0, &peerReadable, nullptr, nullptr, &closeTimeout) > 0) {
+                char byte = 0;
+                peerObservedClose.store(recv(peer, &byte, 1, 0) == 0);
+            }
+        }
+        closesocket(peer);
+    });
+
+    WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(10));
+    assert(registry.Configure(reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress), 3000));
+
+    WfpUdpReceivedMessage message{};
+    const auto source = FlowSource(50060);
+    std::memcpy(&message.sourceAddress, &source, sizeof(source));
+    message.sourceAddressLength = static_cast<int>(sizeof(source));
+    message.payloadLength = 4;
+    message.redirectRecord = {0x41, 0x42};
+    const auto context = MakeUdpRedirectContext(2001);
+    message.redirectContext.resize(sizeof(context));
+    std::memcpy(message.redirectContext.data(), &context, sizeof(context));
+    const std::array<std::uint8_t, 4> payload{'t', 'e', 's', 't'};
+
+    std::uint64_t flowId = 0;
+    assert(registry.ProcessClientDatagram(message, payload.data(),
+        WfpUdpFlowRelayRegistry::Clock::now(), &flowId) ==
+        WfpUdpFlowRelayRegistryResult::Pending);
+    assert(flowId != 0);
+
+    const auto acceptDeadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(2);
+    while (!acceptedAndReadGreeting.load() &&
+           std::chrono::steady_clock::now() < acceptDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    assert(acceptedAndReadGreeting.load());
+    assert(registry.ActiveCount() == 1);
+
+    // Shutdown during the nonblocking SOCKS greeting must release both
+    // sockets, erase the pending first datagram, and make later callbacks stale.
+    registry.CloseAll();
+    assert(registry.ActiveCount() == 0);
+    std::vector<WfpUdpRelaySocket> remaining;
+    assert(registry.GetRelaySockets(remaining));
+    assert(remaining.empty());
+    assert(registry.AdvancePendingFlow(flowId, true, true) ==
+        WfpUdpFlowRelayRegistryResult::FlowNotFound);
+
+    fakeSocksServer.join();
+    closesocket(listener);
+    assert(peerObservedClose.load());
+}
+
 }
 
 int main() {
@@ -1051,6 +1137,7 @@ int main() {
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
     TestNonblockingSocks5UdpHandshake();
+    TestRegistryCloseAllCancelsPendingHandshake();
     WSACleanup();
     return 0;
 }
