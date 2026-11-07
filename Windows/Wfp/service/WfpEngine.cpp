@@ -188,7 +188,7 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     UINT64 weight = 0x100000000ULL - static_cast<UINT64>(rule.Priority);
     filter.weight.type = FWP_UINT64;
     filter.weight.uint64 = &weight;
-    filter.context = static_cast<UINT64>(rule.Priority);
+    filter.rawContext = static_cast<UINT64>(rule.Priority);
     if (rule.Action == FuriousWfpActionProxy) {
         filter.action.type = FWP_ACTION_CALLOUT_TERMINATING;
         filter.action.calloutKey = calloutKey;
