@@ -1134,10 +1134,37 @@ void TestWfpUdpFlowManager() {
     assert(concurrent.ActiveCount() == 1);
 }
  
+WsaRecvMsgResult FakeRecvMsgWithoutSource(
+    SOCKET, LPWSAMSG message, LPDWORD bytesReceived,
+    LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE) {
+    if (message != nullptr) message->name = nullptr;
+    if (bytesReceived != nullptr) *bytesReceived = 1;
+    return 0;
+}
+
 void TestWfpUdpMessageReceive() {
     using namespace furious::wfp::broker;
     WSADATA data{};
     assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        std::uint8_t invalidPayload[8]{};
+        char invalidControl[WSA_CMSG_SPACE(16)]{};
+        WfpUdpReceivedMessage invalidOutput{};
+        int invalidError = 0;
+        assert(ReceiveWfpUdpMessage(INVALID_SOCKET, &FakeRecvMsgWithoutSource,
+            invalidPayload, sizeof(invalidPayload), invalidControl,
+            sizeof(invalidControl), invalidOutput, &invalidError) ==
+            WfpUdpReceiveResult::InvalidArguments);
+        // Exercise a successful provider return that omits the source address.
+        SOCKET dummy = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        assert(dummy != INVALID_SOCKET);
+        assert(ReceiveWfpUdpMessage(dummy, &FakeRecvMsgWithoutSource,
+            invalidPayload, sizeof(invalidPayload), invalidControl,
+            sizeof(invalidControl), invalidOutput, &invalidError) ==
+            WfpUdpReceiveResult::InvalidSource);
+        assert(invalidError == WSAEAFNOSUPPORT);
+        closesocket(dummy);
+    }
     {
         SOCKET receiver = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         SOCKET sender = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);

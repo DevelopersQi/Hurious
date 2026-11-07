@@ -193,7 +193,8 @@ WfpUdpReceiveResult ReceiveWfpUdpMessage(
         if (errorCode != nullptr) *errorCode = WSAEMSGSIZE;
         return WfpUdpReceiveResult::Truncated;
     }
-    if ((message.name->sa_family == AF_INET &&
+    if (message.name == nullptr ||
+        (message.name->sa_family == AF_INET &&
             message.namelen < static_cast<int>(sizeof(sockaddr_in))) ||
         (message.name->sa_family == AF_INET6 &&
             message.namelen < static_cast<int>(sizeof(sockaddr_in6))) ||
