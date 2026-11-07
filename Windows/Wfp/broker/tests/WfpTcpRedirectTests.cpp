@@ -591,6 +591,65 @@ void TestSocks5UdpAssociationClientHandshake() {
     WSACleanup();
 }
 
+void TestSocks5UdpAssociationClientRejectsUnknownAddressType() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        assert(listener != INVALID_SOCKET);
+        sockaddr_in serverAddress{};
+        serverAddress.sin_family = AF_INET;
+        serverAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        serverAddress.sin_port = 0;
+        assert(bind(listener, reinterpret_cast<const sockaddr*>(&serverAddress),
+            sizeof(serverAddress)) == 0);
+        assert(listen(listener, 1) == 0);
+        int serverAddressLength = sizeof(serverAddress);
+        assert(getsockname(listener, reinterpret_cast<sockaddr*>(&serverAddress),
+            &serverAddressLength) == 0);
+
+        Socks5UdpSocket localUdp;
+        int socketError = 0;
+        assert(localUdp.Open(Socks5UdpEndpointFamily::Ipv4, &socketError) ==
+            Socks5UdpSocketOpenResult::Opened);
+
+        std::thread fakeSocksServer([&]() {
+            SOCKET accepted = accept(listener, nullptr, nullptr);
+            assert(accepted != INVALID_SOCKET);
+            DWORD timeout = 5000;
+            setsockopt(accepted, SOL_SOCKET, SO_RCVTIMEO,
+                reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+            std::uint8_t greeting[3]{};
+            assert(recv(accepted, reinterpret_cast<char*>(greeting),
+                sizeof(greeting), MSG_WAITALL) == static_cast<int>(sizeof(greeting)));
+            const std::uint8_t greetingReply[] = {0x05, 0x00};
+            assert(send(accepted, reinterpret_cast<const char*>(greetingReply),
+                sizeof(greetingReply), 0) == static_cast<int>(sizeof(greetingReply)));
+
+            std::uint8_t request[10]{};
+            assert(recv(accepted, reinterpret_cast<char*>(request),
+                sizeof(request), MSG_WAITALL) == static_cast<int>(sizeof(request)));
+            assert(request[0] == 0x05 && request[1] == 0x03);
+            const std::uint8_t invalidReply[] = {0x05, 0x00, 0x00, 0x7F};
+            assert(send(accepted, reinterpret_cast<const char*>(invalidReply),
+                sizeof(invalidReply), 0) == static_cast<int>(sizeof(invalidReply)));
+            closesocket(accepted);
+        });
+
+        Socks5UdpAssociationClient client;
+        const auto result = client.Open(
+            reinterpret_cast<const sockaddr*>(&serverAddress), sizeof(serverAddress),
+            localUdp, 5000, &socketError);
+        assert(result == Socks5UdpAssociationClientOpenResult::ReplyRejected);
+        assert(socketError == WSAEPROTONOSUPPORT);
+        assert(!client.IsOpen() && client.ControlSocket() == INVALID_SOCKET);
+        fakeSocksServer.join();
+        closesocket(listener);
+    }
+    WSACleanup();
+}
+
 void TestSocks5UdpRelayTransportLoopback() {
     using namespace furious::wfp::broker;
     WSADATA data{};
@@ -1431,6 +1490,7 @@ int main() {
     TestSocks5UdpSocketOwnership();
     TestSocks5UdpAssociateReplyParser();
     TestSocks5UdpAssociationClientHandshake();
+    TestSocks5UdpAssociationClientRejectsUnknownAddressType();
     TestSocks5UdpRelayTransportLoopback();
     TestSocks5UdpFlowRelayBridge();
     TestSocks5UdpFlowRelayRejectsInvalidEndpoints();

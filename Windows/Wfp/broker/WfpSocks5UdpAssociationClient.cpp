@@ -136,7 +136,12 @@ int ReceiveAssociateReply(
         break;
     }
     default:
-        reply.assign(header.begin(), header.end());
+        try {
+            reply.assign(header.begin(), header.end());
+        } catch (...) {
+            reply.clear();
+            return WSA_NOT_ENOUGH_MEMORY;
+        }
         return 0;
     }
 
@@ -284,9 +289,9 @@ Socks5UdpAssociationClientOpenResult Socks5UdpAssociationClient::Open(
     }
 
     const std::uint8_t greeting[] = {0x05, 0x01, 0x00};
-    if (SendAll(controlSocket_, greeting, sizeof(greeting)) != 0) {
-        return fail(Socks5UdpAssociationClientOpenResult::MethodRejected,
-            WSAGetLastError());
+    error = SendAll(controlSocket_, greeting, sizeof(greeting));
+    if (error != 0) {
+        return fail(Socks5UdpAssociationClientOpenResult::MethodRejected, error);
     }
     std::array<std::uint8_t, 2> greetingReply{};
     error = ReceiveExact(controlSocket_, greetingReply.data(), greetingReply.size());
