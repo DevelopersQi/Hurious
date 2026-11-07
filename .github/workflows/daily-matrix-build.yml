@@ -25,6 +25,8 @@ on:
       - feat/auto-detect-tun-network
     paths:
       - .github/workflows/daily-matrix-build.yml
+      - Deploy.py
+      - Windows/Wfp/**
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
     - cron: '17 2 * * *'
