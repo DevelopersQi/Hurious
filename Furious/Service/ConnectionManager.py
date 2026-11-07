@@ -54,6 +54,7 @@ from Furious.Service.WfpIpcClient import (
     REDIRECT_FLAG_IPV4,
     REDIRECT_FLAG_IPV6,
     REDIRECT_FLAG_TCP,
+    pack_application_routing_policy,
     pack_endpoint_config,
 )
 
@@ -1041,6 +1042,7 @@ class ConnectionStartOperation(QtCore.QObject):
 
         self.attempt.commit(self.exitCallback)
         if not self.proxyModeOnly:
+            self.manager._wfpActiveConfiguration = self.attempt.runtimeConfiguration
             self.manager._startWfpBroker(self.attempt.runtimeConfiguration)
         self._terminal = True
 
@@ -1123,6 +1125,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._activeTUNBackend = None
         self._wfpRuntimeGeneration = 0
         self._wfpPolicyGeneration = 0
+        self._wfpPolicyHasProxyRules = False
+        self._wfpPolicyBackend = 0
+        self._wfpActiveConfiguration = None
         self._wfpIpcController = None
         self._wfpBrokerPending = {}
         self._wfpBrokerEndpoint = None
@@ -1141,9 +1146,12 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Log asynchronous WFP control-plane results without affecting proxy state."""
         if error:
             logger.warning(f'WFP IPC {command} request failed: {error}')
-            if command in ('start-broker', 'set-endpoint'):
+            if command in ('start-broker', 'set-endpoint', 'set-policy', 'clear-policy'):
                 self._wfpBrokerPending.pop(requestId, None)
                 self._wfpBrokerEndpoint = None
+                if command in ('set-policy', 'clear-policy'):
+                    self._wfpPolicyHasProxyRules = False
+                    self._wfpPolicyBackend = 0
                 if self._wfpIpcController is not None:
                     self._wfpIpcController.clearEndpointConfig()
                     self._wfpIpcController.stopBroker()
@@ -1196,21 +1204,55 @@ class ConnectionManager(Mixins.CleanupOnExit):
         """Install application-specific WFP Direct/Proxy rules asynchronously."""
         if sys.platform != 'win32':
             return None
-        controller = self._getWfpIpcController()
+
+        items = [dict(rule) for rule in rules]
         generation = self._nextWfpPolicyGeneration()
-        return controller.setPolicy(rules, backend, generation)
+        pack_application_routing_policy(items, backend, generation)
+        controller = self._getWfpIpcController()
+        requestId = controller.setPolicy(items, backend, generation)
+        if requestId is None:
+            return None
+
+        hasProxyRules = any(
+            bool(item.get('enabled', True))
+            and (
+                str(item.get('action', 'direct')).casefold() == 'proxy'
+                or item.get('action') == 1
+            )
+            for item in items
+        )
+        self._wfpPolicyHasProxyRules = hasProxyRules
+        self._wfpPolicyBackend = int(backend) if hasProxyRules else 0
+
+        if hasProxyRules and self._wfpActiveConfiguration is not None:
+            self._startWfpBroker(self._wfpActiveConfiguration)
+        elif not hasProxyRules:
+            controller.clearEndpointConfig()
+            controller.stopBroker()
+            self._wfpBrokerEndpoint = None
+            self._wfpBrokerPending.clear()
+
+        return requestId
 
     def clearWfpApplicationPolicy(self):
         """Remove application-specific WFP filters asynchronously."""
         if sys.platform != 'win32':
             return None
+
         controller = self._getWfpIpcController()
         self._nextWfpPolicyGeneration()
-        return controller.clearPolicy()
+        self._wfpPolicyHasProxyRules = False
+        self._wfpPolicyBackend = 0
+        requestId = controller.clearPolicy()
+        controller.clearEndpointConfig()
+        controller.stopBroker()
+        self._wfpBrokerEndpoint = None
+        self._wfpBrokerPending.clear()
+        return requestId
 
     def _startWfpBroker(self, configuration):
         """Start the TCP broker only for a supported socket-owning proxy core."""
-        if sys.platform != 'win32':
+        if sys.platform != 'win32' or not self._wfpPolicyHasProxyRules:
             return None
 
         try:
@@ -1220,9 +1262,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 'official.xray': 1,
                 'official.hysteria2': 2,
             }.get(factoryId)
-            if backend is None:
+            if backend is None or backend != self._wfpPolicyBackend:
                 logger.debug(
-                    f'WFP TCP broker skipped for unsupported backend: {factoryId or "unknown"}'
+                    f'WFP TCP broker skipped for unsupported or mismatched backend: '
+                    f'{factoryId or "unknown"}'
                 )
                 return None
 
@@ -1644,6 +1687,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         attempt.commit()
         if not proxyModeOnly:
+            self._wfpActiveConfiguration = attempt.runtimeConfiguration
             self._startWfpBroker(attempt.runtimeConfiguration)
 
         return True
@@ -2051,6 +2095,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
+            self._wfpActiveConfiguration = None
 
     def stopAll(self):
         """Stop every managed proxy-core and TUN runtime."""
@@ -2068,6 +2113,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpIpcController.stopBroker()
         self._wfpBrokerEndpoint = None
         self._wfpBrokerPending.clear()
+        self._wfpActiveConfiguration = None
 
     def cleanup(self):
         """Release resources owned by the core manager."""
