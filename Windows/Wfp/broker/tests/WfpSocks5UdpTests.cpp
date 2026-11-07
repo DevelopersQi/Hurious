@@ -307,6 +307,58 @@ void TestUdpFlowManagerIdentityLimitsAndExpiry() {
         WfpUdpFlowCreateResult::InvalidContext);
 }
 
+struct WfpUdpSendCapture final {
+    bool called = false;
+    sockaddr_storage destination{};
+    int destinationLength = 0;
+    std::vector<std::uint8_t> payload;
+    std::vector<std::uint8_t> redirectRecord;
+    std::vector<std::uint8_t> redirectContext;
+    int controlLevel = 0;
+};
+WfpUdpSendCapture gWfpUdpSendCapture{};
+
+int WSAAPI CaptureWfpUdpSendMessage(
+    SOCKET, LPWSAMSG message, DWORD, LPDWORD bytesSent,
+    LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE) {
+    if (message == nullptr || message->name == nullptr ||
+        message->lpBuffers == nullptr || message->dwBufferCount != 1 ||
+        bytesSent == nullptr) {
+        WSASetLastError(WSAEINVAL);
+        return SOCKET_ERROR;
+    }
+    gWfpUdpSendCapture = WfpUdpSendCapture{};
+    gWfpUdpSendCapture.called = true;
+    gWfpUdpSendCapture.destinationLength = message->namelen;
+    std::memcpy(&gWfpUdpSendCapture.destination, message->name,
+        static_cast<std::size_t>(message->namelen));
+    const auto* payload = reinterpret_cast<const std::uint8_t*>(
+        message->lpBuffers[0].buf);
+    if (message->lpBuffers[0].len != 0)
+        gWfpUdpSendCapture.payload.assign(payload,
+            payload + message->lpBuffers[0].len);
+    for (WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(message);
+         control != nullptr;
+         control = WSA_CMSG_NXTHDR(message, control)) {
+        if (control->cmsg_level != IPPROTO_IP &&
+            control->cmsg_level != IPPROTO_IPV6) {
+            WSASetLastError(WSAEINVAL);
+            return SOCKET_ERROR;
+        }
+        gWfpUdpSendCapture.controlLevel = control->cmsg_level;
+        const auto* data = reinterpret_cast<const std::uint8_t*>(
+            WSA_CMSG_DATA(control));
+        const auto length = control->cmsg_len - WSA_CMSG_LEN(0);
+        if (control->cmsg_type == IP_WFP_REDIRECT_RECORDS)
+            gWfpUdpSendCapture.redirectRecord.assign(data, data + length);
+        else if (control->cmsg_type == IP_WFP_REDIRECT_CONTEXT)
+            gWfpUdpSendCapture.redirectContext.assign(data, data + length);
+    }
+    *bytesSent = message->lpBuffers[0].len;
+    return 0;
+}
+
+
 void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
     SOCKET tcpListener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     SOCKET udpRelay = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -333,6 +385,8 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
 
     std::atomic<bool> relayVerified{false};
     std::atomic<bool> serverFinished{false};
+    std::atomic<bool> responseSent{false};
+    std::atomic<bool> allowServerClose{false};
     std::thread fakeSocksServer([&]() {
         SOCKET peer = INVALID_SOCKET;
         do {
@@ -394,9 +448,28 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
                 std::memcmp(view.payload, expectedPayload.data(),
                     expectedPayload.size()) == 0) {
                 relayVerified.store(true);
+                const std::array<std::uint8_t, 4> responsePayload{'p', 'o', 'n', 'g'};
+                std::vector<std::uint8_t> responseDatagram;
+                if (BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+                        expectedAddress.data(), expectedAddress.size(), 443,
+                        responsePayload.data(), responsePayload.size(),
+                        responseDatagram) == Socks5UdpBuildResult::Valid &&
+                    sendto(udpRelay,
+                        reinterpret_cast<const char*>(responseDatagram.data()),
+                        static_cast<int>(responseDatagram.size()), 0,
+                        reinterpret_cast<const sockaddr*>(&sender),
+                        senderLength) == static_cast<int>(responseDatagram.size())) {
+                    responseSent.store(true);
+                }
             }
         } while (false);
 
+        const auto closeDeadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(3);
+        while (!allowServerClose.load() &&
+               std::chrono::steady_clock::now() < closeDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
         if (peer != INVALID_SOCKET) closesocket(peer);
         serverFinished.store(true);
     });
@@ -464,6 +537,48 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
     }
     const bool datagramForwarded = relayVerified.load();
 
+    bool responseForwarded = false;
+    SOCKET ingress = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (ingress != INVALID_SOCKET && responseSent.load()) {
+        std::vector<WfpUdpRelaySocket> relays;
+        if (registry.GetRelaySockets(relays)) {
+            const auto relay = std::find_if(relays.begin(), relays.end(),
+                [flowId](const WfpUdpRelaySocket& item) {
+                    return item.flowId == flowId && !item.handshaking;
+                });
+            if (relay != relays.end()) {
+                WSAPOLLFD descriptor{};
+                descriptor.fd = relay->socket;
+                descriptor.events = POLLRDNORM;
+                const int ready = WSAPoll(&descriptor, 1, 1000);
+                if (ready > 0 && (descriptor.revents & POLLRDNORM) != 0) {
+                    std::array<std::uint8_t, 2048> responseBuffer{};
+                    gWfpUdpSendCapture = WfpUdpSendCapture{};
+                    const auto responseResult = registry.HandleUpstreamResponse(
+                        flowId, ingress, CaptureWfpUdpSendMessage,
+                        responseBuffer.data(), responseBuffer.size(),
+                        WfpUdpFlowRelayRegistry::Clock::now());
+                    const auto* captured = reinterpret_cast<const sockaddr_in*>(
+                        &gWfpUdpSendCapture.destination);
+                    responseForwarded =
+                        responseResult == WfpUdpFlowRelayRegistryResult::Ready &&
+                        gWfpUdpSendCapture.called &&
+                        gWfpUdpSendCapture.payload ==
+                            std::vector<std::uint8_t>({'p', 'o', 'n', 'g'}) &&
+                        gWfpUdpSendCapture.redirectRecord == message.redirectRecord &&
+                        gWfpUdpSendCapture.redirectContext == message.redirectContext &&
+                        gWfpUdpSendCapture.controlLevel == IPPROTO_IP &&
+                        gWfpUdpSendCapture.destinationLength ==
+                            static_cast<int>(sizeof(sockaddr_in)) &&
+                        captured->sin_family == AF_INET &&
+                        captured->sin_addr.s_addr == source.sin_addr.s_addr &&
+                        captured->sin_port == source.sin_port;
+                }
+            }
+        }
+    }
+    if (ingress != INVALID_SOCKET) closesocket(ingress);
+    allowServerClose.store(true);
     registry.CloseAll();
     fakeSocksServer.join();
     closesocket(tcpListener);
@@ -471,6 +586,7 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
 
     assert(handshakeReady);
     assert(datagramForwarded);
+    assert(responseForwarded);
 }
 
 void TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams() {
@@ -569,57 +685,6 @@ void TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams() {
     closesocket(relay);
 }
 
-
-struct WfpUdpSendCapture final {
-    bool called = false;
-    sockaddr_storage destination{};
-    int destinationLength = 0;
-    std::vector<std::uint8_t> payload;
-    std::vector<std::uint8_t> redirectRecord;
-    std::vector<std::uint8_t> redirectContext;
-    int controlLevel = 0;
-};
-WfpUdpSendCapture gWfpUdpSendCapture{};
-
-int WSAAPI CaptureWfpUdpSendMessage(
-    SOCKET, LPWSAMSG message, DWORD, LPDWORD bytesSent,
-    LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE) {
-    if (message == nullptr || message->name == nullptr ||
-        message->lpBuffers == nullptr || message->dwBufferCount != 1 ||
-        bytesSent == nullptr) {
-        WSASetLastError(WSAEINVAL);
-        return SOCKET_ERROR;
-    }
-    gWfpUdpSendCapture = WfpUdpSendCapture{};
-    gWfpUdpSendCapture.called = true;
-    gWfpUdpSendCapture.destinationLength = message->namelen;
-    std::memcpy(&gWfpUdpSendCapture.destination, message->name,
-        static_cast<std::size_t>(message->namelen));
-    const auto* payload = reinterpret_cast<const std::uint8_t*>(
-        message->lpBuffers[0].buf);
-    if (message->lpBuffers[0].len != 0)
-        gWfpUdpSendCapture.payload.assign(payload,
-            payload + message->lpBuffers[0].len);
-    for (WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(message);
-         control != nullptr;
-         control = WSA_CMSG_NXTHDR(message, control)) {
-        if (control->cmsg_level != IPPROTO_IP &&
-            control->cmsg_level != IPPROTO_IPV6) {
-            WSASetLastError(WSAEINVAL);
-            return SOCKET_ERROR;
-        }
-        gWfpUdpSendCapture.controlLevel = control->cmsg_level;
-        const auto* data = reinterpret_cast<const std::uint8_t*>(
-            WSA_CMSG_DATA(control));
-        const auto length = control->cmsg_len - WSA_CMSG_LEN(0);
-        if (control->cmsg_type == IP_WFP_REDIRECT_RECORDS)
-            gWfpUdpSendCapture.redirectRecord.assign(data, data + length);
-        else if (control->cmsg_type == IP_WFP_REDIRECT_CONTEXT)
-            gWfpUdpSendCapture.redirectContext.assign(data, data + length);
-    }
-    *bytesSent = message->lpBuffers[0].len;
-    return 0;
-}
 
 void TestWfpUdpResponseInjectionCarriesRedirectMetadata() {
     SOCKET ingress = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
