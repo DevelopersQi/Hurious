@@ -21,9 +21,29 @@ void TestBrokerServerLifecycle() {
     assert(server.ProcessId() != 0);
     assert(server.ListenerPorts().ipv4 != 0);
     assert(server.ListenerPorts().ipv6 == 0);
+    assert(server.IsConfiguredFor(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress)));
 
+    sockaddr_in differentSocksAddress = socksAddress;
+    differentSocksAddress.sin_port = htons(10809);
+    assert(!server.IsConfiguredFor(
+        reinterpret_cast<const sockaddr*>(&differentSocksAddress),
+        sizeof(differentSocksAddress)));
+
+    server.Stop();
     server.Stop();
     assert(!server.IsRunning());
     assert(server.ListenerPorts().ipv4 == 0);
+
+    assert(server.Start(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress),
+        true,
+        false,
+        1,
+        4));
+    assert(server.IsRunning());
+    server.Stop();
     return 0;
 }
