@@ -1160,6 +1160,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 if requestedGeneration != self.wfpRuntimeSnapshot.generation:
                     logger.debug('ignoring a stale WFP endpoint update failure')
                     return
+                self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
                 if self._wfpIpcController is not None:
                     self._wfpIpcController.clearEndpointConfig()
@@ -1334,6 +1335,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         backend, brokerPid, tcpPortV4, tcpPortV6 = self._wfpBrokerEndpoint
         snapshot = self.wfpRuntimeSnapshot
         if not snapshot.excluded_process_ids:
+            self._wfpEndpointPending.clear()
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
@@ -1345,6 +1347,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         if tcpPortV6:
             flags |= REDIRECT_FLAG_IPV6
         if not (flags & (REDIRECT_FLAG_IPV4 | REDIRECT_FLAG_IPV6)):
+            self._wfpEndpointPending.clear()
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
@@ -1362,6 +1365,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             )
         except (TypeError, ValueError) as error:
             logger.error(f'WFP endpoint configuration rejected locally: {error}')
+            self._wfpEndpointPending.clear()
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
