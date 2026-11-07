@@ -18,6 +18,17 @@ void TestUdpBrokerServerLifecycle() {
     const auto socksAddress = LoopbackSocksAddress();
     furious::wfp::broker::UdpBrokerServer server;
 
+    // Reject a non-loopback SOCKS endpoint after Winsock/listener setup, then
+    // prove that the same server object can start cleanly on a valid endpoint.
+    auto invalidSocksAddress = socksAddress;
+    invalidSocksAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    assert(!server.Start(
+        reinterpret_cast<const sockaddr*>(&invalidSocksAddress),
+        sizeof(invalidSocksAddress), true, false, 8));
+    assert(!server.IsRunning());
+    assert(server.ListenerPorts().ipv4 == 0);
+    assert(server.ListenerPorts().ipv6 == 0);
+
     assert(server.Start(
         reinterpret_cast<const sockaddr*>(&socksAddress),
         sizeof(socksAddress), true, false, 8));

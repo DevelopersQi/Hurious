@@ -106,6 +106,20 @@ bool UdpBrokerServer::Start(const sockaddr* socksAddress, int socksAddressLength
     if (!stopping_.load() || socksAddress == nullptr ||
         (!enableIpv4 && !enableIpv6) || maximumFlows == 0) return false;
 
+    // The I/O loop can stop itself after a fatal poll/allocation/registry
+    // failure. Reap that thread and release its sockets before a caller tries
+    // to restart the broker; otherwise CreateIngress could overwrite a live
+    // SOCKET value and leak the old loopback binding.
+    if (ioThread_.joinable()) ioThread_.join();
+    registry_.reset();
+    CloseIngress(ipv4_);
+    CloseIngress(ipv6_);
+    ports_ = UdpBrokerListenerPorts{};
+    if (winsockStarted_) {
+        WSACleanup();
+        winsockStarted_ = false;
+    }
+
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return false;
     winsockStarted_ = true;
