@@ -409,6 +409,9 @@ SOCKET OpenSocks5Tunnel(
             reinterpret_cast<const char*>(&handshakeTimeout),
             sizeof(handshakeTimeout)) == SOCKET_ERROR) {
         const int socketError = WSAGetLastError();
+        if (unregisterSocket != nullptr) {
+            unregisterSocket(callbackContext, upstream);
+        }
         closesocket(upstream);
         if (errorCode != nullptr) *errorCode = socketError;
         return INVALID_SOCKET;
