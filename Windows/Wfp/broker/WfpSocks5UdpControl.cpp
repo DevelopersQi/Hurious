@@ -34,6 +34,53 @@ Socks5UdpAssociateRequestResult ParseSocks5UdpAssociateRequest(
         static_cast<std::uint16_t>(request[portOffset + 1]));
     return Socks5UdpAssociateRequestResult::Valid;
 }
+Socks5UdpAssociateReplyResult ParseSocks5UdpAssociateReply(
+    const std::uint8_t* reply, std::size_t length,
+    Socks5UdpAssociateReplyView& output) noexcept {
+    output = Socks5UdpAssociateReplyView{};
+    if (reply == nullptr) return Socks5UdpAssociateReplyResult::NullReply;
+    if (length < 4) return Socks5UdpAssociateReplyResult::Truncated;
+    if (reply[0] != 0x05) return Socks5UdpAssociateReplyResult::InvalidVersion;
+    output.replyCode = reply[1];
+    if (reply[1] != 0x00) return Socks5UdpAssociateReplyResult::ServerRejected;
+    if (reply[2] != 0x00) return Socks5UdpAssociateReplyResult::InvalidReservedField;
+
+    const auto type = static_cast<Socks5UdpAddressType>(reply[3]);
+    std::size_t offset = 4;
+    std::size_t addressLength = 0;
+    switch (type) {
+    case Socks5UdpAddressType::Ipv4:
+        addressLength = 4;
+        break;
+    case Socks5UdpAddressType::Ipv6:
+        addressLength = 16;
+        break;
+    case Socks5UdpAddressType::Domain:
+        if (length <= offset) return Socks5UdpAssociateReplyResult::Truncated;
+        addressLength = reply[offset++];
+        if (addressLength == 0) return Socks5UdpAssociateReplyResult::EmptyDomain;
+        break;
+    default:
+        return Socks5UdpAssociateReplyResult::UnsupportedAddressType;
+    }
+    if (addressLength > length - offset ||
+        length - offset - addressLength < 2) {
+        return Socks5UdpAssociateReplyResult::Truncated;
+    }
+    const std::size_t portOffset = offset + addressLength;
+    if (length - portOffset > 2) return Socks5UdpAssociateReplyResult::TrailingData;
+    const std::uint16_t port = static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(reply[portOffset]) << 8) |
+        reply[portOffset + 1]);
+    if (port == 0) return Socks5UdpAssociateReplyResult::InvalidPort;
+
+    output.addressType = type;
+    output.address = reply + offset;
+    output.addressLength = addressLength;
+    output.port = port;
+    return Socks5UdpAssociateReplyResult::Valid;
+}
+
 Socks5UdpBuildResult BuildSocks5UdpAssociateReply(
     Socks5UdpAddressType type, const std::uint8_t* address,
     std::size_t addressLength, std::uint16_t port,

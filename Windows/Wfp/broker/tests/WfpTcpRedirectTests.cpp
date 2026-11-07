@@ -760,6 +760,61 @@ void TestWfpUdpRedirectRecordAncillaryData() {
     WSACleanup();
 }
 
+void TestSocks5UdpAssociateReplyParser() {
+    using namespace furious::wfp::broker;
+    Socks5UdpAssociateReplyView view{};
+    const std::uint8_t ipv4Reply[] = {
+        0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x12, 0x34
+    };
+    assert(ParseSocks5UdpAssociateReply(ipv4Reply, sizeof(ipv4Reply), view) ==
+        Socks5UdpAssociateReplyResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Ipv4);
+    assert(view.addressLength == 4 && view.port == 0x1234);
+    assert(view.address[0] == 127 && view.address[3] == 1);
+
+    const std::uint8_t ipv6Reply[] = {
+        0x05, 0x00, 0x00, 0x04,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        0x23, 0x45
+    };
+    assert(ParseSocks5UdpAssociateReply(ipv6Reply, sizeof(ipv6Reply), view) ==
+        Socks5UdpAssociateReplyResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Ipv6);
+    assert(view.addressLength == 16 && view.port == 0x2345);
+
+    const std::uint8_t domainReply[] = {
+        0x05, 0x00, 0x00, 0x03, 0x09,
+        'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', 0x01, 0xBB
+    };
+    assert(ParseSocks5UdpAssociateReply(domainReply, sizeof(domainReply), view) ==
+        Socks5UdpAssociateReplyResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Domain);
+    assert(view.addressLength == 9 && view.port == 443);
+
+    auto rejected = ipv4Reply;
+    rejected[1] = 0x05;
+    assert(ParseSocks5UdpAssociateReply(rejected, sizeof(rejected), view) ==
+        Socks5UdpAssociateReplyResult::ServerRejected);
+    assert(view.replyCode == 0x05);
+    auto invalidReserved = ipv4Reply;
+    invalidReserved[2] = 1;
+    assert(ParseSocks5UdpAssociateReply(invalidReserved, sizeof(invalidReserved), view) ==
+        Socks5UdpAssociateReplyResult::InvalidReservedField);
+    auto invalidPort = ipv4Reply;
+    invalidPort[8] = 0;
+    invalidPort[9] = 0;
+    assert(ParseSocks5UdpAssociateReply(invalidPort, sizeof(invalidPort), view) ==
+        Socks5UdpAssociateReplyResult::InvalidPort);
+    assert(ParseSocks5UdpAssociateReply(ipv4Reply, sizeof(ipv4Reply) - 1, view) ==
+        Socks5UdpAssociateReplyResult::Truncated);
+    auto trailing = std::vector<std::uint8_t>(ipv4Reply, ipv4Reply + sizeof(ipv4Reply));
+    trailing.push_back(0);
+    assert(ParseSocks5UdpAssociateReply(trailing.data(), trailing.size(), view) ==
+        Socks5UdpAssociateReplyResult::TrailingData);
+    assert(ParseSocks5UdpAssociateReply(nullptr, 0, view) ==
+        Socks5UdpAssociateReplyResult::NullReply);
+}
+
 void TestSocks5UdpAssociateControlMessages() {
     using namespace furious::wfp::broker;
     Socks5UdpAssociateRequestView view{};
@@ -819,6 +874,7 @@ int main() {
     TestSocks5UdpAssociationLifecycle();
     TestSocks5UdpAssociationManagerLimitsAndExpiry();
     TestSocks5UdpSocketOwnership();
+    TestSocks5UdpAssociateReplyParser();
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpMessageReceive();

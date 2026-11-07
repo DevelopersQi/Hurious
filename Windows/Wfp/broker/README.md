@@ -84,3 +84,6 @@ The UDP ancillary context decoder validates the shared redirect ABI, exact struc
 - Reject invalid/non-unicast source and target endpoints, source-endpoint identity conflicts, missing metadata, and malformed context.
 - Enforce global and per-process flow ceilings with a synchronized registry and monotonic idle expiry.
 - Later datagrams can resolve the existing flow by source endpoint; the table does not yet forward packets or open upstream proxy sockets.
+
+
+The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, IPv6, or domain endpoint, nonzero port, reply status, reserved byte, and exact message length. It returns a non-owning address view for the upcoming upstream association client.
