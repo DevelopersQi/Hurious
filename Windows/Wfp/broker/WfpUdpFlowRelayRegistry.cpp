@@ -64,7 +64,7 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
     }
 
     std::uint64_t flowId = 0;
-    const auto touch = flows_.Touch(
+    auto touch = flows_.Touch(
         reinterpret_cast<const sockaddr*>(&message.sourceAddress),
         message.sourceAddressLength, now, flowId);
     if (touch == WfpUdpFlowTouchResult::InvalidSource)
@@ -72,6 +72,31 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
     if (touch == WfpUdpFlowTouchResult::Expired) {
         CloseFlow(flowId);
         flowId = 0;
+    }
+
+    // A redirected UDP socket may be reused for another destination. When
+    // WFP supplies first-packet metadata again, never silently keep routing
+    // that datagram through the old destination-bound relay.
+    if (touch == WfpUdpFlowTouchResult::Found &&
+        (!message.redirectRecord.empty() || !message.redirectContext.empty())) {
+        if (message.redirectRecord.empty() || message.redirectContext.empty())
+            return WfpUdpFlowRelayRegistryResult::InvalidRedirectMetadata;
+        FURIOUS_WFP_REDIRECT_CONTEXT incomingContext{};
+        if (DecodeWfpUdpRedirectContext(message.redirectContext, incomingContext) !=
+            WfpUdpRedirectContextDecodeResult::Decoded) {
+            return WfpUdpFlowRelayRegistryResult::InvalidRedirectMetadata;
+        }
+        WfpUdpFlowSnapshot existingSnapshot{};
+        const bool snapshotAvailable = flows_.GetSnapshot(flowId, existingSnapshot);
+        const bool sameIdentity = snapshotAvailable &&
+            std::memcmp(&existingSnapshot.redirectContext, &incomingContext,
+                sizeof(incomingContext)) == 0 &&
+            existingSnapshot.redirectRecord == message.redirectRecord;
+        if (!sameIdentity) {
+            CloseFlow(flowId);
+            flowId = 0;
+            touch = WfpUdpFlowTouchResult::NotFound;
+        }
     }
 
     auto found = relays_.find(flowId);

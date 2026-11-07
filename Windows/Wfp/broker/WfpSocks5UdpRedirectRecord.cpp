@@ -21,16 +21,17 @@ WfpUdpRedirectRecordResult ExtractControlData(
         return WfpUdpRedirectRecordResult::InvalidMessage;
     }
 
+    if (message.name == nullptr) {
+        return WfpUdpRedirectRecordResult::InvalidMessage;
+    }
     bool found = false;
     int expectedLevel = 0;
-    if (message.name != nullptr) {
-        if (message.name->sa_family == AF_INET) {
-            expectedLevel = IPPROTO_IP;
-        } else if (message.name->sa_family == AF_INET6) {
-            expectedLevel = IPPROTO_IPV6;
-        } else {
-            return WfpUdpRedirectRecordResult::InvalidMessage;
-        }
+    if (message.name->sa_family == AF_INET) {
+        expectedLevel = IPPROTO_IP;
+    } else if (message.name->sa_family == AF_INET6) {
+        expectedLevel = IPPROTO_IPV6;
+    } else {
+        return WfpUdpRedirectRecordResult::InvalidMessage;
     }
     WSAMSG* mutableMessage = const_cast<WSAMSG*>(&message);
     const char* controlBegin = message.Control.buf;

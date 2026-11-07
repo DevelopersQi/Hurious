@@ -1241,6 +1241,14 @@ void TestWfpUdpRedirectRecordAncillaryData() {
     assert(extractedRecord.empty());
     sourceAddress.sin_family = AF_INET;
 
+    // A non-empty control buffer without a source family cannot be trusted.
+    sockaddr* savedName = message.name;
+    message.name = nullptr;
+    assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
+        WfpUdpRedirectRecordResult::InvalidMessage);
+    assert(extractedRecord.empty());
+    message.name = savedName;
+
     header->cmsg_len = 0;
     assert(ExtractWfpUdpRedirectRecord(message, extractedRecord) ==
         WfpUdpRedirectRecordResult::InvalidMessage);
