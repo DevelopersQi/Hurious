@@ -173,9 +173,22 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
             }
             try {
                 found = relays_.emplace(flowId, std::move(relay)).first;
-                pendingDatagrams_.try_emplace(flowId);
-                if (!QueuePendingDatagram(flowId, payload, message.payloadLength))
-                    throw std::bad_alloc();
+                const auto queue = pendingDatagrams_.try_emplace(flowId);
+                if (!queue.second) {
+                    DiscardPendingDatagrams(flowId);
+                    relays_.erase(flowId);
+                    flows_.Remove(flowId);
+                    return WfpUdpFlowRelayRegistryResult::RelayOpenFailed;
+                }
+                if (!QueuePendingDatagram(flowId, payload, message.payloadLength)) {
+                    // The flow has no safe way to preserve its first datagram.
+                    // Report bounded-queue rejection distinctly and release
+                    // the just-created relay instead of disguising it as I/O failure.
+                    DiscardPendingDatagrams(flowId);
+                    relays_.erase(flowId);
+                    flows_.Remove(flowId);
+                    return WfpUdpFlowRelayRegistryResult::PendingQueueFull;
+                }
             } catch (...) {
                 // Roll back both socket resources and any partially created
                 // queue entry; accounting must remain balanced on allocation failure.
@@ -234,7 +247,8 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::AdvancePendingFlow(
                 ? WfpUdpFlowRelayRegistryResult::ControlClosed
                 : WfpUdpFlowRelayRegistryResult::SendFailed;
         }
-        pendingDatagramBytes_ -= datagram.size();
+        pendingDatagramBytes_ = datagram.size() > pendingDatagramBytes_
+            ? 0 : pendingDatagramBytes_ - datagram.size();
         pending->second.pop_front();
     }
     pendingDatagrams_.erase(pending);
