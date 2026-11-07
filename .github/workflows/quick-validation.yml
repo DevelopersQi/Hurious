@@ -55,7 +55,7 @@ jobs:
   windows-wfp-driver-build:
     name: Windows x64 WFP kernel driver build
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -83,6 +83,7 @@ jobs:
 
       - name: Create ephemeral test certificate and sign WFP driver
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $ErrorActionPreference = 'Stop'
           $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse |
@@ -122,12 +123,19 @@ jobs:
             & $signTool.FullName sign /v /fd SHA256 /f $pfxPath /p $pfxPasswordText $driver.FullName
             if ($LASTEXITCODE -ne 0) { throw "SignTool signing failed with exit code $LASTEXITCODE" }
 
-            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\Root' |
-              Out-Null
-            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' |
-              Out-Null
+            Write-Host 'Trusting the ephemeral certificate in the isolated CI runner stores.'
+            & certutil.exe -f -addstore Root $certificatePath
+            if ($LASTEXITCODE -ne 0) { throw "certutil Root import failed with exit code $LASTEXITCODE" }
+            & certutil.exe -f -addstore TrustedPublisher $certificatePath
+            if ($LASTEXITCODE -ne 0) { throw "certutil TrustedPublisher import failed with exit code $LASTEXITCODE" }
+
+            Write-Host 'Verifying Authenticode signature.'
             & $signTool.FullName verify /pa /v $driver.FullName
-            if ($LASTEXITCODE -ne 0) { throw "SignTool signature verification failed with exit code $LASTEXITCODE" }
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed with exit code $LASTEXITCODE" }
+
+            Write-Host 'Verifying kernel-mode driver signing policy.'
+            & $signTool.FullName verify /kp /v $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Kernel-mode signature verification failed with exit code $LASTEXITCODE" }
 
             Copy-Item -LiteralPath $driver.FullName -Destination (Join-Path $output 'FuriousWfpCallout.sys')
             $hash = (Get-FileHash -LiteralPath (Join-Path $output 'FuriousWfpCallout.sys') -Algorithm SHA256).Hash
