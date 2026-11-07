@@ -279,6 +279,8 @@ int main() {
     udpOnlyEndpoint.TcpPortV6 = 0;
     udpOnlyEndpoint.UdpPortV6 = 0;
     CHECK(IsValidEndpointConfig(udpOnlyEndpoint));
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+        &udpOnlyEndpoint, sizeof(udpOnlyEndpoint)) == ERROR_NOT_SUPPORTED);
     auto udpFlagOnlyEndpoint = endpoint;
     CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
                           &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
