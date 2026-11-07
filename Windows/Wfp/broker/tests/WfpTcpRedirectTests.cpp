@@ -711,6 +711,45 @@ void TestSocks5UdpRelayTransportLoopback() {
     WSACleanup();
 }
 
+void TestSocks5UdpFlowRelayRejectsInvalidEndpoints() {
+    using namespace furious::wfp::broker;
+    WfpSocks5UdpFlowRelay bridge;
+    sockaddr_in socks{};
+    socks.sin_family = AF_INET;
+    socks.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socks.sin_port = htons(1080);
+    sockaddr_in client{};
+    client.sin_family = AF_INET;
+    client.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    client.sin_port = htons(40000);
+    auto context = MakeContext(FURIOUS_WFP_REDIRECT_FAMILY_V4,
+        FURIOUS_WFP_REDIRECT_PROTOCOL_UDP);
+    context.OriginalAddress[0] = 203;
+    context.OriginalAddress[2] = 113;
+    context.OriginalAddress[3] = 7;
+    const std::vector<std::uint8_t> record{1, 2, 3};
+    int error = 0;
+
+    auto invalidClient = client;
+    invalidClient.sin_port = 0;
+    assert(bridge.Open(reinterpret_cast<const sockaddr*>(&socks), sizeof(socks),
+        reinterpret_cast<const sockaddr*>(&invalidClient), sizeof(invalidClient),
+        context, record, 1000, &error) ==
+        WfpSocks5UdpFlowRelayResult::InvalidArgument);
+
+    auto invalidDestination = context;
+    invalidDestination.OriginalAddress[0] = 224;
+    assert(bridge.Open(reinterpret_cast<const sockaddr*>(&socks), sizeof(socks),
+        reinterpret_cast<const sockaddr*>(&client), sizeof(client),
+        invalidDestination, record, 1000, &error) ==
+        WfpSocks5UdpFlowRelayResult::InvalidArgument);
+
+    assert(bridge.Open(reinterpret_cast<const sockaddr*>(&socks), sizeof(socks),
+        reinterpret_cast<const sockaddr*>(&client), sizeof(client),
+        context, {}, 1000, &error) ==
+        WfpSocks5UdpFlowRelayResult::InvalidArgument);
+}
+
 void TestSocks5UdpFlowRelayBridge() {
     using namespace furious::wfp::broker;
     WSADATA data{};
@@ -1230,6 +1269,7 @@ int main() {
     TestSocks5UdpAssociationClientHandshake();
     TestSocks5UdpRelayTransportLoopback();
     TestSocks5UdpFlowRelayBridge();
+    TestSocks5UdpFlowRelayRejectsInvalidEndpoints();
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpMessageReceive();

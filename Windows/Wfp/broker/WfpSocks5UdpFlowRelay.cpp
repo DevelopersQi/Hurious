@@ -6,10 +6,19 @@ namespace furious::wfp::broker {
 namespace {
 bool ValidEndpoint(const sockaddr* address, int length) noexcept {
     if (!address) return false;
-    if (address->sa_family == AF_INET)
-        return length == static_cast<int>(sizeof(sockaddr_in));
-    if (address->sa_family == AF_INET6)
-        return length == static_cast<int>(sizeof(sockaddr_in6));
+    if (address->sa_family == AF_INET) {
+        if (length != static_cast<int>(sizeof(sockaddr_in))) return false;
+        const auto* value = reinterpret_cast<const sockaddr_in*>(address);
+        const auto first = ntohl(value->sin_addr.s_addr) >> 24;
+        return value->sin_port != 0 && first != 0 && first < 224;
+    }
+    if (address->sa_family == AF_INET6) {
+        if (length != static_cast<int>(sizeof(sockaddr_in6))) return false;
+        const auto* value = reinterpret_cast<const sockaddr_in6*>(address);
+        return value->sin6_port != 0 &&
+            !IN6_IS_ADDR_UNSPECIFIED(&value->sin6_addr) &&
+            !IN6_IS_ADDR_MULTICAST(&value->sin6_addr);
+    }
     return false;
 }
 }
@@ -23,11 +32,23 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::Open(
     DWORD timeoutMilliseconds, int* errorCode) noexcept {
     if (errorCode) *errorCode = 0;
     if (IsOpen()) return WfpSocks5UdpFlowRelayResult::AlreadyOpen;
+    bool validDestination = false;
+    if (context.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V4) {
+        validDestination = context.OriginalAddress[0] != 0 &&
+            context.OriginalAddress[0] < 224;
+    } else if (context.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V6) {
+        bool unspecified = true;
+        for (const auto byte : context.OriginalAddress) {
+            if (byte != 0) { unspecified = false; break; }
+        }
+        validDestination = !unspecified && context.OriginalAddress[0] != 0xFF;
+    }
     if (!ValidEndpoint(originalClient, originalClientLength) ||
         redirectRecord.empty() ||
         redirectRecord.size() > kMaximumWfpUdpRedirectRecordSize ||
         !furious::wfp::redirect::IsValidRedirectContext(context) ||
         context.Protocol != FURIOUS_WFP_REDIRECT_PROTOCOL_UDP ||
+        !validDestination ||
         (originalClient->sa_family == AF_INET &&
             context.AddressFamily != FURIOUS_WFP_REDIRECT_FAMILY_V4) ||
         (originalClient->sa_family == AF_INET6 &&
@@ -82,7 +103,7 @@ bool WfpSocks5UdpFlowRelay::IsOpen() const noexcept {
 bool WfpSocks5UdpFlowRelay::MatchesOriginalDestination(
     const Socks5UdpDatagramView& response) const noexcept {
     const std::uint16_t port = ntohs(context_.OriginalPortNetworkOrder);
-    if (response.port != port) return false;
+    if (response.address == nullptr || response.port != port) return false;
     if (context_.AddressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V4) {
         return response.addressType == Socks5UdpAddressType::Ipv4 &&
             response.addressLength == 4 &&

@@ -258,7 +258,8 @@ int SendWfpUdpMessage(
         WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(&message);
         if (!redirectRecord.empty()) {
             if (control == nullptr) return WSAEINVAL;
-            control->cmsg_level = IPPROTO_IP;
+            control->cmsg_level = destination->sa_family == AF_INET6
+                ? IPPROTO_IPV6 : IPPROTO_IP;
             control->cmsg_type = IP_WFP_REDIRECT_RECORDS;
             control->cmsg_len = WSA_CMSG_LEN(redirectRecord.size());
             std::memcpy(WSA_CMSG_DATA(control), redirectRecord.data(),
@@ -267,7 +268,8 @@ int SendWfpUdpMessage(
         }
         if (!redirectContext.empty()) {
             if (control == nullptr) return WSAEINVAL;
-            control->cmsg_level = IPPROTO_IP;
+            control->cmsg_level = destination->sa_family == AF_INET6
+                ? IPPROTO_IPV6 : IPPROTO_IP;
             control->cmsg_type = IP_WFP_REDIRECT_CONTEXT;
             control->cmsg_len = WSA_CMSG_LEN(redirectContext.size());
             std::memcpy(WSA_CMSG_DATA(control), redirectContext.data(),
