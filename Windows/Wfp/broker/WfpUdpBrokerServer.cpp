@@ -139,7 +139,7 @@ bool UdpBrokerServer::Start(const sockaddr* socksAddress, int socksAddressLength
         ioThread_ = std::thread(&UdpBrokerServer::Run, this);
     } catch (...) {
         stopping_.store(true);
-        registry_.CloseAll();
+        registry_->CloseAll();
         CloseIngress(ipv4_);
         CloseIngress(ipv6_);
         ports_ = UdpBrokerListenerPorts{};
@@ -154,7 +154,7 @@ void UdpBrokerServer::Stop() noexcept {
     std::lock_guard<std::mutex> lock(lifecycleMutex_);
     if (stopping_.exchange(true) && !winsockStarted_) return;
     if (ioThread_.joinable()) ioThread_.join();
-    registry_.CloseAll();
+    registry_->CloseAll();
     CloseIngress(ipv4_);
     CloseIngress(ipv6_);
     ports_ = UdpBrokerListenerPorts{};
@@ -184,7 +184,7 @@ void UdpBrokerServer::Run() noexcept {
             WSA_CMSG_SPACE(static_cast<ULONG>(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT))) + 512);
     } catch (...) {
         stopping_.store(true);
-        registry_.CloseAll();
+        registry_->CloseAll();
         return;
     }
 
@@ -204,7 +204,7 @@ void UdpBrokerServer::Run() noexcept {
                 descriptors.push_back({ipv6_.socket, POLLRDNORM, 0});
                 targets.push_back({PollKind::Ingress6, ipv6_.socket, 0});
             }
-            if (!registry_.GetRelaySockets(relays)) {
+            if (!registry_->GetRelaySockets(relays)) {
                 stopping_.store(true);
                 break;
             }
@@ -251,13 +251,13 @@ void UdpBrokerServer::Run() noexcept {
                     ingress.receiveMessage, payload.data(), payload.size(),
                     control.data(), control.size(), message, &error);
                 if (received == WfpUdpReceiveResult::Received) {
-                    registry_.ProcessClientDatagram(message, payload.data(),
+                    registry_->ProcessClientDatagram(message, payload.data(),
                         WfpUdpFlowRelayRegistry::Clock::now(), nullptr, &error);
                 }
             } else if (target.kind == PollKind::PendingControl) {
                 const bool readable = (events & (POLLRDNORM | POLLERR | POLLHUP)) != 0;
                 const bool writable = (events & (POLLWRNORM | POLLERR | POLLHUP)) != 0;
-                registry_.AdvancePendingFlow(target.flowId, readable, writable);
+                registry_->AdvancePendingFlow(target.flowId, readable, writable);
             } else if (target.kind == PollKind::RelayUdp) {
                 const auto relay = std::find_if(relays.begin(), relays.end(),
                     [&target](const WfpUdpRelaySocket& value) {
@@ -267,34 +267,34 @@ void UdpBrokerServer::Run() noexcept {
                     Ingress& ingress = relay->clientAddressFamily == AF_INET6
                         ? ipv6_ : ipv4_;
                     if (ingress.socket != INVALID_SOCKET) {
-                        registry_.HandleUpstreamResponse(target.flowId,
+                        registry_->HandleUpstreamResponse(target.flowId,
                             ingress.socket, ingress.sendMessage, response.data(),
                             response.size(), WfpUdpFlowRelayRegistry::Clock::now());
                     }
                 }
             } else if (target.kind == PollKind::ReadyControl) {
-                registry_.SweepClosedControls();
+                registry_->SweepClosedControls();
             }
         }
 
         // Advance pending handshakes even when the peer has sent no bytes;
         // this enforces each association's deadline without a per-flow timer.
         std::vector<WfpUdpRelaySocket> pendingTimeouts;
-        if (registry_.GetRelaySockets(pendingTimeouts)) {
+        if (registry_->GetRelaySockets(pendingTimeouts)) {
             for (const auto& relay : pendingTimeouts) {
                 if (relay.handshaking)
-                    registry_.AdvancePendingFlow(relay.flowId, false, false);
+                    registry_->AdvancePendingFlow(relay.flowId, false, false);
             }
         }
 
         const auto now = std::chrono::steady_clock::now();
         if (now >= nextSweep) {
-            registry_.SweepExpired(now);
-            registry_.SweepClosedControls();
+            registry_->SweepExpired(now);
+            registry_->SweepClosedControls();
             nextSweep = now + std::chrono::seconds(1);
         }
     }
-    registry_.CloseAll();
+    registry_->CloseAll();
 }
 
 } // namespace furious::wfp::broker
