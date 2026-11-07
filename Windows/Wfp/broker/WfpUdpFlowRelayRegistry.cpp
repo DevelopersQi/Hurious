@@ -79,11 +79,17 @@ WfpUdpFlowRelayRegistryResult WfpUdpFlowRelayRegistry::ProcessClientDatagram(
     // that datagram through the old destination-bound relay.
     if (touch == WfpUdpFlowTouchResult::Found &&
         (!message.redirectRecord.empty() || !message.redirectContext.empty())) {
-        if (message.redirectRecord.empty() || message.redirectContext.empty())
+        if (message.redirectRecord.empty() || message.redirectContext.empty()) {
+            // Do not let malformed metadata refresh a live flow's idle lease.
+            // The source endpoint may have been reused for a different target;
+            // without a complete identity, fail closed and release its relay.
+            CloseFlow(flowId);
             return WfpUdpFlowRelayRegistryResult::InvalidRedirectMetadata;
+        }
         FURIOUS_WFP_REDIRECT_CONTEXT incomingContext{};
         if (DecodeWfpUdpRedirectContext(message.redirectContext, incomingContext) !=
             WfpUdpRedirectContextDecodeResult::Decoded) {
+            CloseFlow(flowId);
             return WfpUdpFlowRelayRegistryResult::InvalidRedirectMetadata;
         }
         WfpUdpFlowSnapshot existingSnapshot{};
