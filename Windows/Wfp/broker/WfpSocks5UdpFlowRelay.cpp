@@ -260,8 +260,10 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::ReceiveUpstreamResponse(
     // keep the flow alive and continue polling for the negotiated relay.
     if (result == Socks5UdpRelayIoResult::UnexpectedRelay ||
         result == Socks5UdpRelayIoResult::InvalidDatagram ||
-        result == Socks5UdpRelayIoResult::BufferTooSmall)
+        result == Socks5UdpRelayIoResult::BufferTooSmall) {
+        if (errorCode) *errorCode = 0;
         return WfpSocks5UdpFlowRelayResult::ReceiveDropped;
+    }
     if (result != Socks5UdpRelayIoResult::Received)
         return WfpSocks5UdpFlowRelayResult::ReceiveFailed;
     if (!MatchesOriginalDestination(parsed)) {
