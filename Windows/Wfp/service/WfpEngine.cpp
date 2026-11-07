@@ -366,7 +366,8 @@ DWORD Engine::ApplyApplicationPolicy(
             kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
     }
 
-    const UINT8 protocols[] = { 6, 17 };
+    // Only TCP is enabled until a separate UDP relay is implemented and tested.
+    const UINT8 protocols[] = { 6 };
     for (const auto& rule : rules) {
         if (status != ERROR_SUCCESS) break;
         for (const UINT8 protocol : protocols) {

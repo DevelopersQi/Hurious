@@ -17,10 +17,14 @@ separate from the Python UI and proxy-core process lifecycle.
 
 The service now starts the adjacent callout driver through SCM, verifies the
 driver ABI/callout registration, and transactionally installs IPv4/IPv6 ALE
-connect-redirect filters. The driver still passes traffic through until a live
-backend endpoint is configured. The current service does not yet configure a
-backend endpoint or provide the proxy-side redirect-context relay, so this is
-not yet an end-to-end transparent proxy. Validate driver signing, SCM startup,
+connect-redirect filters. The driver redirects only applications with an installed Proxy policy filter
+and a valid endpoint. Direct rules remain direct. Proxy filters fail closed if
+the endpoint is missing or a redirect operation fails. The service hosts a native TCP broker and exposes it through authenticated IPC.
+The broker can obtain original-destination context, preserve WFP redirect records,
+connect to a loopback SOCKS5 inbound, and relay TCP streams. The Python lifecycle
+starts/stops the broker, but does not yet publish the broker PID/ports and current
+core exclusions as a complete SET_ENDPOINT_CONFIG transaction. This remains a
+staged integration and is not yet an end-to-end transparent proxy. Validate driver signing, SCM startup,
 filter rollback and unload behavior in a disposable Windows 10 x64 VM before
 enabling endpoint redirection.
 
@@ -39,8 +43,10 @@ active.
 The native TCP broker is hosted by the elevated WFP service. Its authenticated
 IPC start command returns the actual service PID and dynamically bound IPv4/IPv6
 listener ports. ConnectionManager starts and stops the broker with the proxy
-runtime. The WFP endpoint remains unconfigured until application-routing policy
-is integrated and validated.
+runtime. Application-specific TCP filters are installed by SET_POLICY; UDP
+filters are deliberately withheld until a dedicated UDP relay is implemented.
+Endpoint activation remains gated on synchronizing the live broker PID, listener
+ports, selected backend and core PID exclusions into SET_ENDPOINT_CONFIG.
 
 A production redirect path additionally requires:
 - ALE application identity based on the WFP application ID (not PID alone);

@@ -7,18 +7,21 @@ transactional cleanup on normal shutdown.
 ## Local control channel
 
 The service exposes only the versioned local named pipe
-`\\\\.\\pipe\\FuriousWfpService.v1`. Its DACL grants access only to
+`\\\\.\\pipe\\FuriousWfpService.v2`. Its DACL grants access only to
 LocalSystem and the built-in Administrators group, and remote pipe clients are
 rejected. Before dispatch, the server impersonates the pipe client, opens the
 thread token, and verifies that the caller is LocalSystem or a member of
 Administrators. It always attempts to revert impersonation before dispatch.
 
-The server uses message-mode framing, a fixed 64 KiB request bound, and the
+The server uses message-mode framing, a fixed 512 KiB request bound, and the
 shared protocol validator. STATUS validates an empty request. SET_POLICY accepts
 a bounded ABI-v1 policy payload, validates its header, generation, backend,
-rules, priorities and executable paths, then atomically replaces the in-memory
-policy snapshot. CLEAR_POLICY empties the snapshot. Policy generations must
-increase monotonically; clearing does not reset the generation counter.
+rules, priorities and executable paths, resolves enabled paths to WFP App IDs,
+and transactionally replaces the application-specific IPv4/IPv6 TCP filters.
+Direct rules install terminating permit filters; Proxy rules install terminating
+callout filters. CLEAR_POLICY removes those application filters and empties the
+in-memory snapshot. Policy generations must increase monotonically; clearing
+does not reset the generation counter.
 
 ## Current implementation boundary
 
@@ -37,9 +40,10 @@ application routing being active.
 
 The driver endpoint ABI is version 2 and supports up to eight auxiliary process
 IDs in addition to the local redirect-target PID. The kernel validates and
-excludes those IDs when supplied. The service does not yet discover or refresh
-Xray/Hysteria2 process IDs across backend start/stop/restart, so this facility is
-not yet wired to the backend lifecycle.
+excludes those IDs when supplied. The service-hosted TCP broker PID is returned by IPC and can occupy the mandatory
+ProxyProcessId field. Xray/Hysteria2 core PIDs are available in the Python runtime
+snapshot, but are not yet atomically synchronized into endpoint configuration on
+every start/stop/restart.
 
 Before enabling traffic filters or redirect:
 - resolve each executable path to a canonical WFP application ID;
