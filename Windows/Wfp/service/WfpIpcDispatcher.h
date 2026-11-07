@@ -118,7 +118,17 @@ inline furious::wfp::broker::TcpBrokerServer& GetTcpBrokerServer() noexcept {
     static furious::wfp::broker::TcpBrokerServer server;
     return server;
 }
-inline DWORD StopBroker() noexcept { GetTcpBrokerServer().Stop(); return ERROR_SUCCESS; }
+inline DWORD StopBroker() noexcept {
+    const DWORD clearStatus = furious::wfp::driver::ClearEndpointConfig();
+    if (clearStatus != ERROR_SUCCESS &&
+        clearStatus != ERROR_FILE_NOT_FOUND &&
+        clearStatus != ERROR_PATH_NOT_FOUND) {
+        // Keep the listener alive if the driver may still redirect traffic to it.
+        return clearStatus;
+    }
+    GetTcpBrokerServer().Stop();
+    return ERROR_SUCCESS;
+}
 inline void PopulateBrokerResponse(FURIOUS_WFP_IPC_RESPONSE* response) noexcept {
     if (response == nullptr) return;
     auto& broker = GetTcpBrokerServer();
