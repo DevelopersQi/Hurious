@@ -2,6 +2,65 @@
 
 namespace furious::wfp::broker {
 
+Socks5UdpBuildResult BuildSocks5UdpDatagram(
+    Socks5UdpAddressType addressType,
+    const std::uint8_t* address,
+    std::size_t addressLength,
+    std::uint16_t port,
+    const std::uint8_t* payload,
+    std::size_t payloadLength,
+    std::vector<std::uint8_t>& output,
+    std::size_t maximumDatagramLength) noexcept {
+    output.clear();
+    if (address == nullptr) return Socks5UdpBuildResult::NullAddress;
+    if (payload == nullptr && payloadLength != 0) return Socks5UdpBuildResult::NullPayload;
+    if (port == 0) return Socks5UdpBuildResult::InvalidPort;
+
+    std::size_t addressPrefixLength = 0;
+    switch (addressType) {
+    case Socks5UdpAddressType::Ipv4:
+        if (addressLength != 4) return Socks5UdpBuildResult::InvalidAddressLength;
+        addressPrefixLength = 4;
+        break;
+    case Socks5UdpAddressType::Ipv6:
+        if (addressLength != 16) return Socks5UdpBuildResult::InvalidAddressLength;
+        addressPrefixLength = 16;
+        break;
+    case Socks5UdpAddressType::Domain:
+        if (addressLength == 0) return Socks5UdpBuildResult::EmptyDomain;
+        if (addressLength > 255) return Socks5UdpBuildResult::InvalidAddressLength;
+        addressPrefixLength = 1 + addressLength;
+        break;
+    default:
+        return Socks5UdpBuildResult::InvalidAddressType;
+    }
+
+    const std::size_t headerLength = 4 + addressPrefixLength + 2;
+    const std::size_t maximumLength =
+        maximumDatagramLength < kMaximumSocks5UdpDatagramSize
+            ? maximumDatagramLength : kMaximumSocks5UdpDatagramSize;
+    if (headerLength > maximumLength ||
+        payloadLength > maximumLength - headerLength) {
+        return Socks5UdpBuildResult::DatagramTooLarge;
+    }
+
+    try {
+        output.reserve(headerLength + payloadLength);
+        output.insert(output.end(), {0, 0, 0, static_cast<std::uint8_t>(addressType)});
+        if (addressType == Socks5UdpAddressType::Domain) {
+            output.push_back(static_cast<std::uint8_t>(addressLength));
+        }
+        output.insert(output.end(), address, address + addressLength);
+        output.push_back(static_cast<std::uint8_t>((port >> 8) & 0xFF));
+        output.push_back(static_cast<std::uint8_t>(port & 0xFF));
+        if (payloadLength != 0) output.insert(output.end(), payload, payload + payloadLength);
+    } catch (...) {
+        output.clear();
+        return Socks5UdpBuildResult::AllocationFailure;
+    }
+    return Socks5UdpBuildResult::Valid;
+}
+
 Socks5UdpParseResult ParseSocks5UdpDatagram(
     const std::uint8_t* datagram,
     std::size_t datagramLength,

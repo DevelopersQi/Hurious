@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace furious::wfp::broker {
 
@@ -11,6 +12,20 @@ enum class Socks5UdpAddressType : std::uint8_t {
     Domain = 0x03,
     Ipv6 = 0x04
 };
+
+enum class Socks5UdpBuildResult {
+    Valid,
+    NullAddress,
+    InvalidAddressType,
+    InvalidAddressLength,
+    EmptyDomain,
+    InvalidPort,
+    NullPayload,
+    DatagramTooLarge,
+    AllocationFailure
+};
+
+constexpr std::size_t kMaximumSocks5UdpDatagramSize = 65507;
 
 enum class Socks5UdpParseResult {
     Valid,
@@ -33,6 +48,18 @@ struct Socks5UdpDatagramView final {
     const std::uint8_t* payload = nullptr;
     std::size_t payloadLength = 0;
 };
+
+// Builds one complete SOCKS5 UDP datagram. The output is cleared on failure.
+// maximumDatagramLength can impose a stricter per-association size cap.
+Socks5UdpBuildResult BuildSocks5UdpDatagram(
+    Socks5UdpAddressType addressType,
+    const std::uint8_t* address,
+    std::size_t addressLength,
+    std::uint16_t port,
+    const std::uint8_t* payload,
+    std::size_t payloadLength,
+    std::vector<std::uint8_t>& output,
+    std::size_t maximumDatagramLength = kMaximumSocks5UdpDatagramSize) noexcept;
 
 // Parses one complete SOCKS5 UDP datagram (RSV, FRAG, ATYP, DST.ADDR,
 // DST.PORT, DATA). Fragmented datagrams are rejected until reassembly exists.

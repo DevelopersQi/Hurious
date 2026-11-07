@@ -229,6 +229,35 @@ void TestSocks5UdpParser() {
     assert(ParseSocks5UdpDatagram(nullptr, 0, view) ==
         Socks5UdpParseResult::NullDatagram);
     assert(view.address == nullptr && view.payload == nullptr);
+    using furious::wfp::broker::BuildSocks5UdpDatagram;
+    using furious::wfp::broker::Socks5UdpBuildResult;
+    std::vector<std::uint8_t> built;
+    const std::uint8_t ipv4Address[] = {192, 0, 2, 9};
+    const std::uint8_t payload[] = {0xAA, 0xBB};
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        ipv4Address, sizeof(ipv4Address), 443, payload, sizeof(payload), built) ==
+        Socks5UdpBuildResult::Valid);
+    assert(built == ipv4);
+    assert(ParseSocks5UdpDatagram(built.data(), built.size(), view) ==
+        Socks5UdpParseResult::Valid);
+    assert(view.port == 443 && view.payloadLength == sizeof(payload));
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        ipv4Address, 3, 443, payload, sizeof(payload), built) ==
+        Socks5UdpBuildResult::InvalidAddressLength);
+    assert(built.empty());
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        ipv4Address, sizeof(ipv4Address), 0, payload, sizeof(payload), built) ==
+        Socks5UdpBuildResult::InvalidPort);
+    assert(built.empty());
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        ipv4Address, sizeof(ipv4Address), 443, payload, sizeof(payload), built, 11) ==
+        Socks5UdpBuildResult::DatagramTooLarge);
+    assert(built.empty());
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        ipv4Address, sizeof(ipv4Address), 443, nullptr, 1, built) ==
+        Socks5UdpBuildResult::NullPayload);
+    assert(built.empty());
+
 }
 
 void TestBrokerServerLifecycle();
