@@ -4,6 +4,7 @@
 #include "../WfpSocks5UdpAssociationManager.h"
 #include "../WfpSocks5UdpAssociationClient.h"
 #include "../WfpSocks5UdpSocket.h"
+#include "../WfpSocks5UdpRelayTransport.h"
 #include "../WfpSocks5UdpRedirectRecord.h"
 #include "../WfpUdpFlowManager.h"
 #include "../WfpUdpFlowRelayRegistry.h"
@@ -472,6 +473,102 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
     assert(datagramForwarded);
 }
 
+void TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams() {
+    SOCKET relay = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    SOCKET attacker = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    SOCKET client = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    assert(relay != INVALID_SOCKET && attacker != INVALID_SOCKET &&
+        client != INVALID_SOCKET);
+
+    sockaddr_in relayAddress{};
+    relayAddress.sin_family = AF_INET;
+    relayAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sockaddr_in attackerAddress = relayAddress;
+    sockaddr_in clientAddress = relayAddress;
+    assert(bind(relay, reinterpret_cast<const sockaddr*>(&relayAddress),
+        static_cast<int>(sizeof(relayAddress))) == 0);
+    assert(bind(attacker, reinterpret_cast<const sockaddr*>(&attackerAddress),
+        static_cast<int>(sizeof(attackerAddress))) == 0);
+    assert(bind(client, reinterpret_cast<const sockaddr*>(&clientAddress),
+        static_cast<int>(sizeof(clientAddress))) == 0);
+    int relayLength = static_cast<int>(sizeof(relayAddress));
+    int attackerLength = static_cast<int>(sizeof(attackerAddress));
+    int clientLength = static_cast<int>(sizeof(clientAddress));
+    assert(getsockname(relay, reinterpret_cast<sockaddr*>(&relayAddress),
+        &relayLength) == 0);
+    assert(getsockname(attacker, reinterpret_cast<sockaddr*>(&attackerAddress),
+        &attackerLength) == 0);
+    assert(getsockname(client, reinterpret_cast<sockaddr*>(&clientAddress),
+        &clientLength) == 0);
+
+    u_long nonBlocking = 1;
+    assert(ioctlsocket(client, FIONBIO, &nonBlocking) == 0);
+    std::array<std::uint8_t, 256> buffer{};
+    Socks5UdpDatagramView view{};
+    std::size_t receivedLength = 0;
+    assert(ReceiveSocks5UdpFromRelay(client,
+        reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+        buffer.data(), buffer.size(), view, receivedLength) ==
+        Socks5UdpRelayIoResult::WouldBlock);
+
+    const std::array<std::uint8_t, 4> target{203, 0, 113, 53};
+    const std::array<std::uint8_t, 2> payload{0x12, 0x34};
+    std::vector<std::uint8_t> datagram;
+    assert(BuildSocks5UdpDatagram(Socks5UdpAddressType::Ipv4,
+        target.data(), target.size(), 53, payload.data(), payload.size(),
+        datagram) == Socks5UdpBuildResult::Valid);
+
+    assert(sendto(relay, reinterpret_cast<const char*>(datagram.data()),
+        static_cast<int>(datagram.size()), 0,
+        reinterpret_cast<const sockaddr*>(&clientAddress),
+        static_cast<int>(sizeof(clientAddress))) ==
+        static_cast<int>(datagram.size()));
+    assert(ReceiveSocks5UdpFromRelay(client,
+        reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+        buffer.data(), buffer.size(), view, receivedLength) ==
+        Socks5UdpRelayIoResult::Received);
+    assert(receivedLength == datagram.size());
+    assert(view.port == 53 && view.payloadLength == payload.size());
+    assert(std::memcmp(view.payload, payload.data(), payload.size()) == 0);
+
+    assert(sendto(attacker, reinterpret_cast<const char*>(datagram.data()),
+        static_cast<int>(datagram.size()), 0,
+        reinterpret_cast<const sockaddr*>(&clientAddress),
+        static_cast<int>(sizeof(clientAddress))) ==
+        static_cast<int>(datagram.size()));
+    assert(ReceiveSocks5UdpFromRelay(client,
+        reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+        buffer.data(), buffer.size(), view, receivedLength) ==
+        Socks5UdpRelayIoResult::UnexpectedRelay);
+    assert(receivedLength == 0);
+
+    const std::array<std::uint8_t, 4> malformed{0, 0, 0, 5};
+    assert(sendto(relay, reinterpret_cast<const char*>(malformed.data()),
+        static_cast<int>(malformed.size()), 0,
+        reinterpret_cast<const sockaddr*>(&clientAddress),
+        static_cast<int>(sizeof(clientAddress))) ==
+        static_cast<int>(malformed.size()));
+    assert(ReceiveSocks5UdpFromRelay(client,
+        reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+        buffer.data(), buffer.size(), view, receivedLength) ==
+        Socks5UdpRelayIoResult::InvalidDatagram);
+
+    const std::array<std::uint8_t, 64> oversized{};
+    assert(sendto(relay, reinterpret_cast<const char*>(oversized.data()),
+        static_cast<int>(oversized.size()), 0,
+        reinterpret_cast<const sockaddr*>(&clientAddress),
+        static_cast<int>(sizeof(clientAddress))) ==
+        static_cast<int>(oversized.size()));
+    assert(ReceiveSocks5UdpFromRelay(client,
+        reinterpret_cast<const sockaddr*>(&relayAddress), sizeof(relayAddress),
+        buffer.data(), 8, view, receivedLength) ==
+        Socks5UdpRelayIoResult::BufferTooSmall);
+
+    closesocket(client);
+    closesocket(attacker);
+    closesocket(relay);
+}
+
 void TestAssociationSourcePinningAndExpiry() {
     using Clock = Socks5UdpAssociation::Clock;
     const auto now = Clock::now();
@@ -674,6 +771,7 @@ int main() {
     TestRedirectContextDecodeRequiresValidUdpMetadata();
     TestUdpFlowManagerIdentityLimitsAndExpiry();
     TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay();
+    TestUdpRelayTransportPinsSourceAndRejectsMalformedDatagrams();
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
     TestNonblockingSocks5UdpHandshake();
