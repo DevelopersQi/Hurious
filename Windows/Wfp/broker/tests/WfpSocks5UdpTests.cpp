@@ -555,7 +555,8 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
             Socks5UdpDatagramView view{};
             const std::array<std::uint8_t, 4> expectedAddress{198, 51, 100, 8};
             const std::array<std::uint8_t, 4> expectedPayload{'p', 'i', 'n', 'g'};
-            if (ParseSocks5UdpDatagram(datagram.data(),
+            const bool firstValid =
+                ParseSocks5UdpDatagram(datagram.data(),
                     static_cast<std::size_t>(received), view) ==
                     Socks5UdpParseResult::Valid &&
                 view.addressType == Socks5UdpAddressType::Ipv4 &&
@@ -565,7 +566,39 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
                 view.port == 443 &&
                 view.payloadLength == expectedPayload.size() &&
                 std::memcmp(view.payload, expectedPayload.data(),
-                    expectedPayload.size()) == 0) {
+                    expectedPayload.size()) == 0;
+
+            // The registry must flush every datagram queued during negotiation,
+            // in arrival order, after SOCKS5 UDP ASSOCIATE becomes ready.
+            fd_set secondReadable;
+            FD_ZERO(&secondReadable);
+            FD_SET(udpRelay, &secondReadable);
+            timeval secondTimeout{3, 0};
+            if (!firstValid ||
+                select(0, &secondReadable, nullptr, nullptr, &secondTimeout) <= 0)
+                break;
+            senderLength = static_cast<int>(sizeof(sender));
+            const int secondReceived = recvfrom(udpRelay,
+                reinterpret_cast<char*>(datagram.data()),
+                static_cast<int>(datagram.size()), 0,
+                reinterpret_cast<sockaddr*>(&sender), &senderLength);
+            const std::array<std::uint8_t, 4> secondExpectedPayload{'n', 'e', 'x', 't'};
+            Socks5UdpDatagramView secondView{};
+            if (secondReceived <= 0 ||
+                ParseSocks5UdpDatagram(datagram.data(),
+                    static_cast<std::size_t>(secondReceived), secondView) !=
+                    Socks5UdpParseResult::Valid ||
+                secondView.addressType != Socks5UdpAddressType::Ipv4 ||
+                secondView.addressLength != expectedAddress.size() ||
+                std::memcmp(secondView.address, expectedAddress.data(),
+                    expectedAddress.size()) != 0 ||
+                secondView.port != 443 ||
+                secondView.payloadLength != secondExpectedPayload.size() ||
+                std::memcmp(secondView.payload, secondExpectedPayload.data(),
+                    secondExpectedPayload.size()) != 0)
+                break;
+
+            if (firstValid) {
                 relayVerified.store(true);
                 const std::array<std::uint8_t, 4> responsePayload{'p', 'o', 'n', 'g'};
                 std::vector<std::uint8_t> responseDatagram;
@@ -617,6 +650,17 @@ void TestUdpFlowRegistryForwardsFirstDatagramToSocksRelay() {
         &flowId);
     assert(startResult == WfpUdpFlowRelayRegistryResult::Pending);
     assert(flowId != 0);
+
+    // Queue a second datagram before advancing the SOCKS5 handshake. Both
+    // packets must be relayed in FIFO order once the association is ready.
+    const std::array<std::uint8_t, 4> queuedPayload{'n', 'e', 'x', 't'};
+    std::uint64_t queuedFlowId = 0;
+    const auto queuedResult = registry.ProcessClientDatagram(
+        message, queuedPayload.data(),
+        WfpUdpFlowRelayRegistry::Clock::now() + std::chrono::milliseconds(1),
+        &queuedFlowId);
+    assert(queuedResult == WfpUdpFlowRelayRegistryResult::Pending);
+    assert(queuedFlowId == flowId);
 
     auto handshakeResult = WfpUdpFlowRelayRegistryResult::Pending;
     const auto handshakeDeadline = std::chrono::steady_clock::now() +
