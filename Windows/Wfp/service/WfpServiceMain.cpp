@@ -48,11 +48,18 @@ DWORD CleanupWfp(
         endpointStatus = furious::wfp::driver::ClearEndpointConfig();
     }
 
-    // Disable redirection before stopping the listener that receives it.
-    furious::wfp::ipc::StopBroker();
-    if (endpointStatus != ERROR_SUCCESS) {
-        return endpointStatus;
+    // If the endpoint cannot be cleared, remove the redirect filters first.
+    // Never stop the listener while a live filter may still target it.
+    if (endpointStatus != ERROR_SUCCESS && filtersInstalled) {
+        const DWORD filterStatus = engine.RemoveRedirectFilters();
+        if (filterStatus != ERROR_SUCCESS) {
+            return filterStatus;
+        }
+        filtersInstalled = false;
     }
+
+    // At this point either the endpoint is clear or no redirect filters remain.
+    furious::wfp::ipc::GetTcpBrokerServer().Stop();
 
     if (filtersInstalled) {
         const DWORD filterStatus = engine.RemoveRedirectFilters();
@@ -69,9 +76,13 @@ DWORD CleanupWfp(
     // A driver that was already running before this service started is not
     // ours to unload. Keep its provider registration intact in that case.
     if (providerReady && !driver.IsPresent()) {
-        return engine.RemoveProviderAndSublayer();
+        const DWORD providerStatus = engine.RemoveProviderAndSublayer();
+        if (providerStatus != ERROR_SUCCESS) {
+            return providerStatus;
+        }
     }
-    return ERROR_SUCCESS;
+
+    return endpointStatus;
 }
 
 void WINAPI ServiceMain(DWORD, LPWSTR*) {
