@@ -22,11 +22,10 @@ inbound, so traffic continues through the selected Xray/Hysteria2 backend.
 ## Important integration boundary
 
 The broker listener is hosted by the elevated WFP service and controlled through
-authenticated IPC. ConnectionManager starts and stops it with the proxy runtime;
-the service returns its actual PID and dynamically bound listener ports. The
-remaining gate is to publish those values together with the selected backend and
-current core PID exclusions through SET_ENDPOINT_CONFIG, then validate the full
-path in Windows tests.
+authenticated IPC. ConnectionManager starts and stops it with the proxy runtime,
+then publishes its actual PID, dynamically bound listener ports, selected backend
+and current core PID exclusions through SET_ENDPOINT_CONFIG. The full redirect
+path still requires Windows integration tests and a signed driver package.
 
 The redirect-record blob is opaque and is copied without interpretation. The
 context is Furious-owned ABI data and is validated before its address and port

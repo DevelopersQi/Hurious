@@ -20,11 +20,12 @@ driver ABI/callout registration, and transactionally installs IPv4/IPv6 ALE
 connect-redirect filters. The driver redirects only applications with an installed Proxy policy filter
 and a valid endpoint. Direct rules remain direct. Proxy filters fail closed if
 the endpoint is missing or a redirect operation fails. The service hosts a native TCP broker and exposes it through authenticated IPC.
-The broker can obtain original-destination context, preserve WFP redirect records,
-connect to a loopback SOCKS5 inbound, and relay TCP streams. The Python lifecycle
-starts/stops the broker, but does not yet publish the broker PID/ports and current
-core exclusions as a complete SET_ENDPOINT_CONFIG transaction. This remains a
-staged integration and is not yet an end-to-end transparent proxy. Validate driver signing, SCM startup,
+The broker obtains original-destination context, preserves WFP redirect records,
+connects to a loopback SOCKS5 inbound, and relays TCP streams. ConnectionManager
+starts/stops the broker and publishes its real PID, dynamically bound TCP ports,
+selected Xray/Hysteria2 backend and current core PID exclusions through
+SET_ENDPOINT_CONFIG. The end-to-end path still requires Windows 10 x64 runtime
+validation and a signed driver package. Validate driver signing, SCM startup,
 filter rollback and unload behavior in a disposable Windows 10 x64 VM before
 enabling endpoint redirection.
 
@@ -34,25 +35,26 @@ redirect state only when a redirect-record handle is present. IPv4 loopback
 (127.0.0.0/8), IPv6 loopback (::1), and IPv4-mapped IPv6 loopback
 (::ffff:127.0.0.0/104) destinations are passed through unchanged so local IPC
 and developer services are not captured by the transparent proxy.
-Endpoint ABI v2 now supports the mandatory local redirect-target PID plus up
-to eight auxiliary process exclusions. The kernel validates and enforces the
-supplied list. Backend lifecycle wiring to populate and refresh Xray/Hysteria2
-PIDs is still pending; this ABI support alone does not make those exclusions
-active.
+Endpoint ABI v2 supports the mandatory local redirect-target PID plus up to
+eight auxiliary process exclusions. ConnectionManager refreshes the exclusion
+snapshot on proxy-core lifecycle changes and clears endpoint state before
+stopping a changed core. The service fails closed for Proxy-selected applications
+when a valid endpoint is unavailable.
 
 The native TCP broker is hosted by the elevated WFP service. Its authenticated
 IPC start command returns the actual service PID and dynamically bound IPv4/IPv6
 listener ports. ConnectionManager starts and stops the broker with the proxy
-runtime. Endpoint activation remains gated on synchronizing the live broker PID,
-listener ports, selected backend and core PID exclusions into SET_ENDPOINT_CONFIG.
+runtime, then sends those values and the current core PID snapshot to
+SET_ENDPOINT_CONFIG. Only TCP application filters are installed; UDP remains
+disabled until a dedicated UDP relay exists.
 
 A production redirect path additionally requires:
-- ALE application identity based on the WFP application ID (not PID alone);
-- backend endpoint discovery and safe SET/CLEAR endpoint configuration;
-- proxy-side WSAIoctl redirect-context and redirect-record propagation;
-- backend lifecycle-driven relay/core PID exclusions and restart-safe refresh;
-- original-destination preservation and full relay behavior;
-- TCP and UDP behavior verified independently;
+- application-routing policy editor and UI validation for Proxy/Direct rules;
+- service/driver installation, endpoint activation and rollback verified on
+  Windows 10 x64;
+- restart, crash, PID reuse and stale endpoint recovery verified;
+- TCP behavior verified independently on IPv4 and IPv6;
+- a dedicated UDP relay and UDP behavior verified before enabling UDP filters;
 - IPv4 and IPv6 parity;
 - DNS, QUIC, suspend/resume and network-change tests;
 - signed package, rollback and uninstall verification.

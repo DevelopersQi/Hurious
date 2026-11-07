@@ -41,21 +41,19 @@ TCP broker endpoint is ready.
 
 The driver endpoint ABI is version 2 and supports up to eight auxiliary process
 IDs in addition to the local redirect-target PID. The service-hosted TCP broker
-PID is returned by IPC and can occupy the mandatory ProxyProcessId field.
-Xray/Hysteria2 core PIDs are available in the Python runtime snapshot, but are
-not yet atomically synchronized into endpoint configuration on every
-start/stop/restart.
+PID is returned by IPC and occupies the mandatory ProxyProcessId field.
+ConnectionManager publishes the broker PID, bound TCP listener ports, backend
+identifier, runtime generation and live Xray/Hysteria2 core PID exclusions in
+SET_ENDPOINT_CONFIG. A core exit clears the endpoint before stopping the broker;
+Tun2socks exit does not incorrectly remove the socket-owning core exclusion.
 
-Before enabling traffic filters or redirect:
-- resolve each executable path to a canonical WFP application ID;
-- verify provider, sublayer and callout ownership before reusing objects;
+Before enabling this feature for general users:
+- expose and validate the application-routing policy editor and its Proxy/Direct
+  actions in the UI;
 - package a correctly signed driver beside the service executable and validate
   SCM start/stop behavior under the actual service account;
-- connect live backend endpoint discovery and restart-safe Broker/core process
-  exclusion refresh to SET_ENDPOINT_CONFIG; clear it whenever the backend exits
-  or changes;
-- implement the proxy-side WSAIoctl redirect-context/redirect-record relay path;
-- implement TCP and UDP separately, with IPv4 and IPv6 parity;
+- implement a dedicated UDP relay before installing UDP application filters;
+- test TCP and UDP separately, with IPv4 and IPv6 parity;
 - reconcile stale filters after crashes and ensure safe rollback;
 - test allowed and denied client tokens, impersonation failures, malformed
   frames, stop during connect/read, and BFE unavailable;
