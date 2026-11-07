@@ -758,12 +758,19 @@ jobs:
           $plainPassword = [System.Net.NetworkCredential]::new('', $password).Password
           & $signTool.FullName sign /v /fd SHA256 /f $pfx /p $plainPassword $driver.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Test signing the WFP driver failed' }
-          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
-          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' | Out-Null
+          Write-Host 'Importing the ephemeral test certificate into runner trust stores...'
+          # certutil avoids the hosted PowerShell Import-Certificate hang observed
+          # after signing. Fail fast if either trust-store operation fails.
+          & certutil.exe -addstore -f Root $cer
+          if ($LASTEXITCODE -ne 0) { throw 'Adding the test certificate to CurrentUser Root failed' }
+          & certutil.exe -addstore -f TrustedPublisher $cer
+          if ($LASTEXITCODE -ne 0) { throw 'Adding the test certificate to CurrentUser TrustedPublisher failed' }
+          Write-Host 'Verifying the test-signed WFP driver...'
           & $signTool.FullName verify /pa /v $driver.FullName
           if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification of the test-signed WFP driver failed' }
           $signature = Get-AuthenticodeSignature -FilePath $driver.FullName
           if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) { throw 'The WFP driver signature is not valid or does not match this run certificate.' }
+          Write-Host 'WFP driver signing and verification completed.'
           Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_DRIVER_BINARY=$($driver.FullName)" -Encoding utf8
           Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_TEST_CERTIFICATE=$cer" -Encoding utf8
           Get-FileHash -LiteralPath $driver.FullName -Algorithm SHA256
