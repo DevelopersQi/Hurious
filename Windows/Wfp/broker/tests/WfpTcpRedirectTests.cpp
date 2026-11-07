@@ -1,6 +1,7 @@
 #include "../WfpTcpRedirect.h"
 #include "../WfpSocks5Udp.h"
 #include "../WfpSocks5UdpAssociation.h"
+#include "../WfpSocks5UdpControl.h"
 #include <chrono>
 
 #include <cassert>
@@ -296,6 +297,39 @@ void TestSocks5UdpAssociationLifecycle() {
     assert(a.AuthorizeClientDatagram(client6, 64, t)==Socks5UdpAssociationResult::Accepted);
     assert(!a.Start(peer6, 0, std::chrono::milliseconds(0), 100, t));
 }
+ 
+void TestSocks5UdpAssociateControlMessages() {
+    using namespace furious::wfp::broker;
+    Socks5UdpAssociateRequestView view{};
+    const std::uint8_t ipv4Request[] = {5, 3, 0, 1, 0, 0, 0, 0, 0, 0};
+    assert(ParseSocks5UdpAssociateRequest(ipv4Request, sizeof(ipv4Request), view) ==
+        Socks5UdpAssociateRequestResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Ipv4 &&
+        view.addressLength == 4 && view.port == 0);
+    const std::uint8_t ipv6Request[] = {5, 3, 0, 4,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1, 0x12,0x34};
+    assert(ParseSocks5UdpAssociateRequest(ipv6Request, sizeof(ipv6Request), view) ==
+        Socks5UdpAssociateRequestResult::Valid);
+    assert(view.addressType == Socks5UdpAddressType::Ipv6 && view.port == 0x1234);
+    const std::uint8_t connectRequest[] = {5, 1, 0, 1, 127,0,0,1,0,80};
+    assert(ParseSocks5UdpAssociateRequest(connectRequest, sizeof(connectRequest), view) ==
+        Socks5UdpAssociateRequestResult::UnsupportedCommand);
+    const std::uint8_t badVersion[] = {4, 3, 0, 1, 127,0,0,1,0,53};
+    assert(ParseSocks5UdpAssociateRequest(badVersion, sizeof(badVersion), view) ==
+        Socks5UdpAssociateRequestResult::InvalidVersion);
+    const std::uint8_t trailing[] = {5,3,0,1,127,0,0,1,0,53,0};
+    assert(ParseSocks5UdpAssociateRequest(trailing, sizeof(trailing), view) ==
+        Socks5UdpAssociateRequestResult::TrailingData);
+    const std::uint8_t address[] = {127,0,0,1};
+    std::vector<std::uint8_t> reply;
+    assert(BuildSocks5UdpAssociateReply(Socks5UdpAddressType::Ipv4,
+        address, sizeof(address), 40000, reply) == Socks5UdpBuildResult::Valid);
+    const std::vector<std::uint8_t> expected = {5,0,0,1,127,0,0,1,0x9C,0x40};
+    assert(reply == expected);
+    assert(BuildSocks5UdpAssociateReply(Socks5UdpAddressType::Ipv4,
+        address, sizeof(address), 0, reply) == Socks5UdpBuildResult::InvalidPort);
+    assert(reply.empty());
+}
 
 void TestBrokerServerLifecycle();
 void TestBrokerConcurrentStartStopIsSerialized();
@@ -304,6 +338,7 @@ void TestBrokerStopsWhileAcceptingConnections();
 int main() {
     TestSocks5UdpParser();
     TestSocks5UdpAssociationLifecycle();
+    TestSocks5UdpAssociateControlMessages();
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
