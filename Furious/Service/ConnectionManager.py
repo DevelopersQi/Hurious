@@ -1136,6 +1136,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._wfpActiveRuntime = None
         self._wfpIpcController = None
         self._wfpBrokerPending = {}
+        self._wfpUdpBrokerPending = {}
+        self._wfpTcpBrokerEndpoint = None
+        self._wfpUdpBrokerEndpoint = None
+        self._wfpUdpExpected = False
         self._wfpEndpointPending = {}
         self._wfpPolicyPending = {}
         self._wfpPolicyReady = False
@@ -1162,17 +1166,23 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     return
                 self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
+                self._wfpTcpBrokerEndpoint = None
+                self._wfpUdpBrokerEndpoint = None
                 if self._wfpIpcController is not None:
                     self._wfpIpcController.clearEndpointConfig()
                     self._wfpIpcController.stopBroker()
-            elif command in ('start-broker', 'set-policy', 'clear-policy'):
+            elif command in ('start-broker', 'start-udp-broker', 'set-policy', 'clear-policy'):
                 self._wfpBrokerPending.pop(requestId, None)
+                self._wfpUdpBrokerPending.pop(requestId, None)
                 self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
+                self._wfpTcpBrokerEndpoint = None
+                self._wfpUdpBrokerEndpoint = None
                 if command in ('set-policy', 'clear-policy'):
                     self._wfpPolicyPending.clear()
                     self._wfpPolicyReady = False
                     self._wfpBrokerPending.clear()
+                    self._wfpUdpBrokerPending.clear()
                     self._wfpPolicyHasProxyRules = False
                     self._wfpPolicyBackend = 0
                 if self._wfpIpcController is not None:
@@ -1197,28 +1207,56 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     self._wfpIpcController.clearEndpointConfig()
                     self._wfpIpcController.stopBroker()
                 return
-            self._wfpBrokerEndpoint = (
-                backend,
-                result.broker_process_id,
-                result.tcp_port_v4,
-                result.tcp_port_v6,
+            self._wfpTcpBrokerEndpoint = (
+                backend, result.broker_process_id,
+                result.tcp_port_v4, result.tcp_port_v6,
             )
             logger.info(
                 f'WFP TCP broker started: pid={result.broker_process_id}, '
                 f'IPv4={result.tcp_port_v4}, IPv6={result.tcp_port_v6}'
             )
-            self._publishWfpEndpointConfig()
-        elif command == 'start-broker':
+            self._completeWfpBrokerStartup()
+        elif command == 'start-udp-broker' and result is not None:
+            pending = self._wfpUdpBrokerPending.pop(requestId, None)
+            if pending is None:
+                logger.debug('ignoring a stale WFP UDP broker start response')
+                return
+            backend, requestedGeneration = pending
+            if (
+                not self._wfpPolicyReady
+                or not self._wfpPolicyHasProxyRules
+                or backend != self._wfpPolicyBackend
+                or requestedGeneration != self.wfpRuntimeSnapshot.generation
+            ):
+                logger.debug('ignoring a WFP UDP broker response for an inactive policy/runtime')
+                if self._wfpIpcController is not None:
+                    self._wfpIpcController.clearEndpointConfig()
+                    self._wfpIpcController.stopBroker()
+                return
+            self._wfpUdpBrokerEndpoint = (
+                backend, result.broker_process_id,
+                result.udp_port_v4, result.udp_port_v6,
+            )
+            logger.info(
+                f'WFP UDP broker started: pid={result.broker_process_id}, '
+                f'IPv4={result.udp_port_v4}, IPv6={result.udp_port_v6}'
+            )
+            self._completeWfpBrokerStartup()
+        elif command in ('start-broker', 'start-udp-broker'):
             self._wfpBrokerPending.pop(requestId, None)
+            self._wfpUdpBrokerPending.pop(requestId, None)
             self._wfpBrokerEndpoint = None
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
             if self._wfpIpcController is not None:
                 self._wfpIpcController.clearEndpointConfig()
+                self._wfpIpcController.stopBroker()
         elif command == 'set-endpoint':
             requestedGeneration = self._wfpEndpointPending.pop(requestId, None)
             if requestedGeneration != self.wfpRuntimeSnapshot.generation:
                 logger.debug('ignoring a stale WFP endpoint update completion')
                 return
-            logger.info('WFP TCP redirect endpoint configuration updated')
+            logger.info('WFP TCP/UDP redirect endpoint configuration updated')
         elif command == 'set-policy':
             requestedPolicyGeneration = self._wfpPolicyPending.pop(requestId, None)
             if requestedPolicyGeneration != self._wfpPolicyGeneration:
@@ -1234,7 +1272,12 @@ class ConnectionManager(Mixins.CleanupOnExit):
             logger.info('WFP application routing policy cleared')
         elif command == 'stop-broker':
             self._wfpBrokerEndpoint = None
-            logger.debug('WFP TCP broker stop request completed')
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
+            logger.debug('WFP TCP/UDP broker stop request completed')
+        elif command == 'stop-udp-broker':
+            self._wfpUdpBrokerEndpoint = None
+            logger.debug('WFP UDP broker stop request completed')
 
     def _nextWfpPolicyGeneration(self):
         """Return a process-restart-safe generation for WFP policy updates."""
@@ -1345,6 +1388,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 )
                 return None
 
+            udpSupported = False
             if factoryId == 'official.hysteria2':
                 socksConfig = runtimeConfiguration.get('socks5', {})
                 if not isinstance(socksConfig, dict):
@@ -1359,6 +1403,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     )
                     return None
                 endpoint = str(socksConfig.get('listen', '') or '').strip()
+                udpSupported = not bool(socksConfig.get('disable_udp', False))
             else:
                 endpointGetter = getattr(runtimeConfiguration, 'socksProxy', None)
                 if not callable(endpointGetter):
@@ -1382,6 +1427,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                             'WFP TCP broker requires a no-auth Xray SOCKS5 inbound'
                         )
                         return None
+                    udpSupported = isinstance(settings, dict) and bool(settings.get('udp', False))
                     break
 
             if not endpoint:
@@ -1390,22 +1436,53 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
             host, port = parseHostPort(endpoint)
             controller.queryStatus()
+            self._wfpUdpExpected = udpSupported
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
             requestId = controller.startBroker(host, int(port))
             if requestId is not None:
-                self._wfpBrokerPending[requestId] = (
-                    backend, self.wfpRuntimeSnapshot.generation
-                )
+                pending = (backend, self.wfpRuntimeSnapshot.generation)
+                self._wfpBrokerPending[requestId] = pending
+                if udpSupported:
+                    udpRequestId = controller.startUdpBroker(host, int(port))
+                    if udpRequestId is not None:
+                        self._wfpUdpBrokerPending[udpRequestId] = pending
+                    else:
+                        controller.stopBroker()
+                        self._wfpBrokerPending.pop(requestId, None)
+                        return None
             return requestId
         except Exception as error:
             logger.warning(f'WFP TCP broker start could not be queued: {error}')
             return None
+
+    def _completeWfpBrokerStartup(self):
+        """Publish only after every required transport broker is ready."""
+        tcp = self._wfpTcpBrokerEndpoint
+        udp = self._wfpUdpBrokerEndpoint
+        if tcp is None or (self._wfpUdpExpected and udp is None):
+            return None
+        backend, brokerPid, tcpPortV4, tcpPortV6 = tcp
+        udpPortV4 = udp[2] if udp is not None else 0
+        udpPortV6 = udp[3] if udp is not None else 0
+        if udp is not None and (udp[0] != backend or udp[1] != brokerPid):
+            logger.error('WFP TCP and UDP brokers returned inconsistent process/backend identity')
+            if self._wfpIpcController is not None:
+                self._wfpIpcController.clearEndpointConfig()
+                self._wfpIpcController.stopBroker()
+            self._wfpBrokerEndpoint = None
+            return None
+        self._wfpBrokerEndpoint = (
+            backend, brokerPid, tcpPortV4, tcpPortV6, udpPortV4, udpPortV6
+        )
+        return self._publishWfpEndpointConfig()
 
     def _publishWfpEndpointConfig(self):
         """Publish broker telemetry and the current live-core PID snapshot atomically."""
         if self._wfpIpcController is None or self._wfpBrokerEndpoint is None:
             return None
 
-        backend, brokerPid, tcpPortV4, tcpPortV6 = self._wfpBrokerEndpoint
+        backend, brokerPid, tcpPortV4, tcpPortV6, udpPortV4, udpPortV6 = self._wfpBrokerEndpoint
         try:
             snapshot = self.wfpRuntimeSnapshot
             payload = build_endpoint_config(
@@ -1414,6 +1491,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 brokerPid,
                 tcpPortV4,
                 tcpPortV6,
+                udp_port_v4=udpPortV4,
+                udp_port_v6=udpPortV6,
             )
         except (TypeError, ValueError) as error:
             logger.error(f'WFP endpoint configuration rejected locally: {error}')
@@ -1421,6 +1500,8 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpIpcController.clearEndpointConfig()
             self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
             return None
 
         requestId = self._wfpIpcController.setEndpointConfig(payload)
@@ -2185,6 +2266,9 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 self._wfpIpcController.clearEndpointConfig()
                 self._wfpIpcController.stopBroker()
             self._wfpBrokerEndpoint = None
+            self._wfpTcpBrokerEndpoint = None
+            self._wfpUdpBrokerEndpoint = None
+            self._wfpUdpBrokerPending.clear()
             self._wfpBrokerPending.clear()
             self._wfpEndpointPending.clear()
             self._wfpActiveConfiguration = None
