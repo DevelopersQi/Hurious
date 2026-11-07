@@ -76,6 +76,34 @@ typedef struct FURIOUS_WFP_REDIRECT_CONTEXT {
 } FURIOUS_WFP_REDIRECT_CONTEXT;
 #pragma pack(pop)
 
+// Remove an exited proxy-core PID from the endpoint exclusion snapshot.
+// Shared by kernel code and user-mode tests to keep PID-reuse handling exact.
+static __inline int FuriousWfpRemoveExcludedProcessId(
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG* config,
+    FURIOUS_WFP_U32 processId)
+{
+    FURIOUS_WFP_U32 index;
+    if (config == 0 || processId == 0 ||
+        config->ExcludedProcessCount > FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS) {
+        return 0;
+    }
+    for (index = 0; index < config->ExcludedProcessCount; ++index) {
+        if (config->ExcludedProcessIds[index] == processId) {
+            FURIOUS_WFP_U32 moveIndex;
+            for (moveIndex = index;
+                 moveIndex + 1 < config->ExcludedProcessCount;
+                 ++moveIndex) {
+                config->ExcludedProcessIds[moveIndex] =
+                    config->ExcludedProcessIds[moveIndex + 1];
+            }
+            --config->ExcludedProcessCount;
+            config->ExcludedProcessIds[config->ExcludedProcessCount] = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 #ifdef __cplusplus
 }
 #endif
