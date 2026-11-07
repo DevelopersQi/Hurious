@@ -79,11 +79,13 @@ void TestRejectsInvalidOrUdpContext() {
 } // namespace
 
 void TestBrokerServerLifecycle();
+void TestBrokerStopsWhileAcceptingConnections();
 
 int main() {
     TestIpv4ConnectRequest();
     TestIpv6ConnectRequest();
     TestRejectsInvalidOrUdpContext();
     TestBrokerServerLifecycle();
+    TestBrokerStopsWhileAcceptingConnections();
     return 0;
 }
