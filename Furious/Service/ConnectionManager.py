@@ -1157,7 +1157,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
         return self._wfpIpcController
 
     def _onWfpIpcRequestFinished(self, requestId, command, result, error):
-        """Log asynchronous WFP control-plane results without affecting proxy state."""
+        """Handle asynchronous WFP completions without stale-request state corruption."""
         if error:
             logger.warning(f'WFP IPC {command} request failed: {error}')
             if command == 'set-endpoint':
@@ -1173,21 +1173,45 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 if self._wfpIpcController is not None:
                     self._wfpIpcController.clearEndpointConfig()
                     self._wfpIpcController.stopBroker()
-            elif command in ('start-broker', 'start-udp-broker', 'set-policy', 'clear-policy'):
-                self._wfpBrokerPending.pop(requestId, None)
-                self._wfpUdpBrokerPending.pop(requestId, None)
+            elif command in ('start-broker', 'start-udp-broker'):
+                pendingMap = (
+                    self._wfpBrokerPending if command == 'start-broker'
+                    else self._wfpUdpBrokerPending
+                )
+                pending = pendingMap.pop(requestId, None)
+                if (
+                    pending is None
+                    or pending[1] != self.wfpRuntimeSnapshot.generation
+                    or pending[0] != self._wfpPolicyBackend
+                ):
+                    logger.debug(f'ignoring stale WFP {command} failure')
+                    return
+                self._wfpBrokerPending.clear()
+                self._wfpUdpBrokerPending.clear()
                 self._wfpEndpointPending.clear()
                 self._wfpBrokerEndpoint = None
                 self._wfpUdpExpected = False
                 self._wfpTcpBrokerEndpoint = None
                 self._wfpUdpBrokerEndpoint = None
-                if command in ('set-policy', 'clear-policy'):
-                    self._wfpPolicyPending.clear()
-                    self._wfpPolicyReady = False
-                    self._wfpBrokerPending.clear()
-                    self._wfpUdpBrokerPending.clear()
-                    self._wfpPolicyHasProxyRules = False
-                    self._wfpPolicyBackend = 0
+                if self._wfpIpcController is not None:
+                    self._wfpIpcController.clearEndpointConfig()
+                    self._wfpIpcController.stopBroker()
+            elif command in ('set-policy', 'clear-policy'):
+                requestedPolicyGeneration = self._wfpPolicyPending.pop(requestId, None)
+                if requestedPolicyGeneration != self._wfpPolicyGeneration:
+                    logger.debug('ignoring a stale WFP policy request failure')
+                    return
+                self._wfpPolicyPending.clear()
+                self._wfpPolicyReady = False
+                self._wfpBrokerPending.clear()
+                self._wfpUdpBrokerPending.clear()
+                self._wfpEndpointPending.clear()
+                self._wfpBrokerEndpoint = None
+                self._wfpUdpExpected = False
+                self._wfpTcpBrokerEndpoint = None
+                self._wfpUdpBrokerEndpoint = None
+                self._wfpPolicyHasProxyRules = False
+                self._wfpPolicyBackend = 0
                 if self._wfpIpcController is not None:
                     self._wfpIpcController.clearEndpointConfig()
                     self._wfpIpcController.stopBroker()
@@ -1206,9 +1230,6 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 or requestedGeneration != self.wfpRuntimeSnapshot.generation
             ):
                 logger.debug('ignoring a WFP TCP broker response for an inactive policy/runtime')
-                if self._wfpIpcController is not None:
-                    self._wfpIpcController.clearEndpointConfig()
-                    self._wfpIpcController.stopBroker()
                 return
             self._wfpTcpBrokerEndpoint = (
                 backend, result.broker_process_id,
@@ -1232,9 +1253,6 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 or requestedGeneration != self.wfpRuntimeSnapshot.generation
             ):
                 logger.debug('ignoring a WFP UDP broker response for an inactive policy/runtime')
-                if self._wfpIpcController is not None:
-                    self._wfpIpcController.clearEndpointConfig()
-                    self._wfpIpcController.stopBroker()
                 return
             self._wfpUdpBrokerEndpoint = (
                 backend, result.broker_process_id,
@@ -1246,8 +1264,20 @@ class ConnectionManager(Mixins.CleanupOnExit):
             )
             self._completeWfpBrokerStartup()
         elif command in ('start-broker', 'start-udp-broker'):
-            self._wfpBrokerPending.pop(requestId, None)
-            self._wfpUdpBrokerPending.pop(requestId, None)
+            pendingMap = (
+                self._wfpBrokerPending if command == 'start-broker'
+                else self._wfpUdpBrokerPending
+            )
+            pending = pendingMap.pop(requestId, None)
+            if (
+                pending is None
+                or pending[1] != self.wfpRuntimeSnapshot.generation
+                or pending[0] != self._wfpPolicyBackend
+            ):
+                logger.debug(f'ignoring stale WFP {command} completion without result')
+                return
+            self._wfpBrokerPending.clear()
+            self._wfpUdpBrokerPending.clear()
             self._wfpBrokerEndpoint = None
             self._wfpUdpExpected = False
             self._wfpTcpBrokerEndpoint = None
@@ -1273,17 +1303,18 @@ class ConnectionManager(Mixins.CleanupOnExit):
                     self._wfpActiveConfiguration, resetExisting=False
                 )
         elif command == 'clear-policy':
+            requestedPolicyGeneration = self._wfpPolicyPending.pop(requestId, None)
+            if requestedPolicyGeneration != self._wfpPolicyGeneration:
+                logger.debug('ignoring a stale WFP policy clear completion')
+                return
             logger.info('WFP application routing policy cleared')
         elif command == 'stop-broker':
-            self._wfpBrokerEndpoint = None
-            self._wfpUdpExpected = False
-            self._wfpTcpBrokerEndpoint = None
-            self._wfpUdpBrokerEndpoint = None
-            self._wfpUdpBrokerPending.clear()
-            self._wfpBrokerPending.clear()
+            # Do not clear pending start state here. A new start may already
+            # be queued behind this stop request on the single IPC worker.
             logger.debug('WFP TCP/UDP broker stop request completed')
         elif command == 'stop-udp-broker':
-            self._wfpUdpBrokerEndpoint = None
+            # Likewise, the completion may arrive after a replacement UDP
+            # broker start has already been queued.
             logger.debug('WFP UDP broker stop request completed')
 
     def _nextWfpPolicyGeneration(self):
