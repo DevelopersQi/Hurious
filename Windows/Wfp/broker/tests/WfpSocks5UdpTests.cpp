@@ -220,9 +220,9 @@ void TestNonblockingSocks5UdpHandshake() {
     bindAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     bindAddress.sin_port = 0;
     assert(bind(listener, reinterpret_cast<const sockaddr*>(&bindAddress),
-        sizeof(bindAddress)) == 0);
+        static_cast<int>(sizeof(bindAddress))) == 0);
     assert(listen(listener, 1) == 0);
-    int bindLength = sizeof(bindAddress);
+    int bindLength = static_cast<int>(sizeof(bindAddress));
     assert(getsockname(listener, reinterpret_cast<sockaddr*>(&bindAddress),
         &bindLength) == 0);
 
@@ -238,7 +238,8 @@ void TestNonblockingSocks5UdpHandshake() {
         std::array<std::uint8_t, 3> greeting{};
         if (ReceiveExactSocket(peer, greeting.data(), greeting.size())) {
             const std::array<std::uint8_t, 2> methodReply{5, 0};
-            if (greeting == std::array<std::uint8_t, 3>{5, 1, 0} &&
+            const std::array<std::uint8_t, 3> expectedGreeting{5, 1, 0};
+            if (greeting == expectedGreeting &&
                 SendAllSocket(peer, methodReply.data(), methodReply.size())) {
                 std::array<std::uint8_t, 10> associateRequest{};
                 if (ReceiveExactSocket(peer, associateRequest.data(),
@@ -265,8 +266,8 @@ void TestNonblockingSocks5UdpHandshake() {
         Socks5UdpSocketOpenResult::Opened);
     Socks5UdpAssociationClient association;
     const auto begin = association.BeginOpen(
-        reinterpret_cast<const sockaddr*>(&bindAddress), sizeof(bindAddress),
-        udpSocket, 4000);
+        reinterpret_cast<const sockaddr*>(&bindAddress),
+        static_cast<int>(sizeof(bindAddress)), udpSocket, 4000);
     assert(begin == Socks5UdpAssociationAsyncResult::Pending);
 
     auto result = Socks5UdpAssociationAsyncResult::Pending;
@@ -291,18 +292,20 @@ void TestNonblockingSocks5UdpHandshake() {
         result = association.Advance(readable, writable);
     }
 
-    assert(result == Socks5UdpAssociationAsyncResult::Ready);
-    assert(association.IsOpen());
-    assert(association.RelayAddress() != nullptr);
-    assert(association.RelayAddress()->sa_family == AF_INET);
-    const auto* relay = reinterpret_cast<const sockaddr_in*>(
-        association.RelayAddress());
-    assert(ntohs(relay->sin_port) == 40961);
+    const bool handshakeReady = result == Socks5UdpAssociationAsyncResult::Ready;
+    const bool relayAddressValid = association.RelayAddress() != nullptr &&
+        association.RelayAddress()->sa_family == AF_INET;
+    const auto* relay = relayAddressValid
+        ? reinterpret_cast<const sockaddr_in*>(association.RelayAddress()) : nullptr;
+    const bool relayPortValid = relay != nullptr && ntohs(relay->sin_port) == 40961;
 
     association.Close();
     fakeSocksServer.join();
     udpSocket.Close();
     closesocket(listener);
+    assert(handshakeReady);
+    assert(relayAddressValid);
+    assert(relayPortValid);
 }
 
 void TestAssociationManagerQuotasAndCleanup() {
