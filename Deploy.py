@@ -636,7 +636,7 @@ def main():
             peOffset = int.from_bytes(driverData[0x3C:0x40], 'little')
             if (
                 peOffset + 6 > len(driverData)
-                or driverData[peOffset:peOffset + 4] != b'PE\\0\\0'
+                or driverData[peOffset:peOffset + 4] != b'PE\0\0'
                 or int.from_bytes(driverData[peOffset + 4:peOffset + 6], 'little') != 0x8664
             ):
                 raise ValueError('WFP driver is not a valid AMD64 PE image')
@@ -655,7 +655,7 @@ def main():
             shutil.copy2(packageReadme, driverPackage / 'README.txt')
             digest = hashlib.sha256(packagedDriver.read_bytes()).hexdigest()
             (driverPackage / 'FuriousWfpCallout.sha256').write_text(
-                f'{digest}  FuriousWfpCallout.sys\\n',
+                f'{digest}  FuriousWfpCallout.sys\n',
                 encoding='ascii',
             )
             logger.info(

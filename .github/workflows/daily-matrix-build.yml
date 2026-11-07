@@ -703,7 +703,7 @@ jobs:
 
           echo "Required deployment assets could not be downloaded after 3 attempts"
           exit 1
-      - name: Set up MSBuild and NuGet for the Windows WFP driver
+      - name: Set up MSBuild for the Windows WFP driver
         if: matrix.id == 'windows10-amd64'
         uses: microsoft/setup-msbuild@v2
 
@@ -717,8 +717,20 @@ jobs:
         run: |
           nuget restore packages.config -PackagesDirectory packages
           msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
-          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse |
-            Where-Object { $_.FullName -match '[\\/]x64[\\/]Release[\\/]FuriousWfpCallout\\.sys          if [[ -n "${{ matrix.windows-compatibility }}" ]]; then
+          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse | Select-Object -First 1
+          if ($null -eq $driver) {
+            throw 'The Windows 10 x64 WFP driver build did not produce FuriousWfpCallout.sys'
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "FURIOUS_WFP_DRIVER_BINARY=$($driver.FullName)" -Encoding utf8
+          Write-Host "WFP driver selected for ZIP: $($driver.FullName)"
+          Get-FileHash -LiteralPath $driver.FullName -Algorithm SHA256
+
+      - name: Run deploy script
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          FURIOUS_REQUIRE_WFP_DRIVER: "1"
+        run: |
+          if [[ -n "${{ matrix.windows-compatibility }}" ]]; then
             export WIN_VER_COMPATIBLE="${{ matrix.windows-compatibility }}"
           fi
           python Deploy.py
