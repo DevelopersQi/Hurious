@@ -37,6 +37,7 @@ import functools
 import csv
 import os
 import subprocess
+import ctypes
 
 from .Routing import (
     cleanRoutingRule,
@@ -1266,7 +1267,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             _('Rules are evaluated from top to bottom. The first matching app rule wins.')
         ))
         layout.addWidget(AppQLabel(
-            _('Available only on Windows with Xray-core Native TUN. Hysteria2 and Tun2socks need a separate traffic-classification driver and are not enabled yet.')
+            _('On Windows, full executable paths are applied through WFP application routing. Proxy rules currently cover TCP; UDP support is not enabled yet.')
         ))
         layout.addLayout(top)
         layout.addWidget(self.table, 1)
@@ -1294,8 +1295,38 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         enabledCheck.setToolTip(_('Enable or disable this application rule'))
         self.table.setCellWidget(row, 3, enabledCheck)
 
+    def _processImagePath(self, pid):
+        """Resolve a process ID to its full executable path using Win32 APIs."""
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        openProcess = kernel32.OpenProcess
+        openProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        openProcess.restype = wintypes.HANDLE
+        queryImage = kernel32.QueryFullProcessImageNameW
+        queryImage.argtypes = (
+            wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        )
+        queryImage.restype = wintypes.BOOL
+        closeHandle = kernel32.CloseHandle
+        closeHandle.argtypes = (wintypes.HANDLE,)
+        closeHandle.restype = wintypes.BOOL
+
+        handle = openProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ''
+        try:
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = wintypes.DWORD(len(buffer))
+            if not queryImage(handle, 0, buffer, ctypes.byref(length)):
+                return ''
+            return buffer.value
+        finally:
+            closeHandle(handle)
+
     def _runningProcesses(self):
-        """Read currently running Windows process names without extra packages."""
+        """Read running Windows processes and resolve full executable paths."""
         completed = subprocess.run(
             ['tasklist', '/FO', 'CSV', '/NH'], capture_output=True,
             text=True, encoding='mbcs', errors='replace', check=True,
@@ -1306,9 +1337,16 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             if len(row) < 2:
                 continue
             name, pid = row[0].strip(), row[1].strip()
-            if name and name.casefold() not in self.ProtectedProcesses:
-                processes[(name.casefold(), pid)] = (name, pid)
-        return sorted(processes.values(), key=lambda item: (item[0].casefold(), item[1]))
+            if not name or name.casefold() in self.ProtectedProcesses:
+                continue
+            path = self._processImagePath(pid)
+            if not path or os.path.basename(path).casefold() in self.ProtectedProcesses:
+                continue
+            processes[(path.casefold(), pid)] = (name, pid, path)
+        return sorted(
+            processes.values(),
+            key=lambda item: (item[0].casefold(), item[1]),
+        )
 
     def addRunningApplication(self):
         """Choose a running process and create a proxy-by-default rule."""
@@ -1328,15 +1366,15 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             )
             return
 
-        labels = [f'{name}  (PID {pid})' for name, pid in processes]
+        labels = [f'{name}  (PID {pid})' for name, pid, _path in processes]
         selected, accepted = QInputDialog.getItem(
             self, _('Select Running Application'), _('Application'), labels, 0, False,
         )
         if not accepted:
             return
 
-        name, _pid = processes[labels.index(selected)]
-        self._appendRule(name, name, 'proxy', True)
+        name, _pid, path = processes[labels.index(selected)]
+        self._appendRule(name, path.replace(chr(92), '/'), 'proxy', True)
 
     def addExecutable(self):
         """Add an executable by browsing to its full path."""
@@ -1417,6 +1455,10 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         except (TypeError, ValueError) as ex:
             QMessageBox.warning(self, _('Invalid Application Rule'), str(ex))
             return
+        try:
+            AppConnectionController().applyWfpApplicationRoutingPolicy()
+        except Exception:
+            logger.exception('failed to apply saved Windows application routing rules')
         self.accept()
 
 

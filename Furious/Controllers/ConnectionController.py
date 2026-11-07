@@ -41,6 +41,7 @@ from enum import Enum
 import queue
 import logging
 import functools
+import ntpath
 
 __all__ = ['ConnectionController', 'ConnectionError', 'ConnectionState']
 
@@ -228,6 +229,50 @@ class ConnectionController(QtCore.QObject):
         self._setState(ConnectionState.Connecting)
         self.progressStarted.emit()
 
+    def applyWfpApplicationRoutingPolicy(self):
+        """Apply saved absolute-path application rules to the active Windows core."""
+        if PLATFORM != 'Windows' or not self.isConnected():
+            return None
+
+        profile = self._activeProfile
+        try:
+            factory = getPluginRegistry().factoryForConfig(profile)
+            factoryId = str(getattr(factory, 'factoryId', '')).casefold()
+            backend = {
+                'official.xray': 1,
+                'official.hysteria2': 2,
+            }.get(factoryId)
+            if backend is None:
+                self._coreManager.clearWfpApplicationPolicy()
+                logger.info(
+                    f'WFP application routing is unavailable for backend: '
+                    f'{factoryId or "unknown"}'
+                )
+                return None
+
+            from Furious.Backends.Xray.Routing import getApplicationRoutingRules
+
+            rules = []
+            for rule in getApplicationRoutingRules():
+                imagePath = ntpath.normpath(str(rule.get('process', '')).strip())
+                if not ntpath.isabs(imagePath):
+                    logger.warning(
+                        f'skipping WFP application rule without an absolute EXE path: '
+                        f'{rule.get("process", "")}'
+                    )
+                    continue
+                rules.append({
+                    'image_path': imagePath,
+                    'action': rule.get('outboundTag', 'proxy'),
+                    'priority': int(rule.get('priority', 100)),
+                    'enabled': bool(rule.get('enabled', True)),
+                })
+
+            return self._coreManager.setWfpApplicationPolicy(rules, backend)
+        except Exception:
+            logger.exception('failed to apply saved WFP application routing policy')
+            return None
+
     def _finishConnecting(self):
         """Enter the connected state and notify connection-aware consumers."""
         self.progressFinished.emit(True)
@@ -235,6 +280,7 @@ class ConnectionController(QtCore.QObject):
         AppSettings.turnON_('Connect')
 
         self._setState(ConnectionState.Connected)
+        self.applyWfpApplicationRoutingPolicy()
 
         Mixins.ConnectionAware.callConnectedCallback()
 
