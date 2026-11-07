@@ -1242,6 +1242,25 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 f'WFP TCP broker started: pid={result.broker_process_id}, '
                 f'IPv4={result.tcp_port_v4}, IPv6={result.tcp_port_v6}'
             )
+            if self._wfpUdpExpected:
+                try:
+                    controller = self._wfpIpcController
+                    udpRequestId = controller.startUdpBroker(
+                        pending[2], pending[3],
+                        bool(result.tcp_port_v4), bool(result.tcp_port_v6),
+                    ) if controller is not None else None
+                except Exception as startError:
+                    logger.warning(f'WFP UDP broker start could not be queued: {startError}')
+                    udpRequestId = None
+                if udpRequestId is None:
+                    self._wfpBrokerEndpoint = None
+                    self._wfpTcpBrokerEndpoint = None
+                    self._wfpUdpExpected = False
+                    if self._wfpIpcController is not None:
+                        self._wfpIpcController.clearEndpointConfig()
+                        self._wfpIpcController.stopBroker()
+                    return
+                self._wfpUdpBrokerPending[udpRequestId] = pending
             self._completeWfpBrokerStartup()
         elif command == 'start-udp-broker' and result is not None:
             pending = self._wfpUdpBrokerPending.pop(requestId, None)
@@ -1421,6 +1440,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpUdpBrokerPending.clear()
             self._wfpBrokerPending.clear()
             self._wfpEndpointPending.clear()
+            self._wfpUdpExpected = False
 
             runtimeConfiguration = (
                 configuration.connection
@@ -1487,22 +1507,17 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 return None
 
             host, port = parseHostPort(endpoint)
+            socksPort = int(port)
             controller.queryStatus()
             self._wfpUdpExpected = udpSupported
             self._wfpTcpBrokerEndpoint = None
             self._wfpUdpBrokerEndpoint = None
-            requestId = controller.startBroker(host, int(port))
+            requestId = controller.startBroker(host, socksPort)
             if requestId is not None:
-                pending = (backend, self.wfpRuntimeSnapshot.generation)
+                # Start UDP only after TCP telemetry reveals which listener
+                # families actually came up on this machine.
+                pending = (backend, self.wfpRuntimeSnapshot.generation, host, socksPort)
                 self._wfpBrokerPending[requestId] = pending
-                if udpSupported:
-                    udpRequestId = controller.startUdpBroker(host, int(port))
-                    if udpRequestId is not None:
-                        self._wfpUdpBrokerPending[udpRequestId] = pending
-                    else:
-                        controller.stopBroker()
-                        self._wfpBrokerPending.pop(requestId, None)
-                        return None
             return requestId
         except Exception as error:
             logger.warning(f'WFP TCP/UDP broker start could not be queued: {error}')
@@ -1512,6 +1527,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
             self._wfpBrokerEndpoint = None
             self._wfpTcpBrokerEndpoint = None
             self._wfpUdpBrokerEndpoint = None
+            self._wfpUdpExpected = False
             self._wfpUdpBrokerPending.clear()
             self._wfpBrokerPending.clear()
             return None

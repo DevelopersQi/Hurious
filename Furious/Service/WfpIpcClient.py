@@ -442,10 +442,18 @@ class WfpIpcClient:
             listen_ipv4=listen_ipv4, listen_ipv6=listen_ipv6,
         )
         response = self.request(COMMAND_START_BROKER, payload)
+        requested_family_available = (
+            (listen_ipv4 and bool(response.tcp_port_v4))
+            or (listen_ipv6 and bool(response.tcp_port_v6))
+        )
+        unexpected_family = (
+            (not listen_ipv4 and bool(response.tcp_port_v4))
+            or (not listen_ipv6 and bool(response.tcp_port_v6))
+        )
         if (
             response.broker_process_id == 0
-            or bool(response.tcp_port_v4) != bool(listen_ipv4)
-            or bool(response.tcp_port_v6) != bool(listen_ipv6)
+            or not requested_family_available
+            or unexpected_family
         ):
             raise WfpIpcProtocolError(
                 "WFP TCP broker listener telemetry does not match requested address families"

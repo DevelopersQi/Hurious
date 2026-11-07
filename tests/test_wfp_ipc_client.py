@@ -177,14 +177,21 @@ class WfpIpcClientTest(unittest.TestCase):
         with self.assertRaises(WfpIpcProtocolError):
             WfpIpcClient(_Transport(response_mutator=corrupt)).status()
 
-    def testTcpBrokerRejectsMissingRequestedListenerFamily(self):
+    def testTcpBrokerAllowsPartialRequestedFamilySuccess(self):
         def remove_ipv6_tcp_port(response):
             return response[:38] + b"\x00\x00" + response[40:]
 
+        response = WfpIpcClient(
+            _Transport(response_mutator=remove_ipv6_tcp_port)
+        ).startBroker("127.0.0.1", 10808)
+        self.assertEqual(response.tcp_port_v4, 32001)
+        self.assertEqual(response.tcp_port_v6, 0)
+
+    def testTcpBrokerRejectsAnUnrequestedListenerFamily(self):
         with self.assertRaisesRegex(WfpIpcProtocolError, "address families"):
-            WfpIpcClient(
-                _Transport(response_mutator=remove_ipv6_tcp_port)
-            ).startBroker("127.0.0.1", 10808)
+            WfpIpcClient(_Transport()).startBroker(
+                "127.0.0.1", 10808, listen_ipv4=True, listen_ipv6=False
+            )
 
     def testUdpBrokerRejectsMissingRequestedListenerFamily(self):
         def remove_ipv6_udp_port(response):
