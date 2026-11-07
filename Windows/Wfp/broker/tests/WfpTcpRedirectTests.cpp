@@ -9,6 +9,7 @@
 #include "../WfpSocks5UdpRelayTransport.h"
 #include "../WfpSocks5UdpFlowRelay.h"
 #include "../WfpUdpFlowRelayRegistry.h"
+#include "../WfpUdpBrokerServer.h"
 #include "../WfpSocks5UdpControl.h"
 #include <chrono>
 #include <atomic>
@@ -1257,6 +1258,38 @@ void TestWfpUdpRegistryAsyncFlowStartup() {
     WSACleanup();
 }
 
+
+void TestUdpBrokerServerLifecycle() {
+    using namespace furious::wfp::broker;
+    WSADATA data{};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    {
+        SOCKET socksListener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        assert(socksListener != INVALID_SOCKET);
+        sockaddr_in socksAddress{};
+        socksAddress.sin_family = AF_INET;
+        socksAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socksAddress.sin_port = 0;
+        assert(bind(socksListener, reinterpret_cast<const sockaddr*>(&socksAddress),
+            sizeof(socksAddress)) == 0);
+        int length = sizeof(socksAddress);
+        assert(getsockname(socksListener, reinterpret_cast<sockaddr*>(&socksAddress),
+            &length) == 0);
+        UdpBrokerServer broker;
+        assert(broker.Start(reinterpret_cast<const sockaddr*>(&socksAddress),
+            sizeof(socksAddress), true, false, 8));
+        assert(broker.IsRunning());
+        const auto ports = broker.ListenerPorts();
+        assert(ports.ipv4 != 0 && ports.ipv6 == 0);
+        broker.Stop();
+        assert(!broker.IsRunning());
+        const auto stoppedPorts = broker.ListenerPorts();
+        assert(stoppedPorts.ipv4 == 0 && stoppedPorts.ipv6 == 0);
+        closesocket(socksListener);
+    }
+    WSACleanup();
+}
+
 void TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata() {
     using namespace furious::wfp::broker;
     WfpUdpFlowRelayRegistry registry(4, 2, std::chrono::seconds(10));
@@ -1736,6 +1769,7 @@ int main() {
     TestWfpUdpRedirectContextDecode();
     TestWfpUdpFlowManager();
     TestWfpUdpFlowRelayRegistryRequiresFirstPacketMetadata();
+    TestUdpBrokerServerLifecycle();
     TestWfpUdpRegistryAsyncFlowStartup();
     TestWfpUdpMessageReceive();
     TestWfpUdpRedirectRecordAncillaryData();
