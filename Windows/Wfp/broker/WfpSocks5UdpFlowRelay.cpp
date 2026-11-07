@@ -190,6 +190,9 @@ WfpSocks5UdpFlowRelayResult WfpSocks5UdpFlowRelay::ForwardUpstreamResponse(
 SOCKET WfpSocks5UdpFlowRelay::UdpSocket() const noexcept {
     return udpSocket_.NativeHandle();
 }
+SOCKET WfpSocks5UdpFlowRelay::ControlSocket() const noexcept {
+    return association_.ControlSocket();
+}
 const sockaddr* WfpSocks5UdpFlowRelay::OriginalClient() const noexcept {
     return originalClientLength_ == 0 ? nullptr :
         reinterpret_cast<const sockaddr*>(&originalClient_);

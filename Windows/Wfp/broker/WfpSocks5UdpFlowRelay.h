@@ -44,6 +44,7 @@ public:
         const Socks5UdpDatagramView& response, DWORD* bytesSent = nullptr) noexcept;
 
     SOCKET UdpSocket() const noexcept;
+    SOCKET ControlSocket() const noexcept;
     const sockaddr* OriginalClient() const noexcept;
     int OriginalClientLength() const noexcept;
 

@@ -256,7 +256,8 @@ bool WfpUdpFlowRelayRegistry::GetRelaySockets(
     try {
         output.reserve(relays_.size());
         for (const auto& item : relays_) {
-            output.push_back({item.first, item.second->UdpSocket()});
+            output.push_back({item.first, item.second->UdpSocket(),
+                item.second->ControlSocket()});
         }
     } catch (...) {
         output.clear();

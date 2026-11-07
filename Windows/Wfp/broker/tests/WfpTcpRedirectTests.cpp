@@ -921,6 +921,8 @@ void TestSocks5UdpFlowRelayBridge() {
         sizeof(tcpAddress), reinterpret_cast<const sockaddr*>(&clientAddress),
         sizeof(clientAddress), context, redirectRecord, 3000, &error) ==
         WfpSocks5UdpFlowRelayResult::Ready);
+    assert(bridge.UdpSocket() != INVALID_SOCKET);
+    assert(bridge.ControlSocket() != INVALID_SOCKET);
     const std::uint8_t payload[] = {0xCA, 0xFE, 0xBA, 0xBE};
     assert(bridge.SendClientPayload(payload, sizeof(payload), &error) ==
         WfpSocks5UdpFlowRelayResult::Ready);

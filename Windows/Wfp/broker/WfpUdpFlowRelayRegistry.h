@@ -29,6 +29,7 @@ enum class WfpUdpFlowRelayRegistryResult {
 struct WfpUdpRelaySocket final {
     std::uint64_t flowId = 0;
     SOCKET socket = INVALID_SOCKET;
+    SOCKET controlSocket = INVALID_SOCKET;
 };
 
 // Single-I/O-thread owner for UDP flow state and per-flow SOCKS5 relay sockets.
