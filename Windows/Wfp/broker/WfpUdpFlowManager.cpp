@@ -1,5 +1,7 @@
 #include "WfpUdpFlowManager.h"
 
+#include <ws2tcpip.h>
+
 #include <cstring>
 #include <utility>
 
