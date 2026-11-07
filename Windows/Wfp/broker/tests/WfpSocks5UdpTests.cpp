@@ -4,6 +4,8 @@
 #include "../WfpSocks5UdpAssociationManager.h"
 #include "../WfpSocks5UdpAssociationClient.h"
 #include "../WfpSocks5UdpSocket.h"
+#include "../WfpSocks5UdpRedirectRecord.h"
+#include "../../include/WfpRedirectProtocol.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -11,6 +13,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include <thread>
 
@@ -149,6 +152,46 @@ void TestAssociateControlMessages() {
     assert(ParseSocks5UdpAssociateReply(
         reply.data(), reply.size(), replyView) ==
         Socks5UdpAssociateReplyResult::InvalidPort);
+}
+
+void TestRedirectContextDecodeRequiresValidUdpMetadata() {
+    FURIOUS_WFP_REDIRECT_CONTEXT context{};
+    context.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    context.Size = sizeof(context);
+    context.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    context.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    context.OriginalPortNetworkOrder = 0x5000;
+    context.OriginalAddress[0] = 192;
+    context.OriginalAddress[1] = 0;
+    context.OriginalAddress[2] = 2;
+    context.OriginalAddress[3] = 1;
+    context.OriginalProcessId = 1234;
+    context.PolicyGeneration = 9;
+
+    std::vector<std::uint8_t> bytes(sizeof(context));
+    std::memcpy(bytes.data(), &context, sizeof(context));
+    FURIOUS_WFP_REDIRECT_CONTEXT decoded{};
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::Decoded);
+    assert(decoded.Protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_UDP);
+
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_TCP;
+    std::memcpy(bytes.data(), &context, sizeof(context));
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::NotUdp);
+    assert(decoded.Magic == 0);
+
+    context.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    context.Reserved[0] = 1;
+    std::memcpy(bytes.data(), &context, sizeof(context));
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::InvalidContext);
+    assert(decoded.Magic == 0);
+
+    bytes.pop_back();
+    assert(DecodeWfpUdpRedirectContext(bytes, decoded) ==
+        WfpUdpRedirectContextDecodeResult::InvalidSize);
 }
 
 void TestAssociationSourcePinningAndExpiry() {
@@ -342,6 +385,7 @@ int main() {
     TestDatagramRoundTrips();
     TestDatagramRejectsMalformedInput();
     TestAssociateControlMessages();
+    TestRedirectContextDecodeRequiresValidUdpMetadata();
     TestAssociationSourcePinningAndExpiry();
     TestAssociationManagerQuotasAndCleanup();
     TestNonblockingSocks5UdpHandshake();
