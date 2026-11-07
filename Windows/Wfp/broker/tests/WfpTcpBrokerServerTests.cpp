@@ -17,13 +17,25 @@ void TestBrokerServerLifecycle() {
         reinterpret_cast<const sockaddr*>(&socksAddress),
         sizeof(socksAddress),
         true,
-        false,
+        true,
         2,
         8));
     assert(server.IsRunning());
     assert(server.ProcessId() != 0);
-    assert(server.ListenerPorts().ipv4 != 0);
-    assert(server.ListenerPorts().ipv6 == 0);
+    const auto initialPorts = server.ListenerPorts();
+    assert(initialPorts.ipv4 != 0);
+    if (initialPorts.ipv6 != 0) {
+        SOCKET ipv6Client = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+        assert(ipv6Client != INVALID_SOCKET);
+        sockaddr_in6 ipv6Target{};
+        ipv6Target.sin6_family = AF_INET6;
+        ipv6Target.sin6_addr = in6addr_loopback;
+        ipv6Target.sin6_port = htons(initialPorts.ipv6);
+        assert(connect(ipv6Client,
+            reinterpret_cast<const sockaddr*>(&ipv6Target),
+            sizeof(ipv6Target)) == 0);
+        closesocket(ipv6Client);
+    }
     assert(server.IsConfiguredFor(
         reinterpret_cast<const sockaddr*>(&socksAddress),
         sizeof(socksAddress)));
@@ -38,6 +50,7 @@ void TestBrokerServerLifecycle() {
     server.Stop();
     assert(!server.IsRunning());
     assert(server.ListenerPorts().ipv4 == 0);
+    assert(server.ListenerPorts().ipv6 == 0);
 
     assert(server.Start(
         reinterpret_cast<const sockaddr*>(&socksAddress),
