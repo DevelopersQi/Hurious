@@ -81,7 +81,7 @@ jobs:
           Write-Host "Built driver: $($driver.FullName)"
           Get-FileHash $driver.FullName -Algorithm SHA256
 
-      - name: Create ephemeral test certificate and sign WFP driver
+      - name: Create ephemeral test certificate and verify test signature
         shell: pwsh
         timeout-minutes: 5
         run: |
@@ -133,9 +133,19 @@ jobs:
             & $signTool.FullName verify /pa /v $driver.FullName
             if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed with exit code $LASTEXITCODE" }
 
-            Write-Host 'Verifying kernel-mode driver signing policy.'
-            & $signTool.FullName verify /kp /v $driver.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Kernel-mode signature verification failed with exit code $LASTEXITCODE" }
+            # A self-created test certificate is intentionally not chained to a Microsoft
+            # production root. SignTool /kp therefore cannot be used as a pass criterion:
+            # it tests the production kernel signing chain, not TESTSIGNING acceptance.
+            # Validate the embedded Authenticode signature and pin it to this run's cert.
+            $signature = Get-AuthenticodeSignature -FilePath $driver.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Test driver signature is not valid: $($signature.StatusMessage)"
+            }
+            if ($null -eq $signature.SignerCertificate -or
+                $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+              throw 'Driver signer does not match the ephemeral test certificate.'
+            }
+            Write-Host "Test signature verified. Thumbprint: $($certificate.Thumbprint)"
 
             Copy-Item -LiteralPath $driver.FullName -Destination (Join-Path $output 'FuriousWfpCallout.sys')
             $hash = (Get-FileHash -LiteralPath (Join-Path $output 'FuriousWfpCallout.sys') -Algorithm SHA256).Hash
