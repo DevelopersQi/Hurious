@@ -1,5 +1,7 @@
 #include "WfpSocks5UdpSocket.h"
 
+#include <ws2tcpip.h>
+
 namespace furious::wfp::broker {
 
 Socks5UdpSocket::~Socks5UdpSocket() {
@@ -59,10 +61,11 @@ Socks5UdpSocketOpenResult Socks5UdpSocket::Open(
         }
         int length = sizeof(address);
         if (getsockname(socket_, reinterpret_cast<sockaddr*>(&address),
-                &length) == SOCKET_ERROR || ntohs(address.sin_port) == 0) {
-            const int error = WSAGetLastError();
-            return fail(Socks5UdpSocketOpenResult::QueryBoundPortFailed,
-                error == 0 ? WSAEINVAL : error);
+                &length) == SOCKET_ERROR) {
+            return fail(Socks5UdpSocketOpenResult::QueryBoundPortFailed, WSAGetLastError());
+        }
+        if (ntohs(address.sin_port) == 0) {
+            return fail(Socks5UdpSocketOpenResult::QueryBoundPortFailed, WSAEINVAL);
         }
         localPort_ = ntohs(address.sin_port);
     } else {
@@ -81,10 +84,11 @@ Socks5UdpSocketOpenResult Socks5UdpSocket::Open(
         }
         int length = sizeof(address);
         if (getsockname(socket_, reinterpret_cast<sockaddr*>(&address),
-                &length) == SOCKET_ERROR || ntohs(address.sin6_port) == 0) {
-            const int error = WSAGetLastError();
-            return fail(Socks5UdpSocketOpenResult::QueryBoundPortFailed,
-                error == 0 ? WSAEINVAL : error);
+                &length) == SOCKET_ERROR) {
+            return fail(Socks5UdpSocketOpenResult::QueryBoundPortFailed, WSAGetLastError());
+        }
+        if (ntohs(address.sin6_port) == 0) {
+            return fail(Socks5UdpSocketOpenResult::QueryBoundPortFailed, WSAEINVAL);
         }
         localPort_ = ntohs(address.sin6_port);
     }
