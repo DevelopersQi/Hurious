@@ -1348,10 +1348,10 @@ class ApplicationRoutingDialog(AppQTransientDialog):
             path = self._processImagePath(pid)
             if not path or os.path.basename(path).casefold() in self.ProtectedProcesses:
                 continue
-            processes[(path.casefold(), pid)] = (name, pid, path)
+            processes[path.casefold()] = (name, pid, path)
         return sorted(
             processes.values(),
-            key=lambda item: (item[0].casefold(), item[1]),
+            key=lambda item: (item[0].casefold(), item[2].casefold()),
         )
 
     def addRunningApplication(self):
