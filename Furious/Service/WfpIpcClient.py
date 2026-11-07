@@ -12,13 +12,14 @@ from threading import Lock
 import struct
 import sys
 import ipaddress
+import ntpath
 import time
 
 
 PIPE_NAME = r"\\.\pipe\FuriousWfpService.v2"
 IPC_MAGIC = 0x46575043
 IPC_VERSION = 2
-MAX_MESSAGE_SIZE = 64 * 1024
+MAX_MESSAGE_SIZE = 512 * 1024
 
 COMMAND_STATUS = 1
 COMMAND_SET_POLICY = 2
@@ -41,6 +42,9 @@ _HEADER = struct.Struct("<IHHIIQ")
 _RESPONSE = struct.Struct("<IHHIIQIIIHH")
 _ENDPOINT_CONFIG = struct.Struct("<IIIIIIQHHHHI8I")
 _BROKER_START = struct.Struct("<IIHHHH16s")
+_POLICY_HEADER = struct.Struct("<IIIIQ")
+_POLICY_RULE = struct.Struct("<IIIII520H")
+MAX_POLICY_RULES = 256
 
 
 class WfpIpcError(RuntimeError):
@@ -154,6 +158,63 @@ def pack_broker_start_request(
     return _BROKER_START.pack(
         _BROKER_START.size, 1, family, flags, port, 0, address_bytes
     )
+
+def pack_application_routing_policy(rules, backend, policy_generation):
+    """Serialize the native WFP policy ABI with UTF-16 Windows image paths."""
+    items = list(rules)
+    if len(items) > MAX_POLICY_RULES:
+        raise ValueError("application policy exceeds 256 rules")
+    backend = int(backend)
+    generation = int(policy_generation)
+    if not 0 <= backend <= 3:
+        raise ValueError("backend must be in range 0..3")
+    if not 0 < generation <= 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("policy_generation must be a non-zero uint64")
+    chunks = [_POLICY_HEADER.pack(_POLICY_HEADER.size, 1, len(items), backend, generation)]
+    priorities = set()
+    paths = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise TypeError("each application rule must be a mapping")
+        path = str(item.get("image_path", item.get("path", ""))).strip()
+        if not ntpath.isabs(path) or "\\x00" in path:
+            raise ValueError("application image path must be an absolute Windows path")
+        if any(ord(ch) < 0x20 or ch in "*?" for ch in path):
+            raise ValueError("application image path contains invalid characters")
+        try:
+            encoded = path.encode("utf-16le")
+        except UnicodeEncodeError as error:
+            raise ValueError("application image path is not valid UTF-16") from error
+        units = list(struct.unpack("<" + "H" * (len(encoded) // 2), encoded))
+        char_count = len(units)
+        if char_count < 3 or char_count >= 520:
+            raise ValueError("application image path length must be 3..519 UTF-16 units")
+        priority = int(item.get("priority", 0))
+        if not 0 <= priority <= 0xFFFFFFFF or priority in priorities:
+            raise ValueError("application rule priorities must be unique uint32 values")
+        priorities.add(priority)
+        path_key = path.casefold()
+        if path_key in paths:
+            raise ValueError("application image paths must be unique")
+        paths.add(path_key)
+        raw_action = item.get("action", "direct")
+        if isinstance(raw_action, str):
+            action = {"proxy": 1, "direct": 2}.get(raw_action.casefold(), 0)
+        else:
+            action = int(raw_action)
+        if action not in (1, 2):
+            raise ValueError("application action must be proxy or direct")
+        enabled = int(bool(item.get("enabled", True)))
+        if enabled and action == 1 and backend == 0:
+            raise ValueError("proxy rules require a selected backend")
+        image_units = units + [0] + [0] * (520 - char_count - 1)
+        chunks.append(_POLICY_RULE.pack(
+            _POLICY_RULE.size, priority, enabled, action, char_count, *image_units
+        ))
+    payload = b"".join(chunks)
+    if len(payload) + _HEADER.size > MAX_MESSAGE_SIZE:
+        raise ValueError("application policy exceeds the WFP IPC message limit")
+    return payload
 
 def pack_endpoint_config(
     *,
@@ -386,3 +447,10 @@ class WfpIpcClient:
         if response.broker_process_id or response.tcp_port_v4 or response.tcp_port_v6:
             raise WfpIpcProtocolError("WFP broker remained active after stop")
         return response
+
+    def setPolicy(self, rules, backend, policy_generation):
+        payload = pack_application_routing_policy(rules, backend, policy_generation)
+        return self.request(COMMAND_SET_POLICY, payload)
+
+    def clearPolicy(self):
+        return self.request(COMMAND_CLEAR_POLICY)

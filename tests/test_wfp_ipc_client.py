@@ -7,9 +7,12 @@ import unittest
 
 from Furious.Service.WfpIpcClient import (
     COMMAND_CLEAR_ENDPOINT_CONFIG,
+    MAX_MESSAGE_SIZE,
     COMMAND_SET_ENDPOINT_CONFIG,
     COMMAND_STATUS,
     COMMAND_START_BROKER,
+    COMMAND_SET_POLICY,
+    COMMAND_CLEAR_POLICY,
     COMMAND_STOP_BROKER,
     IPC_MAGIC,
     IPC_VERSION,
@@ -22,6 +25,7 @@ from Furious.Service.WfpIpcClient import (
     pack_endpoint_config,
     parse_response,
     pack_broker_start_request,
+    pack_application_routing_policy,
 )
 
 
@@ -69,6 +73,33 @@ class WfpIpcClientTest(unittest.TestCase):
             pack_broker_start_request("192.0.2.1", 10808)
         with self.assertRaises(ValueError):
             pack_broker_start_request("::1", 0)
+
+    def testApplicationPolicySerializationMatchesNativeAbi(self):
+        path = r"C:\Program Files\Furious\client.exe"
+        rules = [{"priority": 10, "action": "proxy", "enabled": True, "image_path": path}]
+        payload = pack_application_routing_policy(rules, 1, 77)
+        self.assertEqual(len(payload), 24 + 1060)
+        size, abi, count, backend, generation = struct.unpack("<IIIIQ", payload[:24])
+        self.assertEqual((size, abi, count, backend, generation), (24, 1, 1, 1, 77))
+        values = struct.unpack("<IIIII520H", payload[24:])
+        self.assertEqual(values[:5], (1060, 10, 1, 1, len(path)))
+        decoded = bytes().join(struct.pack("<H", unit) for unit in values[5:5 + values[4]])
+        self.assertEqual(decoded.decode("utf-16le"), path)
+        self.assertEqual(values[5 + values[4]], 0)
+
+    def testApplicationPolicyRejectsInvalidRulesAndSupportsMaximumCount(self):
+        with self.assertRaisesRegex(ValueError, "absolute Windows path"):
+            pack_application_routing_policy([{"priority": 1, "path": "relative.exe"}], 1, 1)
+        with self.assertRaisesRegex(ValueError, "backend"):
+            pack_application_routing_policy([{"priority": 1, "action": "proxy", "path": r"C:\a.exe"}], 0, 1)
+        with self.assertRaisesRegex(ValueError, "priorities"):
+            pack_application_routing_policy([
+                {"priority": 1, "path": r"C:\a.exe"},
+                {"priority": 1, "path": r"C:\b.exe"},
+            ], 1, 1)
+        rules = [{"priority": index, "path": r"C:\Apps\app%d.exe" % index} for index in range(256)]
+        payload = pack_application_routing_policy(rules, 1, 2)
+        self.assertLess(len(payload) + 24, MAX_MESSAGE_SIZE)
 
     def testEndpointConfigMatchesTheNativeSeventySixByteAbi(self):
         payload = pack_endpoint_config(
@@ -183,6 +214,12 @@ class WfpIpcClientTest(unittest.TestCase):
         client.stopBroker()
         self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
                          COMMAND_STOP_BROKER)
+        client.setPolicy([], 0, 1)
+        self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
+                         COMMAND_SET_POLICY)
+        client.clearPolicy()
+        self.assertEqual(struct.unpack("<I", transport.request[12:16])[0],
+                         COMMAND_CLEAR_POLICY)
 
 
 if __name__ == "__main__":

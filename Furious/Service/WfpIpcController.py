@@ -71,6 +71,10 @@ class _WfpIpcWorker:
                         result = client.stopBroker()
                     elif command == "set-endpoint":
                         result = client.setEndpointConfig(arguments[0])
+                    elif command == "set-policy":
+                        result = client.setPolicy(*arguments)
+                    elif command == "clear-policy":
+                        result = client.clearPolicy()
                     else:
                         raise ValueError("unsupported WFP IPC operation")
 
@@ -138,6 +142,15 @@ class WfpIpcController(QtCore.QObject):
     def setEndpointConfig(self, payload):
         """Submit a native endpoint configuration asynchronously."""
         return self._submit("set-endpoint", bytes(payload))
+
+    def setPolicy(self, rules, backend, policyGeneration):
+        """Replace application routing policy asynchronously."""
+        snapshot = tuple(dict(rule) for rule in rules)
+        return self._submit("set-policy", snapshot, backend, policyGeneration)
+
+    def clearPolicy(self):
+        """Remove all application-scoped WFP routing filters asynchronously."""
+        return self._submit("clear-policy")
 
     def close(self):
         """Stop accepting commands and let the worker drain queued requests."""

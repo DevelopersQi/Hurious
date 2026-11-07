@@ -5,6 +5,7 @@
 #include <sddl.h>
 
 #include <array>
+#include <vector>
 #include <cstring>
 
 namespace {
