@@ -478,7 +478,7 @@ void TestWfpUdpMessageReceive() {
         const std::uint8_t expected[] = {0x01, 0x02, 0x03, 0x04, 0x05};
         assert(sendto(sender, reinterpret_cast<const char*>(expected),
             sizeof(expected), 0, reinterpret_cast<const sockaddr*>(&receiverAddress),
-            sizeof(receiverAddress)) == sizeof(expected));
+            sizeof(receiverAddress)) == static_cast<int>(sizeof(expected)));
 
         std::uint8_t payload[64]{};
         std::vector<char> control(WSA_CMSG_SPACE(1024));

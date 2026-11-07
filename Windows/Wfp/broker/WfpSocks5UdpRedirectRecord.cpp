@@ -1,6 +1,7 @@
 #include "WfpSocks5UdpRedirectRecord.h"
 
 #include <cstring>
+#include <climits>
 #include <mstcpip.h>
 #include <ws2tcpip.h>
 
