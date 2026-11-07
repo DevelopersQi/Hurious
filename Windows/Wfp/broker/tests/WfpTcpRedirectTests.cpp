@@ -1141,7 +1141,12 @@ INT WSAAPI FakeRecvMsgWithoutSource(
     (void)socket;
     (void)overlapped;
     (void)completionRoutine;
-    if (message != nullptr) message->name = nullptr;
+    if (message != nullptr) {
+        message->name = nullptr;
+        message->namelen = 0;
+        message->Control.len = 0;
+        message->dwFlags = 0;
+    }
     if (bytesReceived != nullptr) *bytesReceived = 1;
     return 0;
 }
