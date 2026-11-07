@@ -1234,11 +1234,13 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         if hasProxyRules and self._wfpActiveConfiguration is not None:
             self._startWfpBroker(self._wfpActiveConfiguration)
-        elif not hasProxyRules:
-            controller.clearEndpointConfig()
-            controller.stopBroker()
+        else:
+            # Invalidate in-flight broker replies before queueing endpoint
+            # cleanup, so an old completion cannot re-enable a stale listener.
             self._wfpBrokerEndpoint = None
             self._wfpBrokerPending.clear()
+            controller.clearEndpointConfig()
+            controller.stopBroker()
 
         return requestId
 
@@ -1251,11 +1253,11 @@ class ConnectionManager(Mixins.CleanupOnExit):
         self._nextWfpPolicyGeneration()
         self._wfpPolicyHasProxyRules = False
         self._wfpPolicyBackend = 0
+        self._wfpBrokerEndpoint = None
+        self._wfpBrokerPending.clear()
         requestId = controller.clearPolicy()
         controller.clearEndpointConfig()
         controller.stopBroker()
-        self._wfpBrokerEndpoint = None
-        self._wfpBrokerPending.clear()
         return requestId
 
     def _startWfpBroker(self, configuration):
