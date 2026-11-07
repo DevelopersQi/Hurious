@@ -417,6 +417,35 @@ void TestUdpFlowManagerIpv6ScopeIdentity() {
         context, record, now, rejectedFlow) == WfpUdpFlowCreateResult::InvalidSource);
     assert(rejectedFlow == 0);
 
+    // The scope requirement is specific to link-local sources. A global
+    // unicast IPv6 source remains valid without an interface zone.
+    auto globalSource = source;
+    globalSource.sin6_addr = in6addr_any;
+    globalSource.sin6_addr.s6_addr[0] = 0x20;
+    globalSource.sin6_addr.s6_addr[1] = 0x01;
+    globalSource.sin6_addr.s6_addr[2] = 0x0D;
+    globalSource.sin6_addr.s6_addr[3] = 0xB8;
+    globalSource.sin6_addr.s6_addr[15] = 0x02;
+    globalSource.sin6_port = htons(53002);
+    std::uint64_t globalFlow = 0;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&globalSource), sizeof(globalSource),
+        context, record, now, globalFlow) == WfpUdpFlowCreateResult::Created);
+    assert(globalFlow != 0);
+    assert(manager.Remove(globalFlow));
+
+    // Unspecified and multicast source endpoints are never valid flow keys.
+    auto invalidSource = source;
+    invalidSource.sin6_addr = in6addr_any;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&invalidSource), sizeof(invalidSource),
+        context, record, now, rejectedFlow) == WfpUdpFlowCreateResult::InvalidSource);
+    invalidSource = source;
+    invalidSource.sin6_addr.s6_addr[0] = 0xFF;
+    assert(manager.RegisterFirstDatagram(
+        reinterpret_cast<const sockaddr*>(&invalidSource), sizeof(invalidSource),
+        context, record, now, rejectedFlow) == WfpUdpFlowCreateResult::InvalidSource);
+
     std::uint64_t firstFlow = 0;
     assert(manager.RegisterFirstDatagram(
         reinterpret_cast<const sockaddr*>(&source), sizeof(source),
