@@ -235,13 +235,19 @@ class ConnectionController(QtCore.QObject):
         if not self.isConnected():
             # Remove stale filters while disconnected; the saved policy is
             # reapplied after the next successful connection.
-            self._coreManager.clearWfpApplicationPolicy()
+            try:
+                self._coreManager.clearWfpApplicationPolicy()
+            except Exception:
+                logger.exception('failed to clear WFP application routing while disconnected')
             return None
 
         if SystemRuntime.isTUNMode():
             # WFP ALE redirect rules cannot make Direct traffic bypass an
             # already-installed full-tunnel route. Keep TUN routing authoritative.
-            self._coreManager.clearWfpApplicationPolicy()
+            try:
+                self._coreManager.clearWfpApplicationPolicy()
+            except Exception:
+                logger.exception('failed to disable WFP application routing in TUN mode')
             return None
 
         profile = self._activeProfile

@@ -1283,7 +1283,10 @@ class ConnectionManager(Mixins.CleanupOnExit):
         if sys.platform != 'win32':
             return None
         if SystemRuntime.isTUNMode():
-            self.clearWfpApplicationPolicy()
+            try:
+                self.clearWfpApplicationPolicy()
+            except Exception:
+                logger.exception('failed to disable WFP application routing in TUN mode')
             return None
         if not self._wfpPolicyHasProxyRules:
             return None
