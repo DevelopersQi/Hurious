@@ -4,10 +4,57 @@ from __future__ import annotations
 
 import unittest
 
-from Furious.Service.WfpRuntimeSnapshot import WfpRuntimeSnapshot
+from Furious.Service.WfpRuntimeSnapshot import (
+    WfpRuntimeSnapshot,
+    collect_live_proxy_process_ids,
+)
+
+
+class _Runtime:
+    def __init__(self, process_id, running=True):
+        self.processId = process_id
+        self._running = running
+
+    def isRunning(self):
+        return self._running
+
+
+class _BrokenRuntime:
+    processId = 1234
+
+    def isRunning(self):
+        raise RuntimeError("process state unavailable")
 
 
 class WfpRuntimeSnapshotTest(unittest.TestCase):
+    def test_collects_only_live_proxy_process_ids(self):
+        runtimes = [
+            _Runtime(300, running=True),
+            _Runtime(100, running=True),
+            _Runtime(200, running=False),
+            _Runtime(300, running=True),
+            _Runtime(None, running=True),
+            _Runtime(True, running=True),
+            _BrokenRuntime(),
+        ]
+
+        self.assertEqual(
+            collect_live_proxy_process_ids(runtimes),
+            (100, 300),
+        )
+
+    def test_can_exclude_packet_path_runtimes(self):
+        proxy = _Runtime(101)
+        packet_path = _Runtime(202)
+
+        self.assertEqual(
+            collect_live_proxy_process_ids(
+                (proxy, packet_path),
+                is_excluded_runtime=lambda runtime: runtime is packet_path,
+            ),
+            (101,),
+        )
+
     def test_accepts_empty_snapshot_for_a_committed_generation(self):
         snapshot = WfpRuntimeSnapshot(1, ())
 
