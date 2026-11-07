@@ -136,6 +136,37 @@ class WfpIpcWorkerTest(unittest.TestCase):
             ["start-broker-ok", "set-endpoint-ok", "stop-broker-ok"],
         )
 
+    def test_close_drains_accepted_requests_before_worker_exit(self):
+        started = Event()
+        release = Event()
+        completed = []
+
+        class BlockingClient:
+            def status(self):
+                started.set()
+                self.assert_released()
+                return "status-ok"
+
+            def assert_released(self):
+                if not release.wait(2):
+                    raise RuntimeError("test did not release the worker")
+
+        done = Event()
+
+        def on_complete(request_id, command, result, error):
+            completed.append((request_id, command, result, error))
+            done.set()
+
+        worker = _WfpIpcWorker(BlockingClient, on_complete)
+        self.assertTrue(worker.submit(1, "status"))
+        self.assertTrue(started.wait(2))
+        worker.close()
+        self.assertFalse(worker.submit(2, "status"))
+        release.set()
+
+        self.assertTrue(done.wait(2))
+        self.assertEqual(completed, [(1, "status", "status-ok", "")])
+
     def test_rejects_new_commands_after_close(self):
         worker = _WfpIpcWorker(lambda: None, lambda *args: None)
         worker.close()
