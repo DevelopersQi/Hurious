@@ -791,19 +791,19 @@ void TestSocks5UdpAssociateReplyParser() {
     assert(view.addressType == Socks5UdpAddressType::Domain);
     assert(view.addressLength == 9 && view.port == 443);
 
-    auto rejected = ipv4Reply;
+    std::vector<std::uint8_t> rejected(ipv4Reply, ipv4Reply + sizeof(ipv4Reply));
     rejected[1] = 0x05;
-    assert(ParseSocks5UdpAssociateReply(rejected, sizeof(rejected), view) ==
+    assert(ParseSocks5UdpAssociateReply(rejected.data(), rejected.size(), view) ==
         Socks5UdpAssociateReplyResult::ServerRejected);
     assert(view.replyCode == 0x05);
-    auto invalidReserved = ipv4Reply;
+    std::vector<std::uint8_t> invalidReserved(ipv4Reply, ipv4Reply + sizeof(ipv4Reply));
     invalidReserved[2] = 1;
-    assert(ParseSocks5UdpAssociateReply(invalidReserved, sizeof(invalidReserved), view) ==
+    assert(ParseSocks5UdpAssociateReply(invalidReserved.data(), invalidReserved.size(), view) ==
         Socks5UdpAssociateReplyResult::InvalidReservedField);
-    auto invalidPort = ipv4Reply;
+    std::vector<std::uint8_t> invalidPort(ipv4Reply, ipv4Reply + sizeof(ipv4Reply));
     invalidPort[8] = 0;
     invalidPort[9] = 0;
-    assert(ParseSocks5UdpAssociateReply(invalidPort, sizeof(invalidPort), view) ==
+    assert(ParseSocks5UdpAssociateReply(invalidPort.data(), invalidPort.size(), view) ==
         Socks5UdpAssociateReplyResult::InvalidPort);
     assert(ParseSocks5UdpAssociateReply(ipv4Reply, sizeof(ipv4Reply) - 1, view) ==
         Socks5UdpAssociateReplyResult::Truncated);
