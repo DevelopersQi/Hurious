@@ -128,20 +128,31 @@ inline DWORD StopBroker() noexcept {
     if (clearStatus != ERROR_SUCCESS &&
         clearStatus != ERROR_FILE_NOT_FOUND &&
         clearStatus != ERROR_PATH_NOT_FOUND) {
-        // Keep the listener alive if the driver may still redirect traffic to it.
+        // Keep listeners alive if the driver may still redirect traffic to them.
         return clearStatus;
     }
     GetTcpBrokerServer().Stop();
+    GetUdpBrokerServer().Stop();
+    return ERROR_SUCCESS;
+}
+inline DWORD StopUdpBroker() noexcept {
+    // UDP endpoint configuration and redirect filters remain deliberately disabled.
+    GetUdpBrokerServer().Stop();
     return ERROR_SUCCESS;
 }
 inline void PopulateBrokerResponse(FURIOUS_WFP_IPC_RESPONSE* response) noexcept {
     if (response == nullptr) return;
-    auto& broker = GetTcpBrokerServer();
-    if (!broker.IsRunning()) { response->BrokerProcessId = 0; response->TcpPortV4 = 0; response->TcpPortV6 = 0; return; }
-    const auto ports = broker.ListenerPorts();
-    response->BrokerProcessId = broker.ProcessId();
-    response->TcpPortV4 = ports.ipv4;
-    response->TcpPortV6 = ports.ipv6;
+    auto& tcp = GetTcpBrokerServer();
+    auto& udp = GetUdpBrokerServer();
+    const bool tcpRunning = tcp.IsRunning();
+    const bool udpRunning = udp.IsRunning();
+    const auto tcpPorts = tcpRunning ? tcp.ListenerPorts() : furious::wfp::broker::TcpBrokerListenerPorts{};
+    const auto udpPorts = udpRunning ? udp.ListenerPorts() : furious::wfp::broker::UdpBrokerListenerPorts{};
+    response->BrokerProcessId = (tcpRunning || udpRunning) ? GetCurrentProcessId() : 0;
+    response->TcpPortV4 = tcpPorts.ipv4;
+    response->TcpPortV6 = tcpPorts.ipv6;
+    response->UdpPortV4 = udpPorts.ipv4;
+    response->UdpPortV6 = udpPorts.ipv6;
 }
 inline DWORD StartBroker(const void* payload, size_t payloadSize) noexcept {
     if (payload == nullptr || payloadSize != sizeof(FURIOUS_WFP_BROKER_START_REQUEST)) return ERROR_INVALID_DATA;
@@ -180,6 +191,40 @@ inline DWORD StartBroker(const void* payload, size_t payloadSize) noexcept {
     const bool listenV6 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV6) != 0;
     return broker.Start(reinterpret_cast<const sockaddr*>(&address), addressLength, listenV4, listenV6) ? ERROR_SUCCESS : ERROR_GEN_FAILURE;
 }
+inline DWORD StartUdpBroker(const void* payload, size_t payloadSize) noexcept {
+    if (payload == nullptr || payloadSize != sizeof(FURIOUS_WFP_BROKER_START_REQUEST))
+        return ERROR_INVALID_DATA;
+    FURIOUS_WFP_BROKER_START_REQUEST request = {};
+    std::memcpy(&request, payload, sizeof(request));
+    if (request.Size != sizeof(request) ||
+        request.AbiVersion != FURIOUS_WFP_BROKER_ABI_VERSION ||
+        request.Reserved != 0 || request.SocksPort == 0 ||
+        (request.Flags & ~FURIOUS_WFP_BROKER_KNOWN_FLAGS) != 0 ||
+        request.Flags == 0) return ERROR_INVALID_PARAMETER;
+    sockaddr_storage address = {};
+    int addressLength = 0;
+    if (request.SocksAddressFamily == FURIOUS_WFP_BROKER_FAMILY_IPV4) {
+        for (size_t i = 4; i < sizeof(request.SocksAddress); ++i)
+            if (request.SocksAddress[i] != 0) return ERROR_INVALID_PARAMETER;
+        auto* ipv4 = reinterpret_cast<sockaddr_in*>(&address);
+        ipv4->sin_family = AF_INET;
+        ipv4->sin_port = htons(request.SocksPort);
+        std::memcpy(&ipv4->sin_addr, request.SocksAddress, 4);
+        addressLength = sizeof(sockaddr_in);
+    } else if (request.SocksAddressFamily == FURIOUS_WFP_BROKER_FAMILY_IPV6) {
+        auto* ipv6 = reinterpret_cast<sockaddr_in6*>(&address);
+        ipv6->sin6_family = AF_INET6;
+        ipv6->sin6_port = htons(request.SocksPort);
+        std::memcpy(&ipv6->sin6_addr, request.SocksAddress, 16);
+        addressLength = sizeof(sockaddr_in6);
+    } else return ERROR_INVALID_PARAMETER;
+    auto& broker = GetUdpBrokerServer();
+    if (broker.IsRunning()) return ERROR_SUCCESS;
+    const bool listenV4 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV4) != 0;
+    const bool listenV6 = (request.Flags & FURIOUS_WFP_BROKER_FLAG_LISTEN_IPV6) != 0;
+    return broker.Start(reinterpret_cast<const sockaddr*>(&address), addressLength,
+        listenV4, listenV6) ? ERROR_SUCCESS : ERROR_GEN_FAILURE;
+}
 inline DWORD DispatchCommand(uint32_t command,
                              const void* payload,
                              size_t payloadSize,
@@ -187,6 +232,8 @@ inline DWORD DispatchCommand(uint32_t command,
     switch (command) {
     case FURIOUS_WFP_IPC_COMMAND_START_BROKER: return StartBroker(payload, payloadSize);
     case FURIOUS_WFP_IPC_COMMAND_STOP_BROKER: return payloadSize == 0 ? StopBroker() : ERROR_INVALID_PARAMETER;
+    case FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER: return StartUdpBroker(payload, payloadSize);
+    case FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER: return payloadSize == 0 ? StopUdpBroker() : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_STATUS:
         return payloadSize == 0 ? ERROR_SUCCESS : ERROR_INVALID_PARAMETER;
     case FURIOUS_WFP_IPC_COMMAND_DRIVER_STATUS: {
