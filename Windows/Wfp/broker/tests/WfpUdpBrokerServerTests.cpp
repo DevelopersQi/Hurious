@@ -29,6 +29,14 @@ void TestUdpBrokerServerLifecycle() {
     assert(server.ListenerPorts().ipv4 == 0);
     assert(server.ListenerPorts().ipv6 == 0);
 
+    // A zero flow budget is invalid and must not publish a listener.
+    assert(!server.Start(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress), true, false, 0));
+    assert(!server.IsRunning());
+    assert(server.ListenerPorts().ipv4 == 0);
+    assert(server.ListenerPorts().ipv6 == 0);
+
     assert(server.Start(
         reinterpret_cast<const sockaddr*>(&socksAddress),
         sizeof(socksAddress), true, false, 8));
@@ -36,6 +44,14 @@ void TestUdpBrokerServerLifecycle() {
     const auto ports = server.ListenerPorts();
     assert(ports.ipv4 != 0);
     assert(ports.ipv6 == 0);
+
+    // A second Start while running must fail without replacing live endpoints.
+    assert(!server.Start(
+        reinterpret_cast<const sockaddr*>(&socksAddress),
+        sizeof(socksAddress), true, false, 16));
+    const auto unchangedPorts = server.ListenerPorts();
+    assert(unchangedPorts.ipv4 == ports.ipv4);
+    assert(unchangedPorts.ipv6 == ports.ipv6);
 
     // The listener is loopback-only and bound to an ephemeral UDP port.
     SOCKET client = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
