@@ -82,6 +82,18 @@ void TestUdpRelaySendWouldBlockIsExplicitAndRetryable() {
         &error, &FakeUdpSendTo);
     assert(result == Socks5UdpRelayIoResult::SocketError);
     assert(error == WSAECONNRESET && g_fakeSendCalls == 3);
+
+    // UDP sends are atomic: a short positive result must never be treated as
+    // success or retried as though only a stream fragment had been written.
+    g_fakeSendResult = static_cast<int>(10 + payload.size()) - 1;
+    error = 0;
+    result = SendSocks5UdpToRelay(1,
+        reinterpret_cast<const sockaddr*>(&relay), sizeof(relay),
+        Socks5UdpAddressType::Ipv4, target.data(), target.size(), 443,
+        payload.data(), payload.size(), kMaximumSocks5UdpDatagramSize,
+        &error, &FakeUdpSendTo);
+    assert(result == Socks5UdpRelayIoResult::ShortSend);
+    assert(error == WSAEMSGSIZE && g_fakeSendCalls == 4);
 }
 
 bool ReceiveExactSocket(SOCKET socket, std::uint8_t* output, std::size_t length);
