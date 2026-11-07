@@ -7,7 +7,7 @@
 namespace furious::wfp::broker {
 
 enum class WfpSocks5UdpFlowRelayResult {
-    Ready, AlreadyOpen, InvalidArgument, SocketOpenFailed, AssociationOpenFailed,
+    Ready, Pending, AlreadyOpen, InvalidArgument, SocketOpenFailed, AssociationOpenFailed,
     NotReady, ControlClosed, SendFailed, ReceivePending, ReceiveFailed,
     UnexpectedDestination, ForwardFailed
 };
@@ -29,6 +29,21 @@ public:
         ActiveSocketRegister registerSocket = nullptr,
         ActiveSocketUnregister unregisterSocket = nullptr,
         void* callbackContext = nullptr) noexcept;
+
+    // Async variant used by the UDP broker event loop. It never waits for
+    // SOCKS5 connect/handshake completion.
+    WfpSocks5UdpFlowRelayResult BeginOpen(
+        const sockaddr* socksAddress, int socksAddressLength,
+        const sockaddr* originalClient, int originalClientLength,
+        const FURIOUS_WFP_REDIRECT_CONTEXT& context,
+        const std::vector<std::uint8_t>& redirectRecord,
+        DWORD timeoutMilliseconds = 5000, int* errorCode = nullptr,
+        ActiveSocketRegister registerSocket = nullptr,
+        ActiveSocketUnregister unregisterSocket = nullptr,
+        void* callbackContext = nullptr) noexcept;
+    WfpSocks5UdpFlowRelayResult AdvanceOpen(
+        bool readable, bool writable, int* errorCode = nullptr) noexcept;
+    bool IsOpening() const noexcept;
 
     void Close() noexcept;
     bool IsOpen() const noexcept;
