@@ -96,7 +96,7 @@ DWORD WriteResponse(HANDLE pipe, const FURIOUS_WFP_IPC_RESPONSE& response) noexc
 }
 
 DWORD ServeClient(HANDLE pipe, HANDLE stopEvent, furious::wfp::Engine* engine) noexcept {
-    std::array<BYTE, FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE> requestBytes = {};
+    std::vector<BYTE> requestBytes(FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE);
     DWORD requestSize = 0;
     if (!ReadRequest(pipe, stopEvent, requestBytes.data(),
                      static_cast<DWORD>(requestBytes.size()), &requestSize)) {

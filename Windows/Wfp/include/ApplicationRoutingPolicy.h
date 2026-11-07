@@ -49,3 +49,9 @@ typedef struct FURIOUS_WFP_POLICY_HEADER {
 #ifdef __cplusplus
 }
 #endif
+
+#ifdef __cplusplus
+static_assert(sizeof(wchar_t) == 2, "WFP policy ABI requires UTF-16 wchar_t");
+static_assert(sizeof(FURIOUS_WFP_POLICY_HEADER) == 24, "WFP policy header ABI must be 24 bytes");
+static_assert(sizeof(FURIOUS_WFP_APPLICATION_RULE) == 1060, "WFP application rule ABI must be 1060 bytes");
+#endif
