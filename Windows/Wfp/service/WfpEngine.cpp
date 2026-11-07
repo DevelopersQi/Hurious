@@ -320,12 +320,27 @@ DWORD Engine::EnsureProviderAndSublayer() {
 DWORD Engine::InstallRedirectFilters() {
     if (handle_ == nullptr) return ERROR_INVALID_HANDLE;
 
-    // Commit removal of legacy catch-all filters separately. If callout
-    // registration fails, no system-wide redirect filter is left behind.
-    DWORD status = FwpmTransactionBegin0(handle_, 0);
+    // Remove application filters left persistent by older service versions.
+    // Current policy filters are dynamic-session objects, but a service
+    // upgrade must also reconcile legacy persistent filters before exposing
+    // the callout layers again.
+    std::vector<GUID> staleApplicationKeys;
+    DWORD status = EnumerateApplicationFilterKeys(handle_, &staleApplicationKeys);
     if (status != ERROR_SUCCESS) return status;
-    status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV4FilterKey,
-        kConnectRedirectV4CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V4);
+
+    // Commit removal of stale application and legacy catch-all filters
+    // separately. If callout registration fails, no stale redirect filter is
+    // left behind.
+    status = FwpmTransactionBegin0(handle_, 0);
+    if (status != ERROR_SUCCESS) return status;
+    for (const GUID& key : staleApplicationKeys) {
+        status = DeleteApplicationFilter(handle_, key);
+        if (status != ERROR_SUCCESS) break;
+    }
+    if (status == ERROR_SUCCESS) {
+        status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV4FilterKey,
+            kConnectRedirectV4CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V4);
+    }
     if (status == ERROR_SUCCESS) {
         status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV6FilterKey,
             kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
