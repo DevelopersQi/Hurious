@@ -7,6 +7,7 @@
 #include "WfpEngine.h"
 #include "WfpPolicyCompiler.h"
 #include "../broker/WfpTcpBrokerServer.h"
+#include "../broker/WfpUdpBrokerServer.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -116,6 +117,10 @@ inline DWORD CopyCompiledPolicySnapshot(
 
 inline furious::wfp::broker::TcpBrokerServer& GetTcpBrokerServer() noexcept {
     static furious::wfp::broker::TcpBrokerServer server;
+    return server;
+}
+inline furious::wfp::broker::UdpBrokerServer& GetUdpBrokerServer() noexcept {
+    static furious::wfp::broker::UdpBrokerServer server;
     return server;
 }
 inline DWORD StopBroker() noexcept {

@@ -60,6 +60,9 @@ DWORD CleanupWfp(
 
     // At this point either the endpoint is clear or no redirect filters remain.
     furious::wfp::ipc::GetTcpBrokerServer().Stop();
+    // The UDP broker shares the endpoint/filter safety contract: stop it only
+    // after the redirect endpoint is cleared or all redirect filters are gone.
+    furious::wfp::ipc::GetUdpBrokerServer().Stop();
 
     if (filtersInstalled) {
         const DWORD filterStatus = engine.RemoveRedirectFilters();
