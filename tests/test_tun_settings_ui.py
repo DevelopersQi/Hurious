@@ -204,6 +204,35 @@ class TUNSettingsUITest(unittest.TestCase):
             source,
         )
 
+    def test_settings_categories_separate_tun_dns_from_system_proxy(self):
+        source = read_source('Furious/Window/SettingsPage.py')
+        self.assertIn("self.tunSection = _SettingsSection(_('TUN & DNS'))", source)
+        self.assertIn("self.tunSection.addCard(self.tunSettingsCard)", source)
+        self.assertIn("self.tunSection.addCard(self.tunModeCard)", source)
+        self.assertIn("self.tunSection.addCard(self.tunBackendCard)", source)
+        self.assertIn("self.connectionSection.addCard(self.systemProxyCard)", source)
+        self.assertIn("('TUN & DNS', (self.tunSection,))", source)
+        self.assertIn('self.categoryList.currentRowChanged.connect(', source)
+        self.assertIn('self.categoryStack.setCurrentIndex', source)
+
+    def test_settings_category_names_have_chinese_translations(self):
+        catalogue = translation_catalogue()
+        self.assertEqual(catalogue['TUN & DNS'].get('ZH'), 'TUN 与 DNS 设置')
+        for key in (
+            'General',
+            'Connection',
+            'TUN & DNS',
+            'Routing Rules',
+            'Network',
+            'Privacy and Statistics',
+            'Advanced',
+            'Application',
+            'Plugins',
+        ):
+            with self.subTest(key=key):
+                self.assertIn(key, catalogue)
+                self.assertTrue(catalogue[key].get('ZH'))
+
     def test_manual_tun_backend_overrides_are_kept_out_of_general_settings(self):
         source = read_source('Furious/Window/SettingsPage.py')
         self.assertNotIn(
