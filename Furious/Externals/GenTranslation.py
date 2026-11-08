@@ -139,6 +139,26 @@ TRANSLATION = {
         "ZH": "TUN 与 DNS 设置",
         "isReviewed": "True"
     },
+    "Backend-specific settings": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "后端专属设置",
+        "isReviewed": "True"
+    },
+    "Configure the Tun2socks adapter, network interface, DNS and routing options.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "配置 Tun2socks 虚拟适配器、网络接口、DNS 和路由参数。",
+        "isReviewed": "True"
+    },
+    "Configure Xray-core native TUN interface and routing parameters.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "配置 Xray-core 原生 TUN 接口和路由参数。",
+        "isReviewed": "True"
+    },
+    "Configure Hysteria 2 native TUN interface and routing parameters.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "配置 Hysteria 2 原生 TUN 接口和路由参数。",
+        "isReviewed": "True"
+    },
     "Routing Rules": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "路由规则",
