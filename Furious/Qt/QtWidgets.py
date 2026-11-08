@@ -2402,7 +2402,9 @@ class MBoxNewChangesNextTime(AppQMessageBox):
     @staticmethod
     def customText() -> str:
         """Return the concise settings-change confirmation."""
-        return _('The new settings will take effect the next time you connect. Reconnect now?')
+        return _(
+            'The new settings will take effect the next time you connect. Reconnect now?'
+        )
 
     def retranslate(self):
         """Refresh translated title, message, and action labels."""
