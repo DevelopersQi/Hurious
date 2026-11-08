@@ -26,6 +26,7 @@ from Furious.Plugins.Runtime import serializeRuntimeConfiguration
 from Furious.Backends.Configuration import *
 
 from .Process import Hysteria2
+from .Stats import Hysteria2StatsProvider
 from .ProtocolEditors import HYSTERIA2_PROTOCOL_EDITORS
 from .Protocols import HYSTERIA2_PROTOCOL_HANDLERS
 from .TUN import *
@@ -194,4 +195,5 @@ class Hysteria2Plugin(FuriousPlugin):
             *HYSTERIA2_PROTOCOL_HANDLERS,
             *HYSTERIA2_PROTOCOL_EDITORS,
             Hysteria2CoreRuntimeFactory(),
+            Hysteria2StatsProvider(),
         )
