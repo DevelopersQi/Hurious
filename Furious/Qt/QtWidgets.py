@@ -2380,27 +2380,35 @@ class MBoxNewChangesNextTime(AppQMessageBox):
         """Initialize the MBoxNewChangesNextTime."""
         super().__init__(*args, **kwargs)
 
-        self.setWindowTitle(_(APPLICATION_NAME))
+        self.setWindowTitle(_('Settings changed'))
         self.setIcon(AppQMessageBox.Icon.Information)
         self.setStandardButtons(
             AppQMessageBox.StandardButton.Yes | AppQMessageBox.StandardButton.No
         )
+        self.setDefaultButton(AppQMessageBox.StandardButton.Yes)
+        self._applyButtonTexts()
         self.setText(self.customText())
+
+    def _applyButtonTexts(self):
+        """Use action-oriented labels instead of generic Yes/No buttons."""
+        reconnectButton = self.button(AppQMessageBox.StandardButton.Yes)
+        laterButton = self.button(AppQMessageBox.StandardButton.No)
+
+        if reconnectButton is not None:
+            reconnectButton.setText(_('Reconnect now'))
+        if laterButton is not None:
+            laterButton.setText(_('Later'))
 
     @staticmethod
     def customText() -> str:
-        """Return the user-facing message text for the m box new changes next time."""
-        return (
-            _('New changes will take effect next time') + '\n\n' + _('Reconnect now?')
-        )
+        """Return the concise settings-change confirmation."""
+        return _('The new settings will take effect the next time you connect. Reconnect now?')
 
     def retranslate(self):
-        """Refresh translated text for the m box new changes next time."""
-        self.setWindowTitle(_(self.windowTitle()))
+        """Refresh translated title, message, and action labels."""
+        self.setWindowTitle(_('Settings changed'))
         self.setText(self.customText())
-
-        # Ignore informative text, buttons
-
+        self._applyButtonTexts()
         self.moveToCenter()
 
 
