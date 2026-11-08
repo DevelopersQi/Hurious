@@ -240,7 +240,7 @@ class TUNSettingsUITest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'self.connectionSection.addCard(self.tunBackendCard)',
+            'self.tunSection.addCard(self.tunBackendCard)',
             source,
         )
 
