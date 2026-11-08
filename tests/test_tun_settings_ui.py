@@ -317,6 +317,23 @@ class TUNSettingsUITest(unittest.TestCase):
             source,
         )
 
+    def test_home_tun_title_is_stable_and_switch_owns_the_actual_state(self):
+        source = read_source('Furious/Window/TunSettingsDialog.py')
+        tree = ast.parse(source)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == 'tunModeTitle'
+        )
+        function_source = ast.get_source_segment(source, function)
+
+        self.assertIn("return _('TUN Mode')", function_source)
+        self.assertNotIn('SystemRuntime.isAdmin()', function_source)
+        self.assertNotIn('TUN Mode Disabled', function_source)
+
+        home = read_source('Furious/Window/HomePage.py')
+        self.assertIn("self.tunModeSwitch.toggled.connect(self.handleTUNModeChanged)", home)
+        self.assertIn('AppSettingsController().setTUNMode(enabled)', home)
+
     def test_home_and_settings_tun_switches_share_the_elevation_handoff(self):
         home = read_source('Furious/Window/HomePage.py')
         settings = read_source('Furious/Window/SettingsPage.py')
