@@ -858,6 +858,8 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self,
         *,
         tunSettingsDialogFactory,
+        xrayTunSettingsDialogFactory=None,
+        hysteria2TunSettingsDialogFactory=None,
         proxyBypassDialog,
         networkTestDialog,
         checkForUpdates,
@@ -874,6 +876,8 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
 
         (
             self._tunSettingsDialogFactory,
+            self._xrayTunSettingsDialogFactory,
+            self._hysteria2TunSettingsDialogFactory,
             self._proxyBypassDialog,
             self._networkTestDialog,
             self._checkForUpdates,
@@ -883,6 +887,8 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             self._openRoutingEditor,
         ) = (
             tunSettingsDialogFactory,
+            xrayTunSettingsDialogFactory,
+            hysteria2TunSettingsDialogFactory,
             proxyBypassDialog,
             networkTestDialog,
             checkForUpdates,
@@ -1083,6 +1089,24 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
 
         self.tunSection.addCard(self.tunModeCard)
         self.tunSection.addCard(self.tunBackendCard)
+        self.tunSection.addCard(self.tunSettingsCard)
+
+        self.xrayTunSettingsCard = _ActionSettingsCard(
+            'diagram-3.svg',
+            self._openXrayTUNSettings,
+            _('Customize Xray-core TUN Settings...'),
+            _('Use Xray-core built-in TUN.'),
+            _('Open'),
+        )
+        self.hysteria2TunSettingsCard = _ActionSettingsCard(
+            'diagram-3.svg',
+            self._openHysteria2TUNSettings,
+            _('Customize Hysteria2 TUN Settings...'),
+            _('Use Hysteria 2 built-in TUN.'),
+            _('Open'),
+        )
+        self.tunSection.addCard(self.xrayTunSettingsCard)
+        self.tunSection.addCard(self.hysteria2TunSettingsCard)
         self.connectionSection.addCard(self.systemProxyCard)
 
         self.customRoutingCard = None
@@ -1504,6 +1528,16 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
     def _openTUNSettings(self):
         """Create and retain the existing Tun2socks settings dialog."""
         self._tunSettingsDialogFactory(parent=self).open()
+
+    def _openXrayTUNSettings(self):
+        """Open the persisted Xray-core native TUN editor."""
+        if callable(self._xrayTunSettingsDialogFactory):
+            self._xrayTunSettingsDialogFactory(parent=self).open()
+
+    def _openHysteria2TUNSettings(self):
+        """Open the persisted Hysteria 2 native TUN editor."""
+        if callable(self._hysteria2TunSettingsDialogFactory):
+            self._hysteria2TunSettingsDialogFactory(parent=self).open()
 
     def _showEndpointPrivacy(self):
         """Show the end-user disclosure for the active endpoint providers."""
