@@ -1075,9 +1075,16 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
     @staticmethod
     def openApplicationFolder():
         """Open application folder."""
-        appFolder = os.path.dirname(APP().applicationFilePath())
+        applicationPath = APP().applicationFilePath()
 
-        if QDesktopServices.openUrl(QtCore.QUrl(appFolder)):
+        if not applicationPath:
+            logger.error('open application folder failed: application path is empty')
+            return
+
+        appFolder = os.path.dirname(os.path.abspath(applicationPath))
+        folderURL = QtCore.QUrl.fromLocalFile(appFolder)
+
+        if QDesktopServices.openUrl(folderURL):
             logger.info(f'open application folder \'{appFolder}\' success')
         else:
             logger.error(f'open application folder \'{appFolder}\' failed')
