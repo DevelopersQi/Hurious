@@ -29,6 +29,9 @@ import time
 import logging
 import functools
 import multiprocessing
+import json
+import os
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +71,36 @@ class Hysteria2(MultiprocessingRuntime):
         # Windows shutting down
         SystemShuttingDown = 0x40010004
 
-    def __init__(self, configuration: str, **kwargs):
-        """Initialize a fully prepared Hysteria 2 execution runtime."""
+    def __init__(self, configuration: str, *, enableTrafficStats=True, **kwargs):
+        """Initialize a runtime with a private local traffic-counter channel."""
+        self.hysteria2StatsFile = ''
+        statsPath = ''
+
+        if enableTrafficStats:
+            try:
+                descriptor, statsPath = tempfile.mkstemp(
+                    prefix='furious-hysteria2-traffic-',
+                    suffix='.json',
+                )
+                os.close(descriptor)
+                payload = json.loads(configuration)
+                if not isinstance(payload, dict):
+                    raise ValueError('runtime configuration must be a JSON object')
+                payload['furiousStatsFile'] = statsPath
+                configuration = json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(',', ':'),
+                )
+                self.hysteria2StatsFile = statsPath
+            except (OSError, TypeError, ValueError):
+                if statsPath:
+                    try:
+                        os.remove(statsPath)
+                    except OSError:
+                        pass
+                logger.warning('Hysteria 2 local traffic statistics are unavailable')
+
         super().__init__(
             lambda output: ProcessLaunchSpec(
                 target=startHysteria2,
@@ -78,6 +109,29 @@ class Hysteria2(MultiprocessingRuntime):
             ),
             **kwargs,
         )
+
+    def _removeTrafficStatsFile(self):
+        """Remove this runtime's private counter snapshot."""
+        path = self.hysteria2StatsFile
+        if not path:
+            return
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.debug('failed to remove Hysteria 2 traffic snapshot')
+
+    def _consumeExit(self):
+        """Clean up local statistics after the child process has exited."""
+        event = super()._consumeExit()
+        self._removeTrafficStatsFile()
+        return event
+
+    def stop(self):
+        """Stop the core and release its local statistics snapshot."""
+        super().stop()
+        self._removeTrafficStatsFile()
 
     @staticmethod
     def name() -> str:

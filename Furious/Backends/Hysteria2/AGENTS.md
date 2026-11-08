@@ -21,11 +21,13 @@ Hysteria 2's nested upstream document, native-TUN capability, statistics, and ed
   path does not grant an embedded native-TUN core the same privileges. Test these availability decisions separately.
   Probe/download copies always remove native TUN. Managed preparation currently resolves server addresses
   synchronously; do not describe the whole native-TUN stage as event-driven merely because readiness is asynchronous.
-- The statistics provider is a process-lifetime capability; the runtime captures a configured server-API target and
-  sampling owns its monitor/query lifetime. API URL, client ID, and authorization secret are distinct from client
-  connection credentials. Keep requests bounded, validate counters, and never log the secret or infer statistics
-  from merely having a running Hysteria2 process. The configured server statistics target is separate from the
-  client's local readiness endpoint; capability availability does not imply a usable target was configured.
+- Traffic statistics are client-local and require no server API, URL, client ID, or secret. The embedded
+  Hysteria 2 client wraps its common TCP/UDP outbound interfaces and counts successfully transferred proxy payload
+  bytes (TCP writes/reads and UDP sends/receives), then publishes bounded snapshots to a private runtime-owned file.
+  The Python provider reads only fresh, validated snapshots through the shared TrafficStatsManager. Do not count
+  QUIC framing, retransmissions, or connection-handshake bytes as proxy payload, and never infer traffic from a
+  running process. Missing, stale, malformed, or unreadable snapshots mean statistics are unavailable, not zero.
+  The runtime owns the file lifecycle and removes it on exit/stop.
 - Capability presence is independent: native TUN, statistics, actions, settings, routing, and protocol editing must
   continue to work or fail through their own declared contracts rather than being inferred from the runtime type.
 - Verify nested sibling/default preservation, known and unknown values, obfuscation switching, URI/document

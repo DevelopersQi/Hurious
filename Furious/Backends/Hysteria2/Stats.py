@@ -15,194 +15,101 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Query Hysteria 2 server traffic statistics through its HTTP API."""
+"""Read Hysteria 2's local client-side proxy payload counters."""
 
 from __future__ import annotations
 
-from Furious.Frozenlib import AppSettings, registerAppSettings
 from Furious.Plugins.API import (
     TrafficCounters,
     TrafficStatsMonitor,
     TrafficStatsProvider,
 )
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Optional
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
-
 import json
+import os
+import time
 
 from .Process import Hysteria2
 
 __all__ = [
-    'HYSTERIA2_STATS_CLIENT_ID_SETTING',
-    'HYSTERIA2_STATS_SECRET_SETTING',
-    'HYSTERIA2_STATS_URL_SETTING',
     'Hysteria2StatsProvider',
     'Hysteria2StatsTarget',
-    'configuredHysteria2StatsTarget',
-    'normalizeHysteria2StatsURL',
     'queryHysteria2TrafficStats',
 ]
 
-HYSTERIA2_STATS_URL_SETTING = 'Hysteria2TrafficStatsURL'
-HYSTERIA2_STATS_CLIENT_ID_SETTING = 'Hysteria2TrafficStatsClientID'
-HYSTERIA2_STATS_SECRET_SETTING = 'Hysteria2TrafficStatsSecret'
-HYSTERIA2_STATS_QUERY_TIMEOUT = 2
-HYSTERIA2_STATS_RESPONSE_LIMIT = 2 * 1024 * 1024
-
-registerAppSettings(HYSTERIA2_STATS_URL_SETTING)
-registerAppSettings(HYSTERIA2_STATS_CLIENT_ID_SETTING)
-registerAppSettings(HYSTERIA2_STATS_SECRET_SETTING)
+HYSTERIA2_STATS_MAX_AGE_SECONDS = 8
+HYSTERIA2_STATS_MAX_FILE_SIZE = 64 * 1024
 
 
 @dataclass(frozen=True)
 class Hysteria2StatsTarget:
-    """Describe one authenticated Hysteria 2 server statistics endpoint."""
+    """Identify one runtime-owned local counter snapshot file."""
 
-    trafficURL: str
-    clientId: str
-    secret: str = ''
-    timeout: int = HYSTERIA2_STATS_QUERY_TIMEOUT
+    path: str
 
 
-def normalizeHysteria2StatsURL(value: str) -> Optional[str]:
-    """Return an HTTP(S) URL ending at the documented ``/traffic`` endpoint."""
-    if not isinstance(value, str) or not value.strip():
+def _counter(value) -> Optional[int]:
+    """Accept only non-negative integer byte counters."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
-
-    candidate = value.strip()
-
-    if '://' not in candidate:
-        candidate = f'http://{candidate}'
-
-    try:
-        parsed = urlsplit(candidate)
-    except ValueError:
-        return None
-
-    try:
-        hostname, port = (
-            parsed.hostname,
-            parsed.port,
-        )
-    except ValueError:
-        return None
-
-    if parsed.scheme.casefold() not in ('http', 'https') or not hostname:
-        return None
-
-    path = parsed.path.rstrip('/')
-
-    if not path.casefold().endswith('/traffic'):
-        path = f'{path}/traffic'
-
-    # The shared manager requires cumulative counters, so never preserve the
-    # API's ``clear`` query option supplied in a pasted URL.
-    return urlunsplit((parsed.scheme, parsed.netloc, path, '', ''))
-
-
-def configuredHysteria2StatsTarget() -> Optional[Hysteria2StatsTarget]:
-    """Build a target from the explicitly configured server API settings."""
-    trafficURL = normalizeHysteria2StatsURL(
-        str(AppSettings.get(HYSTERIA2_STATS_URL_SETTING) or '')
-    )
-
-    if trafficURL is None:
-        return None
-
-    clientId = str(AppSettings.get(HYSTERIA2_STATS_CLIENT_ID_SETTING) or '').strip()
-
-    if not clientId:
-        return None
-
-    secret = str(AppSettings.get(HYSTERIA2_STATS_SECRET_SETTING) or '')
-
-    return Hysteria2StatsTarget(trafficURL, clientId, secret)
-
-
-def _nonNegativeInteger(value) -> Optional[int]:
-    """Return one valid byte counter without accepting booleans or negatives."""
-    if isinstance(value, bool):
-        return None
-
-    try:
-        result = int(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-    return result if result >= 0 else None
+    return value
 
 
 def queryHysteria2TrafficStats(
     target: Hysteria2StatsTarget,
 ) -> Optional[TrafficCounters]:
-    """Return cumulative counters for the configured Hysteria authentication ID."""
-    if not isinstance(target, Hysteria2StatsTarget):
-        return None
-
-    headers = {
-        'Accept': 'application/json',
-        'User-Agent': 'Furious-GUI',
-    }
-
-    if target.secret:
-        headers['Authorization'] = target.secret
-
-    request = Request(target.trafficURL, headers=headers, method='GET')
-
-    try:
-        with urlopen(request, timeout=target.timeout) as response:
-            content = response.read(HYSTERIA2_STATS_RESPONSE_LIMIT + 1)
-    except (HTTPError, URLError, OSError, TimeoutError, ValueError):
-        return None
-
-    if len(content) > HYSTERIA2_STATS_RESPONSE_LIMIT:
+    """Read a fresh snapshot written by the embedded local Hysteria client."""
+    if not isinstance(target, Hysteria2StatsTarget) or not target.path:
         return None
 
     try:
+        if os.path.getsize(target.path) > HYSTERIA2_STATS_MAX_FILE_SIZE:
+            return None
+
+        with open(target.path, 'rb') as stream:
+            content = stream.read(HYSTERIA2_STATS_MAX_FILE_SIZE + 1)
+
+        if len(content) > HYSTERIA2_STATS_MAX_FILE_SIZE:
+            return None
+
         payload = json.loads(content)
-    except (TypeError, ValueError):
+        if not isinstance(payload, dict):
+            return None
+
+        updatedAt = payload.get('updatedAt')
+        if isinstance(updatedAt, bool) or not isinstance(updatedAt, int):
+            return None
+
+        age = time.time() - updatedAt / 1000.0
+        if age < -5 or age > HYSTERIA2_STATS_MAX_AGE_SECONDS:
+            return None
+
+        uplink = _counter(payload.get('tx'))
+        downlink = _counter(payload.get('rx'))
+        if uplink is None or downlink is None:
+            return None
+
+        return TrafficCounters(uplink=uplink, downlink=downlink)
+    except (OSError, TypeError, ValueError, OverflowError):
         return None
-
-    if not isinstance(payload, Mapping):
-        return None
-
-    counters = payload.get(target.clientId)
-
-    if counters is None:
-        return TrafficCounters(uplink=0, downlink=0)
-
-    if not isinstance(counters, Mapping):
-        return None
-
-    uplink, downlink = (
-        _nonNegativeInteger(counters.get('tx')),
-        _nonNegativeInteger(counters.get('rx')),
-    )
-
-    if uplink is None or downlink is None:
-        return None
-
-    # The server traffic logger records client-to-remote bytes as tx and
-    # remote-to-client bytes as rx.
-    return TrafficCounters(uplink=uplink, downlink=downlink)
 
 
 class Hysteria2StatsProvider(TrafficStatsProvider):
-    """Expose Hysteria server counters through the shared metrics capability."""
+    """Expose runtime-local payload counters through shared traffic metrics."""
 
-    providerId = 'official.hysteria2.stats'
+    providerId = 'official.hysteria2.local-stats'
     runtimeTypes = (Hysteria2,)
+    workerSafe = True
 
     def monitorForRuntime(self, runtime) -> Optional[TrafficStatsMonitor]:
-        """Return a monitor when the active runtime has a configured API target."""
-        target = getattr(runtime, 'hysteria2StatsTarget', None)
-
-        if not isinstance(target, Hysteria2StatsTarget):
+        """Return a monitor only for a runtime with its own counter file."""
+        path = getattr(runtime, 'hysteria2StatsFile', None)
+        if not isinstance(path, str) or not path:
             return None
 
-        return TrafficStatsMonitor(queryHysteria2TrafficStats, target)
+        return TrafficStatsMonitor(
+            query=queryHysteria2TrafficStats,
+            target=Hysteria2StatsTarget(path),
+        )

@@ -135,6 +135,7 @@ class Hysteria2CoreRuntimeFactory(CoreRuntimeFactory):
 
         runtime = Hysteria2(
             serializeRuntimeConfiguration(request.configuration, Hysteria2.name()),
+            enableTrafficStats=not request.proxyModeOnly,
             exitCallback=request.exitCallback,
             msgCallback=request.messageCallback,
         )
