@@ -345,18 +345,10 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
             self.expandedChanged.emit(expanded)
 
     def _setOutsideClickFilterEnabled(self, enabled: bool):
-        """Observe application clicks only while the overlay is expanded."""
-        application = QApplication.instance()
-
-        if application is None or enabled == self._outsideClickFilterInstalled:
-            return
-
-        if enabled:
-            application.installEventFilter(self)
-        else:
-            application.removeEventFilter(self)
-
-        self._outsideClickFilterInstalled = enabled
+        """Keep the navigation expanded until the user toggles it explicitly."""
+        # Clicking the page content must not collapse the navigation panel.
+        # The panel is collapsed only through the navigation toggle button.
+        return
 
     def _isOutsideNavigationClick(self, watched, event) -> bool:
         """Return whether *event* targets this window outside the panel."""
@@ -381,13 +373,7 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
         return not panelGeometry.contains(globalPosition)
 
     def eventFilter(self, watched, event):
-        """Animate closed after an outside press without consuming the click."""
-        if (
-            event.type() == QtCore.QEvent.Type.MouseButtonPress
-            and self._isOutsideNavigationClick(watched, event)
-        ):
-            self.setExpanded(False)
-
+        """Do not collapse navigation in response to page-content clicks."""
         return False
 
     def _getNavigationWidth(self) -> int:
