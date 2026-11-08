@@ -147,12 +147,13 @@ class NavigationBehaviorTest(unittest.TestCase):
             self.navigation.ExpandedWidth,
         )
         self.assertEqual(
-            self.navigation.navigationRail.width(),
-            self.navigation.ExpandedWidth,
-        )
-        self.assertEqual(
             self.navigation.pageStack.x(),
-            collapsedGeometry.x() + self.navigation.ExpandedWidth - self.navigation.CollapsedWidth,
+            self.navigation.navigationPanel.geometry().right() + 1,
+        )
+        self.assertFalse(
+            self.navigation.navigationPanel.geometry().intersects(
+                self.navigation.pageStack.geometry()
+            )
         )
         self.assertLess(self.navigation.pageStack.width(), collapsedGeometry.width())
         self.assertEqual(self.navigation.size(), collapsedWindowSize)
@@ -160,8 +161,36 @@ class NavigationBehaviorTest(unittest.TestCase):
         self.navigation.setExpanded(False, animated=False)
         processQtEvents()
 
-        self.assertEqual(self.navigation.navigationRail.width(), self.navigation.CollapsedWidth)
+        self.assertEqual(
+            self.navigation.navigationPanel.width(),
+            self.navigation.CollapsedWidth,
+        )
         self.assertEqual(self.navigation.pageStack.geometry(), collapsedGeometry)
+        self.assertFalse(
+            self.navigation.navigationPanel.geometry().intersects(
+                self.navigation.pageStack.geometry()
+            )
+        )
+
+    def testToggleIconTracksCollapsedAndExpandedState(self):
+        """Use a right-pointing affordance to expand and left to collapse."""
+        from PySide6.QtGui import QIcon
+
+        requestedIcons = []
+        self.navigation._iconFactory = lambda _theme: (
+            lambda iconName: requestedIcons.append(iconName) or QIcon()
+        )
+
+        self.navigation.setExpanded(False, animated=False)
+        self.assertEqual(requestedIcons[-1], 'chevron-bar-right.svg')
+        self.assertFalse(self.navigation.toggleButton.property('expanded'))
+
+        self.navigation.setExpanded(True, animated=False)
+        self.assertEqual(requestedIcons[-1], 'chevron-bar-left.svg')
+        self.assertTrue(self.navigation.toggleButton.property('expanded'))
+
+        self.navigation.setExpanded(False, animated=False)
+        self.assertEqual(requestedIcons[-1], 'chevron-bar-right.svg')
 
     def testOutsideClickCollapsesAndStillReachesTarget(self):
         """Dismiss the temporary overlay without consuming the original click."""
