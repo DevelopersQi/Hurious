@@ -173,7 +173,7 @@ class NavigationBehaviorTest(unittest.TestCase):
         )
 
     def testToggleIconTracksCollapsedAndExpandedState(self):
-        """Use a right-pointing affordance to expand and left to collapse."""
+        """Verify the toggle icon independently of page icons refreshed in the same pass."""
         from PySide6.QtGui import QIcon
 
         requestedIcons = []
@@ -182,15 +182,17 @@ class NavigationBehaviorTest(unittest.TestCase):
         )
 
         self.navigation.setExpanded(False, animated=False)
-        self.assertEqual(requestedIcons[-1], 'chevron-bar-right.svg')
+        self.assertEqual(requestedIcons[0], 'chevron-bar-right.svg')
         self.assertFalse(self.navigation.toggleButton.property('expanded'))
 
+        requestedIcons.clear()
         self.navigation.setExpanded(True, animated=False)
-        self.assertEqual(requestedIcons[-1], 'chevron-bar-left.svg')
+        self.assertEqual(requestedIcons[0], 'chevron-bar-left.svg')
         self.assertTrue(self.navigation.toggleButton.property('expanded'))
 
+        requestedIcons.clear()
         self.navigation.setExpanded(False, animated=False)
-        self.assertEqual(requestedIcons[-1], 'chevron-bar-right.svg')
+        self.assertEqual(requestedIcons[0], 'chevron-bar-right.svg')
 
     def testOutsideClickCollapsesAndStillReachesTarget(self):
         """Dismiss the temporary overlay without consuming the original click."""
