@@ -291,7 +291,9 @@ class TUNSettingsUITest(unittest.TestCase):
             source,
         )
         self.assertIn('border-radius: 8px;', source)
-        self.assertIn('background-color: palette(highlight);', source)
+        self.assertIn("AppStyleSheet.paletteForTheme(theme)", source)
+        self.assertIn("background-color: {palette['accent']};", source)
+        self.assertIn("background-color: {palette['panel']};", source)
         self.assertNotIn(
             'QCheckBox#TUNBackendOptionRadio::indicator',
             source,
