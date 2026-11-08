@@ -786,12 +786,16 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
                 logger.warning(
                     'system tray unavailable; showing the main window instead'
                 )
-
-                self.mainWindow.show()
             else:
                 self.systemTray.show()
                 self.systemTray.setCustomToolTip()
                 self.systemTray.bootstrap()
+
+            # A normal application launch should always land on the Home page.
+            # Keep the tray available for minimizing/closing to the background.
+            self.mainWindow.show()
+            self.mainWindow.raise_()
+            self.mainWindow.activateWindow()
         except Exception:
             # Any non-exit exceptions
 
@@ -1031,6 +1035,13 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
 
             self._initializeControllers()
             self._cleanupStack.register('controllers', self._cleanupControllers)
+
+            # An elevated RunAs handoff must not inherit a previously enabled
+            # TUN request. Persist OFF before HomePage reads the switch state
+            # and before connection startup restoration can activate TUN.
+            if AppBuiltinCommand.RunAs.value in sys.argv[1:]:
+                AppSettings.turnOFF('VPNMode')
+                logger.info('disabled persisted TUN mode for elevated restart')
 
             self.addCustomFont()
             # self.configureApplicationFont()
