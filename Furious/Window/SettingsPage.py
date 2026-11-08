@@ -513,7 +513,7 @@ class _ApplicationThemeSettingsCard(_SettingsCard):
             AppSettingsController().setApplicationTheme(preference)
 
 
-class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
+class _TUNBackendSettingsCard(Mixins.QTranslatable, Mixins.ThemeAware, QFrame):
     """Present global TUN backends as a compact, clearly selected choice grid."""
 
     Options = (
@@ -581,41 +581,8 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
 
         optionsWidget = QWidget(self)
         optionsWidget.setObjectName('TUNBackendOptions')
-        optionsWidget.setStyleSheet(
-            'QFrame#TUNBackendOption {'
-            ' border: 1px solid palette(mid);'
-            ' border-radius: 7px;'
-            ' background-color: palette(base);'
-            '}'
-            'QFrame#TUNBackendOption:hover {'
-            ' border-color: palette(highlight);'
-            '}'
-            'QFrame#TUNBackendOption[selected="true"] {'
-            ' border: 1px solid palette(highlight);'
-            ' background-color: palette(alternate-base);'
-            '}'
-            'QRadioButton#TUNBackendOptionRadio {'
-            ' spacing: 8px;'
-            '}'
-            'QRadioButton#TUNBackendOptionRadio::indicator {'
-            ' width: 16px;'
-            ' height: 16px;'
-            ' border: 1px solid palette(mid);'
-            ' border-radius: 8px;'
-            ' background-color: palette(base);'
-            '}'
-            'QRadioButton#TUNBackendOptionRadio::indicator:hover {'
-            ' border-color: palette(highlight);'
-            '}'
-            'QRadioButton#TUNBackendOptionRadio::indicator:checked {'
-            ' border: 4px solid palette(base);'
-            ' background-color: palette(highlight);'
-            '}'
-            'QRadioButton#TUNBackendOptionRadio::indicator:disabled {'
-            ' border-color: palette(mid);'
-            ' background-color: palette(alternate-base);'
-            '}'
-        )
+        self.optionsWidget = optionsWidget
+        self._applyOptionStyle(APP().theme())
         optionsLayout = QGridLayout(optionsWidget)
         optionsLayout.setContentsMargins(0, 4, 0, 0)
         optionsLayout.setHorizontalSpacing(10)
@@ -670,6 +637,52 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, QFrame):
         self.retranslate()
         self.sync()
         self.syncRuntimeStatus()
+
+    def _applyOptionStyle(self, theme: str):
+        """Paint backend choices with explicit application theme colors."""
+        palette = AppStyleSheet.paletteForTheme(theme)
+        self.optionsWidget.setStyleSheet(
+            f"""
+            QFrame#TUNBackendOption {{
+                border: 1px solid {palette['border']};
+                border-radius: 7px;
+                background-color: {palette['panel_alt']};
+            }}
+            QFrame#TUNBackendOption:hover {{
+                border-color: {palette['accent']};
+            }}
+            QFrame#TUNBackendOption[selected="true"] {{
+                border: 1px solid {palette['accent']};
+                background-color: {palette['accent_soft']};
+            }}
+            QRadioButton#TUNBackendOptionRadio {{
+                spacing: 8px;
+                color: {palette['text_strong']};
+            }}
+            QRadioButton#TUNBackendOptionRadio::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {palette['border_strong']};
+                border-radius: 8px;
+                background-color: {palette['panel']};
+            }}
+            QRadioButton#TUNBackendOptionRadio::indicator:hover {{
+                border-color: {palette['accent']};
+            }}
+            QRadioButton#TUNBackendOptionRadio::indicator:checked {{
+                border: 4px solid {palette['panel']};
+                background-color: {palette['accent']};
+            }}
+            QRadioButton#TUNBackendOptionRadio::indicator:disabled {{
+                border-color: {palette['border']};
+                background-color: {palette['panel_alt']};
+            }}
+            """
+        )
+
+    def themeChangedCallback(self, theme: str):
+        """Refresh the TUN backend choice surfaces after a theme change."""
+        self._applyOptionStyle(theme)
 
     def retranslate(self):
         """Refresh all TUN backend card text from untranslated source keys."""
@@ -851,7 +864,7 @@ class _SettingsSection(QWidget):
                 card.setIconFileName(None)
 
 
-class SettingsPage(Mixins.QTranslatable, QMainWindow):
+class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
     """Compose application settings without owning their operational logic."""
 
     def __init__(
@@ -1240,28 +1253,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self.categoryList.setSpacing(4)
         self.categoryList.setUniformItemSizes(True)
         self.categoryList.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        self.categoryList.setStyleSheet(
-            'QListWidget#SettingsCategoryList {'
-            ' border: 1px solid palette(midlight);'
-            ' border-radius: 9px;'
-            ' background: palette(alternate-base);'
-            ' padding: 6px;'
-            '}'
-            'QListWidget#SettingsCategoryList::item {'
-            ' min-height: 38px;'
-            ' padding: 5px 10px;'
-            ' border-radius: 6px;'
-            ' color: palette(text);'
-            '}'
-            'QListWidget#SettingsCategoryList::item:hover {'
-            ' background: palette(midlight);'
-            '}'
-            'QListWidget#SettingsCategoryList::item:selected {'
-            ' background: palette(highlight);'
-            ' color: palette(highlighted-text);'
-            ' font-weight: 600;'
-            '}'
-        )
+        self._applyCategoryListStyle(APP().theme())
 
         self.categoryStack = QStackedWidget()
         self.categoryStack.setObjectName('SettingsCategoryStack')
@@ -1312,6 +1304,42 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         self.setCentralWidget(contentWidget)
 
         self.retranslate()
+
+    def _applyCategoryListStyle(self, theme: str):
+        """Use semantic theme colors instead of platform-dependent palette roles."""
+        palette = AppStyleSheet.paletteForTheme(theme)
+        self.categoryList.setStyleSheet(
+            f"""
+            QListWidget#SettingsCategoryList {{
+                border: 1px solid {palette['border']};
+                border-radius: 9px;
+                background-color: {palette['panel_alt']};
+                color: {palette['text']};
+                padding: 6px;
+            }}
+            QListWidget#SettingsCategoryList::item {{
+                min-height: 38px;
+                padding: 5px 10px;
+                border-radius: 6px;
+                color: {palette['text']};
+                background-color: transparent;
+            }}
+            QListWidget#SettingsCategoryList::item:hover {{
+                background-color: {palette['hover']};
+                color: {palette['text_strong']};
+            }}
+            QListWidget#SettingsCategoryList::item:selected {{
+                background-color: {palette['accent_soft']};
+                color: {palette['text_strong']};
+                font-weight: 600;
+            }}
+            """
+        )
+
+    def themeChangedCallback(self, theme: str):
+        """Refresh the category rail when the application theme changes."""
+        if hasattr(self, 'categoryList'):
+            self._applyCategoryListStyle(theme)
 
     @staticmethod
     def _categoryScrollPage(sections):
