@@ -195,6 +195,13 @@ class TUNSettingsUITest(unittest.TestCase):
                 self.assertTrue(catalogue[key].get('ZH'))
 
     def test_automatic_tun_backend_matches_the_active_core(self):
+        settings = read_source('Furious/Controllers/SettingsController.py')
+        self.assertIn("default='auto'", settings)
+        self.assertIn("validRange=[value for _label, value in TUN_BACKEND_OPTIONS]", settings)
+
+        page = read_source('Furious/Window/SettingsPage.py')
+        self.assertIn("selectedBackend = 'auto'", page)
+
         source = read_source('Furious/Service/ConnectionManager.py')
         self.assertIn("'official.xray': 'xray'", source)
         self.assertIn("'official.hysteria2': 'hysteria2'", source)
