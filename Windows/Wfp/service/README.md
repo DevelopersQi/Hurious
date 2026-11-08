@@ -7,7 +7,7 @@ transactional cleanup on normal shutdown.
 ## Local control channel
 
 The service exposes only the versioned local named pipe
-`\\\\.\\pipe\\FuriousWfpService.v2`. Its DACL grants access only to
+`\\\\.\\pipe\\FuriousWfpService.v3`. Its DACL grants access only to
 LocalSystem and the built-in Administrators group, and remote pipe clients are
 rejected. Before dispatch, the server impersonates the pipe client, opens the
 thread token, and verifies that the caller is LocalSystem or a member of
@@ -30,8 +30,12 @@ sorts rules by ascending numeric priority, rejects duplicate App IDs, and
 transactionally replaces per-application TCP filters for IPv4 and IPv6. Direct
 rules install terminating permit filters; Proxy rules install terminating
 callout filters. CLEAR_POLICY removes those filters and clears the in-memory
-snapshots. UDP filters are deliberately withheld until a dedicated UDP relay
-has been implemented and tested.
+snapshots. UDP filters remain deliberately disabled: although a separately
+managed UDP broker, START_UDP_BROKER/STOP_UDP_BROKER IPC commands, SOCKS5 UDP
+association/relay primitives and broker lifecycle tests exist, the complete
+WFP redirect-to-SOCKS-to-original-client packet path has not passed end-to-end
+verification. The IPC broker lifecycle tests do not prove transparent WFP UDP
+forwarding.
 
 The service clears endpoint configuration at startup. Proxy-action filters fail
 closed when no valid endpoint is configured; direct-action filters remain
@@ -39,7 +43,7 @@ direct. This avoids silently bypassing the proxy for applications explicitly
 selected for Proxy, but also means Proxy rules must not be activated until the
 TCP broker endpoint is ready.
 
-The driver endpoint ABI is version 2 and supports up to eight auxiliary process
+The service pipe protocol is version 3. The driver endpoint ABI is version 2 and supports up to eight auxiliary process
 IDs in addition to the local redirect-target PID. The service-hosted TCP broker
 PID is returned by IPC and occupies the mandatory ProxyProcessId field.
 ConnectionManager publishes the broker PID, bound TCP listener ports, backend
@@ -53,8 +57,8 @@ Before enabling this feature for general users:
 - finish UI translation and verify that policy changes clearly report success or failure;
 - package a correctly signed driver beside the service executable and validate
   SCM start/stop behavior under the actual service account;
-- implement a dedicated UDP relay before installing UDP application filters;
-- test TCP and UDP separately, with IPv4 and IPv6 parity;
+- complete a real WFP UDP redirect-to-SOCKS-to-original-client integration test before enabling UDP application filters;
+- test TCP and UDP separately, with IPv4 and IPv6 parity; UDP broker lifecycle and SOCKS5 relay unit tests alone are insufficient;
 - reconcile stale filters after crashes and ensure safe rollback;
 - test allowed and denied client tokens, impersonation failures, malformed
   frames, stop during connect/read, and BFE unavailable;
