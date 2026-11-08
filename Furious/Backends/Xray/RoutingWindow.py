@@ -68,6 +68,22 @@ DOMAIN_STRATEGIES, ROUTING_STATES = (
 )
 
 
+def domainStrategyText(strategy: str) -> str:
+    """Return the localized display label while preserving the Xray value."""
+    if strategy not in DOMAIN_STRATEGIES:
+        strategy = 'AsIs'
+
+    return _(strategy)
+
+
+def addDomainStrategyItems(combo: QComboBox):
+    """Populate domain-strategy choices with localized labels and stable values."""
+    combo.clear()
+
+    for strategy in DOMAIN_STRATEGIES:
+        combo.addItem(domainStrategyText(strategy), strategy)
+
+
 def valuesToList(text: str) -> list[str]:
     """Return the values to list value used by the application."""
     values = list()
@@ -272,7 +288,7 @@ class RoutingDocumentationURL(AppQLabel):
 class RoutingProfilesModel(QtCore.QAbstractTableModel):
     """Expose routing profiles data through a Qt item model."""
 
-    Headers = ['Remark', 'Domain Strategy', 'State']
+    Headers = ['Routing Description', 'Domain Strategy', 'State']
 
     def rowCount(self, parent=QtCore.QModelIndex()) -> int:
         """Return the number of rows exposed by the model."""
@@ -302,11 +318,7 @@ class RoutingProfilesModel(QtCore.QAbstractTableModel):
 
         if orientation == QtCore.Qt.Orientation.Horizontal:
             header = self.Headers[section]
-
-            if header in ['Remark', 'State']:
-                return _(header)
-
-            return header
+            return _(header)
 
         return section + 1
 
@@ -337,7 +349,12 @@ class RoutingProfilesModel(QtCore.QAbstractTableModel):
             if column == 0:
                 return routing.get('remark', '')
             elif column == 1:
-                return routing.get('domainStrategy', 'AsIs')
+                strategy = routing.get('domainStrategy', 'AsIs')
+                return (
+                    domainStrategyText(strategy)
+                    if role == QtCore.Qt.ItemDataRole.DisplayRole
+                    else strategy
+                )
             elif column == 2:
                 return routingStateText(
                     'Enabled' if routing.get('enabled', True) else 'Disabled'
@@ -635,7 +652,7 @@ class RoutingRemarkEditDialog(AppQTransientDialog):
         """Initialize the RoutingRemarkEditDialog."""
         super().__init__(parent)
 
-        self.setWindowTitle(_('Edit Routing Remark'))
+        self.setWindowTitle(_('Edit Routing Description'))
         self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
 
         self.remarkEdit = AppQLineEdit(remark)
@@ -651,7 +668,7 @@ class RoutingRemarkEditDialog(AppQTransientDialog):
         connectWeakly(self.dialogBtns.rejected, self, 'reject')
 
         layout = QFormLayout()
-        layout.addRow(AppQLabel(_('Remark')), self.remarkEdit)
+        layout.addRow(AppQLabel(_('Routing Description')), self.remarkEdit)
         layout.addRow(self.dialogBtns)
 
         self.setLayout(layout)
@@ -676,8 +693,10 @@ class RoutingProfileEditDialog(AppQTransientDialog):
         self.remarkEdit = AppQLineEdit(_('New Routing'))
 
         self.domainStrategyCombo = AppQComboBox(translatable=False)
-        self.domainStrategyCombo.addItems(DOMAIN_STRATEGIES)
-        self.domainStrategyCombo.setCurrentText('AsIs')
+        addDomainStrategyItems(self.domainStrategyCombo)
+        self.domainStrategyCombo.setCurrentIndex(
+            max(0, self.domainStrategyCombo.findData('AsIs'))
+        )
 
         self.enabledCombo = AppQComboBox(translatable=False)
         addRoutingStateItems(self.enabledCombo)
@@ -696,7 +715,7 @@ class RoutingProfileEditDialog(AppQTransientDialog):
         layout = QFormLayout()
         layout.addRow(AppQLabel(_('Remark')), self.remarkEdit)
         layout.addRow(
-            AppQLabel('Domain Strategy', translatable=False),
+            AppQLabel(_('Domain Strategy')),
             self.domainStrategyCombo,
         )
         layout.addRow(AppQLabel(_('State')), self.enabledCombo)
@@ -708,7 +727,7 @@ class RoutingProfileEditDialog(AppQTransientDialog):
         """Return the routing value used by the routing profile edit dialog."""
         return {
             'remark': self.remarkEdit.text().strip() or _('New Routing'),
-            'domainStrategy': self.domainStrategyCombo.currentText(),
+            'domainStrategy': comboCurrentData(self.domainStrategyCombo, 'AsIs'),
             'enabled': comboCurrentData(self.enabledCombo, 'Enabled') == 'Enabled',
             'rules': [],
         }
@@ -991,13 +1010,16 @@ class UserRoutingTableView(Mixins.QTranslatable, AppQTableView):
 
         if column == 1:
             combo = AppQComboBox(parent=self.viewport(), translatable=False)
-            combo.addItems(DOMAIN_STRATEGIES)
+            addDomainStrategyItems(combo)
             combo.setMinimumWidth(0)
-            combo.setCurrentText(
-                self.sourceModel.routingByRow(row).get('domainStrategy', 'AsIs')
+            strategy = self.sourceModel.routingByRow(row).get(
+                'domainStrategy', 'AsIs'
             )
-            combo.currentTextChanged.connect(
-                lambda text, _row=row: self.setDomainStrategy(_row, text)
+            combo.setCurrentIndex(max(0, combo.findData(strategy)))
+            combo.currentIndexChanged.connect(
+                lambda index, _row=row, _combo=combo: self.setDomainStrategy(
+                    _row, _combo.itemData(index)
+                )
             )
 
             self.setIndexWidget(index, combo)
@@ -1042,12 +1064,15 @@ class UserRoutingTableView(Mixins.QTranslatable, AppQTableView):
         )
         self.flushAll()
 
-    def setDomainStrategy(self, row: int, text: str):
-        """Set domain strategy."""
+    def setDomainStrategy(self, row: int, strategy: str):
+        """Persist the canonical Xray domain-strategy value."""
         if row < 0 or row >= self.sourceModel.rowCount():
             return
 
-        self.sourceModel.routingByRow(row)['domainStrategy'] = text
+        if strategy not in DOMAIN_STRATEGIES:
+            return
+
+        self.sourceModel.routingByRow(row)['domainStrategy'] = strategy
         self.sourceModel.emitAllChanged()
 
     def setEnabled(self, row: int, state: str):
