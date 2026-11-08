@@ -446,11 +446,15 @@ class SettingsPageOrganizationTest(unittest.TestCase):
         )
 
         page._openXrayTUNSettings()
-        callbacks['xrayTunSettingsDialogFactory'].assert_called_once_with(parent=page)
+        callbacks['xrayTunSettingsDialogFactory'].assert_called_once_with(
+            parent=page
+        )
         callbacks['xrayTunSettingsDialogFactory'].return_value.open.assert_called_once()
 
         page._openHysteria2TUNSettings()
-        callbacks['hysteria2TunSettingsDialogFactory'].assert_called_once_with(parent=page)
+        callbacks['hysteria2TunSettingsDialogFactory'].assert_called_once_with(
+            parent=page
+        )
         callbacks['hysteria2TunSettingsDialogFactory'].return_value.open.assert_called_once()
 
         page.close()
