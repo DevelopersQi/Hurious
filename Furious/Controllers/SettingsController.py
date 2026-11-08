@@ -56,7 +56,11 @@ SYSTEM_PROXY_MODE_OPTIONS = (
     ('Do Not Change System Proxy', AppBuiltinProxyMode.NoChanges.value),
 )
 
-registerAppSettings('VPNMode', isBinary=True)
+registerAppSettings(
+    'VPNMode',
+    isBinary=True,
+    default=AppBinarySettings.OFF,
+)
 registerAppSettings(
     'TUNBackend',
     validRange=[value for _label, value in TUN_BACKEND_OPTIONS],
