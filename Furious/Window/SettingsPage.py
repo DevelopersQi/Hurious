@@ -897,6 +897,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
 
         self.generalSection = _SettingsSection(_('General'))
         self.connectionSection = _SettingsSection(_('Connection'))
+        self.tunSection = _SettingsSection(_('TUN & DNS'))
         self.routingSection = _SettingsSection(_('Routing Rules'))
         self.networkSection = _SettingsSection(_('Network'))
         self.privacySection = _SettingsSection(_('Privacy and Statistics'))
@@ -1074,12 +1075,14 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             self.systemProxyCard.sync
         )
 
+        # Keep TUN and its DNS/interface configuration separate from
+        # operating-system proxy settings. The existing backend dialogs expose
+        # their DNS controls, so this category is the single entry point.
         if not SystemRuntime.flatpakID():
-            self.connectionSection.addCard(self.tunSettingsCard)
+            self.tunSection.addCard(self.tunSettingsCard)
 
-        # Keep each settings domain in its own concise category.
-        self.connectionSection.addCard(self.tunModeCard)
-        self.connectionSection.addCard(self.tunBackendCard)
+        self.tunSection.addCard(self.tunModeCard)
+        self.tunSection.addCard(self.tunBackendCard)
         self.connectionSection.addCard(self.systemProxyCard)
 
         self.customRoutingCard = None
@@ -1225,6 +1228,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         categories = (
             ('General', (self.generalSection,)),
             ('Connection', (self.connectionSection,)),
+            ('TUN & DNS', (self.tunSection,)),
             ('Routing Rules', (self.routingSection,)),
             ('Network', (self.networkSection,)),
             ('Privacy and Statistics', (self.privacySection,)),
@@ -1518,6 +1522,7 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         for section in (
             self.generalSection,
             self.connectionSection,
+            self.tunSection,
             self.routingSection,
             self.networkSection,
             self.privacySection,
