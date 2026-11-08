@@ -205,10 +205,13 @@ class SettingsController(QtCore.QObject):
 
     def setTUNMode(self, enabled: bool):
         """Persist the global TUN mode and notify active workflows."""
-        if PLATFORM != 'Linux':
-            assert SystemRuntime.isAdmin()
-
         enabled = bool(enabled)
+
+        # Elevation is required to enable TUN, but clearing a stale persisted
+        # preference must remain possible from an unelevated launch. Otherwise
+        # the UI can show TUN as enabled with no way for the user to turn it off.
+        if enabled and PLATFORM != 'Linux':
+            assert SystemRuntime.isAdmin()
 
         if AppSettings.isStateON_('VPNMode') == enabled:
             return
