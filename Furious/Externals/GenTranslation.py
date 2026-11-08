@@ -376,20 +376,36 @@ TRANSLATION = {
         "ZH": "删除此项目？",
         "isReviewed": "True"
     },
-    "New changes will take effect next time": {
+    "Settings changed": {
         "source": [
             "Furious.Qt.QtWidgets"
         ],
-        "RU": "Новые изменения вступят в силу при следующем подключении",
-        "ZH": "新的更改将于下次生效",
+        "RU": "Настройки изменены",
+        "ZH": "设置已更改",
         "isReviewed": "True"
     },
-    "Reconnect now?": {
+    "The new settings will take effect the next time you connect. Reconnect now?": {
         "source": [
             "Furious.Qt.QtWidgets"
         ],
-        "RU": "Переподключиться сейчас?",
-        "ZH": "现在重新连接？",
+        "RU": "Новые настройки вступят в силу при следующем подключении. Переподключиться сейчас?",
+        "ZH": "新的设置将在下次连接时生效。现在重新连接吗？",
+        "isReviewed": "True"
+    },
+    "Later": {
+        "source": [
+            "Furious.Qt.QtWidgets"
+        ],
+        "RU": "Позже",
+        "ZH": "稍后",
+        "isReviewed": "True"
+    },
+    "Reconnect now": {
+        "source": [
+            "Furious.Qt.QtWidgets"
+        ],
+        "RU": "Переподключиться сейчас",
+        "ZH": "立即重新连接",
         "isReviewed": "True"
     },
     "Unrecognized Configuration. Please modify it in the editor": {
