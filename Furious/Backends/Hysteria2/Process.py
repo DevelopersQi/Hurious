@@ -42,21 +42,41 @@ def startHysteria2(jsonString: str, msgQueue: multiprocessing.Queue):
     """Start hysteria2."""
     try:
         import hysteria2
-    except ImportError:
-        # Fake running process
-        while True:
-            time.sleep(3600)
-    else:
-        if versionToValue(hysteria2.__version__) <= versionToValue('2.0.0.1'):
-            redirect = False
-        else:
-            redirect = True
-
-        ProcessOutputRedirector.launch(
-            msgQueue,
-            functools.partial(hysteria2.startFromJSON, jsonString),
-            redirect,
+    except ImportError as ex:
+        # Never pretend that a missing core is running.  The previous
+        # placeholder loop kept the child process alive forever, causing the
+        # GUI readiness probe to report only a generic startup timeout.
+        message = (
+            'Hysteria 2 core module is unavailable. '
+            'Please verify the application package and its bundled dependencies.'
         )
+        msgQueue.putMessage(message)
+        raise RuntimeError(message) from ex
+
+    entrypoint = getattr(hysteria2, 'startFromJSON', None)
+    if not callable(entrypoint):
+        message = (
+            'The installed Hysteria 2 binding does not provide startFromJSON. '
+            'Please rebuild the application with a compatible Hysteria 2 binding.'
+        )
+        msgQueue.putMessage(message)
+        raise RuntimeError(message)
+
+    try:
+        redirect = (
+            versionToValue(hysteria2.__version__)
+            > versionToValue('2.0.0.1')
+        )
+    except (AttributeError, TypeError, ValueError):
+        # A missing or malformed version must not prevent the core from
+        # starting; use the safe, non-redirected output path.
+        redirect = False
+
+    ProcessOutputRedirector.launch(
+        msgQueue,
+        functools.partial(entrypoint, jsonString),
+        redirect,
+    )
 
 
 class Hysteria2(MultiprocessingRuntime):
