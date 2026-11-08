@@ -1646,3 +1646,57 @@ class StyleSheetCompositionTest(TestCase):
                     buttonRule = buttonRule.split('}', 1)[0]
 
                     self.assertIn('subcontrol-origin: padding;', buttonRule)
+
+
+class SingletonWindowActivationTest(TestCase):
+    """Keep repeated launches focused on the existing primary window."""
+
+    def test_activation_restores_minimized_window_and_selects_home(self):
+        window = SimpleNamespace(
+            isMinimized=mock.Mock(return_value=True),
+            showNormal=mock.Mock(),
+            show=mock.Mock(),
+            showPage=mock.Mock(),
+            raise_=mock.Mock(),
+            activateWindow=mock.Mock(),
+        )
+        application = SimpleNamespace(
+            mainWindow=window,
+            _pendingMainWindowActivation=False,
+        )
+
+        DesktopApplication._showMainWindow(application)
+
+        window.showNormal.assert_called_once_with()
+        window.show.assert_not_called()
+        window.showPage.assert_called_once_with('home')
+        window.raise_.assert_called_once_with()
+        window.activateWindow.assert_called_once_with()
+        self.assertFalse(application._pendingMainWindowActivation)
+
+    def test_activation_requested_during_startup_is_deferred(self):
+        application = SimpleNamespace(
+            mainWindow=None,
+            _pendingMainWindowActivation=False,
+        )
+
+        DesktopApplication._showMainWindow(application)
+        self.assertTrue(application._pendingMainWindowActivation)
+
+        window = SimpleNamespace(
+            isMinimized=mock.Mock(return_value=False),
+            showNormal=mock.Mock(),
+            show=mock.Mock(),
+            showPage=mock.Mock(),
+            raise_=mock.Mock(),
+            activateWindow=mock.Mock(),
+        )
+        application.mainWindow = window
+
+        DesktopApplication._showMainWindow(application)
+
+        window.show.assert_called_once_with()
+        window.showPage.assert_called_once_with('home')
+        window.raise_.assert_called_once_with()
+        window.activateWindow.assert_called_once_with()
+        self.assertFalse(application._pendingMainWindowActivation)
