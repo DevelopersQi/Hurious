@@ -403,7 +403,7 @@ jobs:
           path: ${{ runner.temp }}/bindings/wheels
           # Immutable upstream revisions + Python ABI + architecture. Never restore
           # an older binding cache when any input changes.
-          key: furious-native-bindings-${{ matrix.id }}-${{ runner.arch }}-py${{ matrix.python-version }}-xray-5b1573f-hysteria-99d4f04-hysteria2-f478b08-tun2socks-6b90d77-v1
+          key: furious-native-bindings-${{ matrix.id }}-${{ runner.arch }}-py${{ matrix.python-version }}-xray-5b1573f-hysteria-99d4f04-hysteria2-a0ad2e4-tun2socks-6b90d77-v1
       - name: Build Windows AMD64 bindings from source
         shell: pwsh
         env:
@@ -454,7 +454,7 @@ jobs:
             }
             @{
               Name = 'hysteria2'
-              Url = 'git+https://github.com/DevelopersQi/hysteria2-python.git@f478b08d66f7c0c03b15285a55cc394623727960'
+              Url = 'git+https://github.com/DevelopersQi/hysteria2-python.git@a0ad2e419e22b810da43bddc48a4e84249a6fd48'
             }
             @{
               Name = 'tun2socks'
@@ -566,7 +566,7 @@ jobs:
               --no-cache-dir \
               --no-deps \
               "Xray-core @ git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282" \
-              "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@f478b08d66f7c0c03b15285a55cc394623727960" \
+              "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@a0ad2e419e22b810da43bddc48a4e84249a6fd48" \
               "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e"
           fi
         if: matrix.id != 'windows7-amd64' && matrix.id != 'windows10-amd64'
