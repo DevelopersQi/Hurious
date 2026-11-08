@@ -388,6 +388,8 @@ class SettingsPageOrganizationTest(unittest.TestCase):
             'openAboutPage': mock.Mock(),
             'restartAsAdmin': mock.Mock(),
             'openApplicationFolder': mock.Mock(),
+            'xrayTunSettingsDialogFactory': mock.Mock(),
+            'hysteria2TunSettingsDialogFactory': mock.Mock(),
         }
         proxyBypassDialog = mock.Mock()
         networkTestDialog = mock.Mock()
@@ -427,6 +429,25 @@ class SettingsPageOrganizationTest(unittest.TestCase):
             )
 
         return page, callbacks
+
+    def test_all_tun_backend_editors_are_grouped_and_open_their_own_dialogs(self):
+        """Keep the three independent backend editors together in TUN & DNS."""
+        page, callbacks = self.buildPage()
+
+        self.assertIn(page.tunSettingsCard, page.tunSection.cards)
+        self.assertIn(page.xrayTunSettingsCard, page.tunSection.cards)
+        self.assertIn(page.hysteria2TunSettingsCard, page.tunSection.cards)
+
+        page._openXrayTUNSettings()
+        callbacks['xrayTunSettingsDialogFactory'].assert_called_once_with(parent=page)
+        callbacks['xrayTunSettingsDialogFactory'].return_value.open.assert_called_once()
+
+        page._openHysteria2TUNSettings()
+        callbacks['hysteria2TunSettingsDialogFactory'].assert_called_once_with(parent=page)
+        callbacks['hysteria2TunSettingsDialogFactory'].return_value.open.assert_called_once()
+
+        page.close()
+        page.deleteLater()
 
     def testGeneralEndsWithSystemAndEnvironmentActions(self):
         """Keep preferences first and Application focused on maintenance/about."""
