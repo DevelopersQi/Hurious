@@ -1036,15 +1036,20 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
             self._initializeControllers()
             self._cleanupStack.register('controllers', self._cleanupControllers)
 
-            # The TUN switch may request an elevated RunAs handoff. Only the
-            # elevated child process commits the ON state, so cancelling UAC
-            # never leaves a false enabled preference in the unelevated app.
+            # TUN is an explicit per-launch choice. A normal application
+            # launch must never silently restore the previous session's TUN
+            # state; the user must enable it again from the Home switch.
+            # The RunAs child is different: it exists only because the user
+            # explicitly requested TUN and confirmed the elevation prompt.
             if (
                 AppBuiltinCommand.RunAs.value in sys.argv[1:]
                 and SystemRuntime.isAdmin()
             ):
                 AppSettings.turnON_('VPNMode')
-                logger.info('enabled TUN mode after elevated restart')
+                logger.info('enabled TUN mode after user-requested elevation')
+            else:
+                AppSettings.turnOFF('VPNMode')
+                logger.info('reset persisted TUN mode for a normal application launch')
 
             self.addCustomFont()
             # self.configureApplicationFont()
