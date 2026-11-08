@@ -203,14 +203,14 @@ class LogPage(Mixins.QTranslatable, QMainWindow):
         # the correct per-category translation policy.
         self.filterComboBox = AppQComboBox(translatable=False)
         self.filterComboBox.setContentWidthAdjustable()
-        self.filterComboBox.setMinimumWidth(180)
+        self.filterComboBox.setMinimumWidth(124)
 
         self.searchLineEdit = AppQLineEdit()
         self.searchLineEdit.setClearButtonEnabled(True)
         self.searchLineEdit.setPlaceholderText(
             _('Search logs with text or regular expressions')
         )
-        self.searchLineEdit.setMinimumWidth(260)
+        self.searchLineEdit.setMinimumWidth(140)
         self.searchLineEdit.setMaximumWidth(600)
         self.searchLineEdit.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -388,11 +388,13 @@ class LogPage(Mixins.QTranslatable, QMainWindow):
 
         self.autoScrollSwitch = AppQSwitch()
         self.autoScrollSwitch.syncChecked(self._autoScrollDown)
+        self.autoScrollSwitch.setToolTip(_('Automatically keep the newest log entries in view.'))
 
         self.autoClearLabel = AppQLabel(_('Auto Clear Log'))
 
         self.autoClearSwitch = AppQSwitch()
         self.autoClearSwitch.syncChecked(self.manager.autoClearEnabled)
+        self.autoClearSwitch.setToolTip(_('Automatically clear old log entries when the retention limit is reached.'))
 
         actionLayout = QHBoxLayout()
         actionLayout.setContentsMargins(0, 0, 0, 0)
@@ -957,11 +959,21 @@ class LogPage(Mixins.QTranslatable, QMainWindow):
         super().hideEvent(event)
 
     def resizeEvent(self, event):
-        """Keep the highlighting overlay aligned with the log viewport."""
+        """Keep log controls readable and the overlay aligned when resized."""
         super().resizeEvent(event)
 
         if hasattr(self, 'highlightOverlay'):
             self._syncHighlightOverlayGeometry()
+            self._updateResponsiveControls()
+
+    def _updateResponsiveControls(self):
+        """Reduce secondary toolbar text before controls become crowded."""
+        compact = self.width() < 900
+        filterCompact = self.width() < 720
+
+        self.autoScrollLabel.setVisible(not compact)
+        self.autoClearLabel.setVisible(not compact)
+        self.filterLabel.setVisible(not filterCompact)
 
     def plainText(self) -> str:
         """Return the plain text currently shown by the selected filter."""
