@@ -132,6 +132,10 @@ class MainWindow(AppQMainWindow):
             self.settingsPage.setConnectionControlsEnabled
         )
 
+        AppConnectionController().errorOccurred.connect(
+            self._handleConnectionError
+        )
+
         self.settingsPage.setConnectionControlsEnabled(
             AppConnectionController().interactionEnabled
         )
@@ -202,6 +206,34 @@ class MainWindow(AppQMainWindow):
 
         self._routingEditor.raise_()
         self._routingEditor.activateWindow()
+
+    @QtCore.Slot(object)
+    def _handleConnectionError(self, error):
+        """Offer direct navigation when the selected TUN backend is incompatible."""
+        message = str(getattr(error, 'message', '') or '')
+        isBackendMismatch = (
+            '不能选择' in message and '原生 TUN' in message
+        ) or (
+            'Native TUN is not supported' in message
+        )
+        if not isBackendMismatch:
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle(_('TUN backend mismatch'))
+        dialog.setText(message)
+        dialog.setInformativeText(
+            _('Open Settings and select Auto or the native TUN backend supported by this server.')
+        )
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        dialog.button(QMessageBox.StandardButton.Yes).setText(_('Go to Settings'))
+        dialog.button(QMessageBox.StandardButton.No).setText(_('Cancel'))
+
+        if dialog.exec() == QMessageBox.StandardButton.Yes:
+            self.showSettingsPage()
 
     def showPage(self, pageId: str):
         """Navigate to a registered application page."""
