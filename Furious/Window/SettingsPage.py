@@ -53,6 +53,19 @@ __all__ = ['SettingsPage']
 
 logger = logging.getLogger(__name__)
 
+# A third-party routing-settings description is currently supplied as literal
+# English metadata. Keep a host-side Chinese fallback until that provider
+# exposes a translated descriptor.
+_PLUGIN_TEXT_ZH_CN = {
+    'Create Xray routing profiles and configure domain, IP, port, protocol, '
+    'and process rules. Windows Xray native TUN also supports application '
+    'rules. Open the editor and choose Application Rules to configure '
+    'per-app proxy/direct policy.':
+        '创建 Xray 路由配置，可按域名、IP、端口、协议和进程设置规则。'
+        'Windows 下的 Xray 原生 TUN 还支持应用程序规则。打开编辑器并选择“应用程序规则”，'
+        '即可配置按应用代理或直连。',
+}
+
 # Static translation keys for the radio labels and helper text, which are
 # rendered by native QRadioButton widgets rather than AppQLabel.
 _TUN_BACKEND_TRANSLATIONS = (
@@ -1353,7 +1366,11 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
 
     @staticmethod
     def _translatedPluginText(value: str, translatable: bool) -> str:
-        """Translate host-owned plugin metadata only when explicitly requested."""
+        """Translate plugin metadata, including the legacy Xray routing card."""
+        language = str(AppSettings.get('Language') or '').replace('-', '_').casefold()
+        if language in ('zh_cn', 'zh') and value in _PLUGIN_TEXT_ZH_CN:
+            return _PLUGIN_TEXT_ZH_CN[value]
+
         return _(value) if translatable else value
 
     def _cardFromPluginDescriptor(self, descriptor: PluginSettingDescriptor):
