@@ -484,7 +484,7 @@ class SettingsPageOrganizationTest(unittest.TestCase):
 
         self.assertIsNone(page.xrayTunSettingsCard)
         self.assertIsNone(page.hysteria2TunSettingsCard)
-        self.assertFalse(page.tunBackendSettingsTitleLabel.isVisible())
+        self.assertTrue(page.tunBackendSettingsTitleLabel.isHidden())
 
         page.close()
         page.deleteLater()
