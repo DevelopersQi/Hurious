@@ -300,5 +300,36 @@ class TUNSettingsUITest(unittest.TestCase):
         )
 
 
+    def test_normal_launch_resets_tun_and_only_runas_admin_launch_enables_it(self):
+        source = read_source('Furious/Application/DesktopApplication.py')
+        self.assertIn(
+            'AppBuiltinCommand.RunAs.value in sys.argv[1:]',
+            source,
+        )
+        self.assertIn(
+            'and SystemRuntime.isAdmin()',
+            source,
+        )
+        self.assertIn("AppSettings.turnON_('VPNMode')", source)
+        self.assertIn("AppSettings.turnOFF('VPNMode')", source)
+        self.assertIn(
+            'reset persisted TUN mode for a normal application launch',
+            source,
+        )
+
+    def test_home_and_settings_tun_switches_share_the_elevation_handoff(self):
+        home = read_source('Furious/Window/HomePage.py')
+        settings = read_source('Furious/Window/SettingsPage.py')
+        self.assertIn('self.tunModeSwitch.toggled.connect(self.handleTUNModeChanged)', home)
+        self.assertIn('self.tunModeSwitch.syncChecked(False)', home)
+        self.assertIn('self.restartAsAdmin()', home)
+        self.assertIn('self._restartAsAdmin()', settings)
+        self.assertIn('return False', settings)
+        self.assertIn(
+            'self.tunModeCard.checkBox.syncCheckedAnimated',
+            settings,
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
