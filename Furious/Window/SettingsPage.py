@@ -932,7 +932,7 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
         self.tunModeCard = _ToggleSettingsCard(
             'shield-check.svg',
             'VPNMode',
-            AppSettingsController().setTUNMode,
+            self._setTUNMode,
             tunModeTitle(),
             _('Route system traffic through the active proxy connection.'),
         )
@@ -1203,17 +1203,9 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
         self.applicationSection.addCard(self.updateCard)
         self.applicationSection.addCard(self.aboutCard)
 
-        if PLATFORM == 'Windows' or PLATFORM == 'Darwin':
-            self.restartCard = _ActionSettingsCard(
-                'arrow-clockwise.svg',
-                self._restartAsAdmin,
-                _restartApplicationTitle(),
-                _('Restart with privileges required by system-level networking.'),
-                _('Restart'),
-            )
-            self.applicationSection.addCard(self.restartCard)
-        else:
-            self.restartCard = None
+        # Privilege elevation is requested only when the user enables TUN.
+        # Keep the Application section free of a separate technical restart action.
+        self.restartCard = None
 
         if PLATFORM != 'Darwin' and not SystemRuntime.flatpakID():
             self.openFolderCard = _ActionSettingsCard(
@@ -1588,6 +1580,18 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
     def _showEndpointPrivacy(self):
         """Show the end-user disclosure for the active endpoint providers."""
         _endpointPrivacyMessageBox(self).open()
+
+    def _setTUNMode(self, enabled: bool):
+        """Enable TUN through the switch, elevating transparently when needed."""
+        if (
+            enabled
+            and PLATFORM in ('Windows', 'Darwin')
+            and not SystemRuntime.isAdmin()
+        ):
+            self._restartAsAdmin()
+            return False
+
+        return AppSettingsController().setTUNMode(enabled)
 
     def setConnectionControlsEnabled(self, enabled: bool):
         """Disable connection-sensitive settings during a transition."""
