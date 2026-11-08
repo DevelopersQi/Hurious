@@ -1089,7 +1089,6 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
 
         self.tunSection.addCard(self.tunModeCard)
         self.tunSection.addCard(self.tunBackendCard)
-        self.tunSection.addCard(self.tunSettingsCard)
 
         self.xrayTunSettingsCard = _ActionSettingsCard(
             'diagram-3.svg',
