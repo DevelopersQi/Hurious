@@ -927,16 +927,30 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
 
     @QtCore.Slot(bool)
     def handleTUNModeChanged(self, enabled: bool):
-        """Apply TUN mode, requesting elevation transparently when required."""
+        """Apply TUN mode, confirming the one-time restart when elevation is needed."""
         if (
             enabled
             and PLATFORM in ('Windows', 'Darwin')
             and not SystemRuntime.isAdmin()
         ):
-            # Keep the non-elevated process in the OFF state. The elevated
-            # RunAs instance enables TUN during its own startup.
+            # Keep the switch OFF until the user confirms the first-run restart.
             self.tunModeSwitch.syncChecked(False)
-            self.restartAsAdmin()
+
+            answer = QMessageBox.question(
+                self,
+                _('TUN Mode'),
+                _(
+                    'The first time you enable TUN mode, the application needs '
+                    'to restart. Restart now?'
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+
+            if answer == QMessageBox.StandardButton.Yes:
+                # The RunAs child enables TUN during its own startup.
+                self.restartAsAdmin()
+
             return
 
         AppSettingsController().setTUNMode(enabled)
