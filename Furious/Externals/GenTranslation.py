@@ -750,6 +750,48 @@ TRANSLATION = {
         "ZH": "无效的服务器配置",
         "isReviewed": "True"
     },
+    "Routing Description": {
+        "source": [
+            "Furious.Backends.Xray.RoutingWindow"
+        ],
+        "ZH": "描述",
+        "isReviewed": "True"
+    },
+    "Edit Routing Description": {
+        "source": [
+            "Furious.Backends.Xray.RoutingWindow"
+        ],
+        "ZH": "编辑路由描述",
+        "isReviewed": "True"
+    },
+    "Domain Strategy": {
+        "source": [
+            "Furious.Backends.Xray.RoutingWindow"
+        ],
+        "ZH": "域名策略",
+        "isReviewed": "True"
+    },
+    "AsIs": {
+        "source": [
+            "Furious.Backends.Xray.RoutingWindow"
+        ],
+        "ZH": "保持原样（AsIs）",
+        "isReviewed": "True"
+    },
+    "IPIfNonMatch": {
+        "source": [
+            "Furious.Backends.Xray.RoutingWindow"
+        ],
+        "ZH": "未匹配时解析 IP（IPIfNonMatch）",
+        "isReviewed": "True"
+    },
+    "IPOnDemand": {
+        "source": [
+            "Furious.Backends.Xray.RoutingWindow"
+        ],
+        "ZH": "按需解析 IP（IPOnDemand）",
+        "isReviewed": "True"
+    },
     "Remark": {
         "source": [
             "Furious.Backends.ExternalCore.Editor",
