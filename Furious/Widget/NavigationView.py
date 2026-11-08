@@ -178,20 +178,19 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
         self.pageStack = QStackedWidget(parent=self)
         self.pageStack.setObjectName('ApplicationPageStack')
 
-        # Keep the layout's navigation reservation at the compact rail width.
-        # The real panel is a sibling overlay, mirroring Fluent NavigationView:
-        # expanding it changes only the panel geometry, never the page geometry.
-        self.navigationRail = QFrame(parent=self)
-        self.navigationRail.setObjectName('NavigationRailPlaceholder')
-        self.navigationRail.setFixedWidth(self.CollapsedWidth)
+        # The navigation panel itself participates in the horizontal layout.
+        # This makes the page stack yield space directly instead of relying on
+        # a separate placeholder plus a sibling overlay staying in sync.
+        self.navigationPanel.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Expanding,
+        )
 
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
-        self._layout.addWidget(self.navigationRail)
+        self._layout.addWidget(self.navigationPanel)
         self._layout.addWidget(self.pageStack, 1)
-
-        self.navigationPanel.raise_()
 
         self._widthAnimation = QtCore.QPropertyAnimation(
             self,
@@ -399,18 +398,11 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
         """Resize the navigation reservation and panel together."""
         self._navigationWidth = int(width)
 
-        # The rail participates in the horizontal layout. Keeping its width in
-        # sync with the panel makes the page stack yield space instead of
-        # remaining underneath an expanded navigation overlay.
-        self.navigationRail.setFixedWidth(self._navigationWidth)
-
-        self.navigationPanel.setGeometry(
-            0,
-            0,
-            self._navigationWidth,
-            self.height(),
-        )
-        self.navigationPanel.raise_()
+        # The panel is a real layout item, so changing its width moves and
+        # resizes the page stack in the same layout pass.
+        self.navigationPanel.setFixedWidth(self._navigationWidth)
+        self._layout.invalidate()
+        self._layout.activate()
 
     navigationWidth = QtCore.Property(
         int,
@@ -430,10 +422,8 @@ class NavigationView(Mixins.QTranslatable, Mixins.ThemeAware, QWidget):
             self._setPageButtonsExpanded(False)
 
     def resizeEvent(self, event):
-        """Keep the navigation overlay as tall as the page container."""
+        """Let the owning layout resize the navigation panel and page stack."""
         super().resizeEvent(event)
-
-        self._setNavigationWidth(self._navigationWidth)
 
     def showEvent(self, event):
         """Resume outside-click observation when an expanded view is shown."""
