@@ -134,6 +134,11 @@ TRANSLATION = {
         "ZH": "连接设置",
         "isReviewed": "True"
     },
+    "TUN & DNS": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "TUN 与 DNS 设置",
+        "isReviewed": "True"
+    },
     "Routing Rules": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "路由规则",
