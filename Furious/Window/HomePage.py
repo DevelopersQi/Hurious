@@ -940,18 +940,15 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
             messageBox.setIcon(QMessageBox.Icon.Question)
             messageBox.setWindowTitle(_('TUN Mode'))
             messageBox.setText(
-                _(
-                    'The first time you enable TUN mode, the application needs '
-                    'to restart. Restart now?'
-                )
+                _('首次启用 TUN 模式需要重启应用。现在重启并开启 TUN 模式吗？')
             )
 
             cancelButton = messageBox.addButton(
-                _('Not now'),
+                _('暂不开启'),
                 QMessageBox.ButtonRole.RejectRole,
             )
             restartButton = messageBox.addButton(
-                _('Restart now'),
+                _('重启并开启'),
                 QMessageBox.ButtonRole.AcceptRole,
             )
             messageBox.setDefaultButton(cancelButton)
