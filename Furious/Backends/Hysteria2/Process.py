@@ -110,6 +110,14 @@ class Hysteria2(MultiprocessingRuntime):
             **kwargs,
         )
 
+    def start(self):
+        """Start the core and clean up the stats channel on startup failure."""
+        try:
+            super().start()
+        except Exception:
+            self._removeTrafficStatsFile()
+            raise
+
     def _removeTrafficStatsFile(self):
         """Remove this runtime's private counter snapshot."""
         path = self.hysteria2StatsFile

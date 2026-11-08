@@ -24,7 +24,7 @@ dependencies = [
     "pillow",
     "Xray-core @ git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282",
     "hysteria @ git+https://github.com/DevelopersQi/hysteria-python.git@99d4f04f4a475532e70c4f6a353bd6b47e83f86a",
-    "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@00b001d863c6e82c1579b90dc26d6a23de304928",
+    "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@a0ad2e419e22b810da43bddc48a4e84249a6fd48",
     "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e",
     "sysproxy; sys_platform == 'win32'",
     "darkdetect; sys_platform != 'darwin'",
