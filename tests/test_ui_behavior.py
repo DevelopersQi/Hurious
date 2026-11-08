@@ -381,15 +381,26 @@ class SettingsPageOrganizationTest(unittest.TestCase):
         """Finish deferred Settings-page deletion between tests."""
         collectAtBoundary()
 
-    def buildPage(self, *, platform='Windows', flatpakID='', isAdmin=False):
+    def buildPage(
+        self,
+        *,
+        platform='Windows',
+        flatpakID='',
+        isAdmin=False,
+        nativeTunSettings=True,
+    ):
         """Build one isolated Settings page for the requested platform state."""
         callbacks = {
             'checkForUpdates': mock.Mock(),
             'openAboutPage': mock.Mock(),
             'restartAsAdmin': mock.Mock(),
             'openApplicationFolder': mock.Mock(),
-            'xrayTunSettingsDialogFactory': mock.Mock(),
-            'hysteria2TunSettingsDialogFactory': mock.Mock(),
+            'xrayTunSettingsDialogFactory': (
+                mock.Mock() if nativeTunSettings else None
+            ),
+            'hysteria2TunSettingsDialogFactory': (
+                mock.Mock() if nativeTunSettings else None
+            ),
         }
         proxyBypassDialog = mock.Mock()
         networkTestDialog = mock.Mock()
@@ -463,6 +474,17 @@ class SettingsPageOrganizationTest(unittest.TestCase):
             parent=page
         )
         callbacks['hysteria2TunSettingsDialogFactory'].return_value.open.assert_called_once()
+
+        page.close()
+        page.deleteLater()
+
+    def test_native_tun_editor_actions_require_available_dialogs(self):
+        """Hide native backend actions when their editor is unavailable."""
+        page, _callbacks = self.buildPage(nativeTunSettings=False)
+
+        self.assertIsNone(page.xrayTunSettingsCard)
+        self.assertIsNone(page.hysteria2TunSettingsCard)
+        self.assertFalse(page.tunBackendSettingsTitleLabel.isVisible())
 
         page.close()
         page.deleteLater()
