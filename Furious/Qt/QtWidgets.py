@@ -314,6 +314,14 @@ class AppQComboBox(Mixins.QTranslatable, QComboBox):
         if popup.objectName() != 'AppComboBoxPopup':
             popup.setWindowFlag(QtCore.Qt.WindowType.FramelessWindowHint)
             popup.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+            popup.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground)
+            popup.setAutoFillBackground(False)
+            popupPalette = popup.palette()
+            popupPalette.setColor(
+                QPalette.ColorRole.Window,
+                QColor(QtCore.Qt.GlobalColor.transparent),
+            )
+            popup.setPalette(popupPalette)
             popup.setObjectName('AppComboBoxPopup')
             popup.setStyleSheet(comboBoxPopupStyleSheet())
 
@@ -930,6 +938,14 @@ class AppQMenu(Mixins.QTranslatable, QMenu):
         # Rounded QSS borders need transparent pixels outside their outline.
         self.setWindowFlag(QtCore.Qt.WindowType.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAutoFillBackground(False)
+        menuPalette = self.palette()
+        menuPalette.setColor(
+            QPalette.ColorRole.Window,
+            QColor(QtCore.Qt.GlobalColor.transparent),
+        )
+        self.setPalette(menuPalette)
 
         # In some old version PySide6, the self.actions() method
         # does not return with seperators. _actions list append
