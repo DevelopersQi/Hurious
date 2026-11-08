@@ -32,6 +32,7 @@ on:
       - .github/workflows/daily-matrix-build.yml
       - Deploy.py
       - Furious/Window/MainWindow.py
+      - Furious/Frozenlib/Version.py
       - Windows/Wfp/**
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
