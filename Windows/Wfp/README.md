@@ -51,10 +51,14 @@ when a valid endpoint is unavailable.
 
 The native TCP broker is hosted by the elevated WFP service. Its authenticated
 IPC start command returns the actual service PID and dynamically bound IPv4/IPv6
-listener ports. ConnectionManager starts and stops the broker with the proxy
-runtime, then sends those values and the current core PID snapshot to
-SET_ENDPOINT_CONFIG. Only TCP application filters are installed; UDP remains
-disabled until a dedicated UDP relay exists.
+listener ports. A separate UDP broker is also hosted by the service and exposes
+authenticated START_UDP_BROKER/STOP_UDP_BROKER IPC commands with dynamically
+bound UDP listener ports. The UDP broker has SOCKS5 UDP association/relay
+primitives and lifecycle regression tests. However, UDP endpoint configuration
+and UDP application filters remain explicitly disabled behind an end-to-end
+verification gate. Broker lifecycle and relay unit tests do not prove that real
+WFP-redirected datagrams complete the full round trip through SOCKS and back to
+the original client. Only TCP application filters are currently installed.
 
 WFP application routing is used only when system TUN mode is disabled. In
 full-tunnel mode, WFP Direct permits cannot bypass the installed TUN default
@@ -75,7 +79,7 @@ A production redirect path additionally requires:
   Windows 10 x64;
 - restart, crash, PID reuse and stale endpoint recovery verified;
 - TCP behavior verified independently on IPv4 and IPv6;
-- a dedicated UDP relay and UDP behavior verified before enabling UDP filters;
+- complete real WFP UDP redirect, SOCKS5 relay and original-client return-path verification before enabling UDP filters;
 - IPv4 and IPv6 parity;
 - DNS, QUIC, suspend/resume and network-change tests;
 - signed package, rollback and uninstall verification.
@@ -92,4 +96,4 @@ Build and test the driver on a disposable Windows 10 x64 VM with test signing.
 Never install an experimental callout driver on a production workstation.
 
 
-The broker now includes a per-flow SOCKS5 UDP bridge primitive and loopback regression coverage. It preserves the original WFP destination and redirect metadata, validates the negotiated relay source and returned datagram destination, and owns its UDP socket/control connection lifecycle. This is not yet wired into a UDP listener or the service endpoint configuration; UDP remains disabled in WFP filters and IPC.
+The UDP broker is wired to the service lifecycle through authenticated IPC and reports its actual listener ports. Its per-flow SOCKS5 UDP bridge preserves the original WFP destination and redirect metadata, validates the negotiated relay source and returned datagram destination, and owns its UDP socket/control connection lifecycle. This is not yet enabled in driver endpoint configuration or WFP application filters: the end-to-end transparent redirect and return path still requires integration verification.
