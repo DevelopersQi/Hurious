@@ -756,7 +756,7 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
 
         self.systemProxyComboBox = AppQComboBox(parent=self)
         self.systemProxyComboBox.setContentWidthAdjustable()
-        self.systemProxyComboBox.setMinimumWidth(220)
+        self.systemProxyComboBox.setMinimumWidth(170)
         self.systemProxyComboBox.setToolTip(_('System Proxy'))
 
         for label, mode in SYSTEM_PROXY_MODE_OPTIONS:
@@ -776,7 +776,7 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
                 'Search servers with text or regex, e.g. trojan, hk|jp, ^vmess, (us|sg).*tls'
             )
         )
-        self.searchLineEdit.setMinimumWidth(280)
+        self.searchLineEdit.setMinimumWidth(180)
         self.searchLineEdit.setMaximumWidth(700)
         self.searchLineEdit.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -787,7 +787,7 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
 
         self.subscriptionFilterComboBox = AppQComboBox()
         self.subscriptionFilterComboBox.setContentWidthAdjustable()
-        self.subscriptionFilterComboBox.setMinimumWidth(190)
+        self.subscriptionFilterComboBox.setMinimumWidth(145)
         self.subscriptionFilterComboBox.setSizePolicy(
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Fixed,
