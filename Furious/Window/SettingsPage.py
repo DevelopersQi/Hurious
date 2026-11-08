@@ -1084,11 +1084,11 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         # Keep TUN and its DNS/interface configuration separate from
         # operating-system proxy settings. The existing backend dialogs expose
         # their DNS controls, so this category is the single entry point.
-        if not SystemRuntime.flatpakID():
-            self.tunSection.addCard(self.tunSettingsCard)
-
         self.tunSection.addCard(self.tunModeCard)
         self.tunSection.addCard(self.tunBackendCard)
+
+        if not SystemRuntime.flatpakID():
+            self.tunSection.addCard(self.tunSettingsCard)
 
         self.xrayTunSettingsCard = _ActionSettingsCard(
             'diagram-3.svg',
