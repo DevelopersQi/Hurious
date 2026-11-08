@@ -1637,6 +1637,31 @@ class UnifiedLogPageTest(unittest.TestCase):
 
             self.disposePage(page)
 
+    def testCompactWindowKeepsLogControlsAccessible(self):
+        """Hide secondary captions before the log toolbar becomes crowded."""
+        with isolatedSettings():
+            page = LogPage(manager=LogManager(maximumEntries=5))
+            self.addCleanup(page.close)
+            page.show()
+
+            page.resize(1100, 520)
+            processQtEvents()
+            self.assertTrue(page.autoScrollLabel.isVisible())
+            self.assertTrue(page.autoClearLabel.isVisible())
+            self.assertTrue(page.filterLabel.isVisible())
+
+            page.resize(820, 520)
+            processQtEvents()
+            self.assertFalse(page.autoScrollLabel.isVisible())
+            self.assertFalse(page.autoClearLabel.isVisible())
+            self.assertTrue(page.filterLabel.isVisible())
+
+            page.resize(680, 520)
+            processQtEvents()
+            self.assertFalse(page.filterLabel.isVisible())
+            self.assertGreaterEqual(page.searchLineEdit.minimumWidth(), 120)
+            self.assertGreaterEqual(page.filterComboBox.minimumWidth(), 120)
+
     def testHiddenPageRendersOneOrderedSnapshotWhenShown(self):
         """Do not mutate the document while hidden; catch up exactly once."""
         with isolatedSettings():
