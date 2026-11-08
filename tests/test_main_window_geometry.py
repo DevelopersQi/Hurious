@@ -294,6 +294,15 @@ class MainWindowNavigationSessionTest(unittest.TestCase):
             window.homePage,
         )
 
+    def testHomeControlsUseCompactMinimumWidths(self):
+        """Keep server search and selectors usable in narrower client windows."""
+        with isolatedSettings(), _realMainWindow() as window:
+            home = window.homePage
+
+            self.assertEqual(home.searchLineEdit.minimumWidth(), 180)
+            self.assertEqual(home.systemProxyComboBox.minimumWidth(), 170)
+            self.assertEqual(home.subscriptionFilterComboBox.minimumWidth(), 145)
+
     def testNewSessionUsesCanonicalPageAndIgnoresFormerValues(self):
         """Ignore every representative value stored by the retired setting."""
         self.assertNotIn(self.FormerPageKey, AppSettings.SettingsPool)
