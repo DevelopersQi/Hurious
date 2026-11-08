@@ -212,6 +212,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m unittest \
+            tests.test_isolation_and_navigation \
             tests.test_tun_settings_ui \
             tests.test_native_tun_semantics \
             tests.test_system_network_detection \
