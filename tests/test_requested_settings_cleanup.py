@@ -60,6 +60,17 @@ class RequestedSettingsCleanupTest(unittest.TestCase):
         self.assertIn('menuPalette.setColor(', widgets)
         self.assertIn('QColor(QtCore.Qt.GlobalColor.transparent)', widgets)
 
+    def test_settings_surfaces_use_explicit_dark_theme_tokens(self):
+        settings = source('Furious/Window/SettingsPage.py')
+
+        self.assertIn('def _applyCategoryListStyle(self, theme: str):', settings)
+        self.assertIn('def _applyOptionStyle(self, theme: str):', settings)
+        self.assertIn("palette['panel_alt']", settings)
+        self.assertIn("palette['accent_soft']", settings)
+        self.assertNotIn('palette(midlight)', settings)
+        self.assertNotIn('palette(alternate-base)', settings)
+        self.assertNotIn('palette(highlight)', settings)
+
 
 if __name__ == '__main__':
     unittest.main()
