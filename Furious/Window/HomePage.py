@@ -927,7 +927,18 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
 
     @QtCore.Slot(bool)
     def handleTUNModeChanged(self, enabled: bool):
-        """Persist a TUN request through the shared settings authority."""
+        """Apply TUN mode, requesting elevation transparently when required."""
+        if (
+            enabled
+            and PLATFORM in ('Windows', 'Darwin')
+            and not SystemRuntime.isAdmin()
+        ):
+            # Keep the non-elevated process in the OFF state. The elevated
+            # RunAs instance enables TUN during its own startup.
+            self.tunModeSwitch.syncChecked(False)
+            self.restartAsAdmin()
+            return
+
         AppSettingsController().setTUNMode(enabled)
 
     @QtCore.Slot(bool)
