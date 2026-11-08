@@ -1008,10 +1008,10 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
             self.editorWhitespaceCard,
         ) = (
             _ActionSettingsCard(
-                'diagram-3.svg',
+                None,
                 self._openTUNSettings,
                 _('Customize Tun2socks Settings...'),
-                _('Configure the external Tun2socks network interface and routing.'),
+                _('Configure the Tun2socks adapter, network interface, DNS and routing options.'),
                 _('Open'),
             ),
             _SystemProxySettingsCard(
@@ -1090,22 +1090,41 @@ class SettingsPage(Mixins.QTranslatable, QMainWindow):
         if not SystemRuntime.flatpakID():
             self.tunSection.addCard(self.tunSettingsCard)
 
-        self.xrayTunSettingsCard = _ActionSettingsCard(
-            'diagram-3.svg',
-            self._openXrayTUNSettings,
-            _('Customize Xray-core TUN Settings...'),
-            _('Use Xray-core built-in TUN.'),
-            _('Open'),
+        self.tunBackendSettingsTitleLabel = AppQLabel(
+            _('Backend-specific settings'),
+            parent=self.tunSection,
         )
-        self.hysteria2TunSettingsCard = _ActionSettingsCard(
-            'diagram-3.svg',
-            self._openHysteria2TUNSettings,
-            _('Customize Hysteria2 TUN Settings...'),
-            _('Use Hysteria 2 built-in TUN.'),
-            _('Open'),
-        )
-        self.tunSection.addCard(self.xrayTunSettingsCard)
-        self.tunSection.addCard(self.hysteria2TunSettingsCard)
+        self.tunBackendSettingsTitleLabel.setObjectName('SettingsSubsectionTitle')
+        self.tunBackendSettingsTitleLabel.setWordWrap(True)
+
+        self.xrayTunSettingsCard = None
+        if callable(self._xrayTunSettingsDialogFactory):
+            self.xrayTunSettingsCard = _ActionSettingsCard(
+                None,
+                self._openXrayTUNSettings,
+                _('Customize Xray-core TUN Settings...'),
+                _('Configure Xray-core native TUN interface and routing parameters.'),
+                _('Open'),
+            )
+
+        self.hysteria2TunSettingsCard = None
+        if callable(self._hysteria2TunSettingsDialogFactory):
+            self.hysteria2TunSettingsCard = _ActionSettingsCard(
+                None,
+                self._openHysteria2TUNSettings,
+                _('Customize Hysteria2 TUN Settings...'),
+                _('Configure Hysteria 2 native TUN interface and routing parameters.'),
+                _('Open'),
+            )
+
+        if self.xrayTunSettingsCard or self.hysteria2TunSettingsCard:
+            self.tunSection.layout.addWidget(self.tunBackendSettingsTitleLabel)
+            if self.xrayTunSettingsCard:
+                self.tunSection.addCard(self.xrayTunSettingsCard)
+            if self.hysteria2TunSettingsCard:
+                self.tunSection.addCard(self.hysteria2TunSettingsCard)
+        else:
+            self.tunBackendSettingsTitleLabel.hide()
         self.connectionSection.addCard(self.systemProxyCard)
 
         self.customRoutingCard = None
