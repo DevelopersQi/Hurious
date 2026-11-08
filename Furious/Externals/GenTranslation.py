@@ -3799,8 +3799,7 @@ TRANSLATION = {
         "source": ["Furious.Backends.Xray.RoutingWindow"],
         "ZH": "请使用“浏览 EXE”或“添加运行中的应用”选择具有完整可执行文件路径的应用。",
         "isReviewed": "True"
-    }
-
+    },
     "Create Xray routing profiles and configure domain, IP, port, protocol, and process rules. Windows Xray native TUN also supports application rules. Open the editor and choose Application Rules to configure per-app proxy/direct policy.": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "创建 Xray 路由配置，可按域名、IP、端口、协议和进程设置规则。Windows 下的 Xray 原生 TUN 还支持应用程序规则。打开编辑器并选择“应用程序规则”，即可配置按应用代理或直连。",
