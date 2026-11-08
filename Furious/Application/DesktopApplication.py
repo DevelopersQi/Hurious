@@ -424,6 +424,7 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
 
         self.mainWindow = None
         self.systemTray = None
+        self._pendingMainWindowActivation = False
 
         self._loggingHandlers = tuple()
         self._loggingRootLevel = None
@@ -460,6 +461,27 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
             QtCore.Qt.ConnectionType.QueuedConnection,
         )
 
+    def _showMainWindow(self):
+        """Restore the primary window and return the user to the Home page."""
+        window = self.mainWindow
+
+        if window is None:
+            # Singleton IPC can arrive while the primary instance is still
+            # composing its UI. Remember the request and fulfill it afterward.
+            self._pendingMainWindowActivation = True
+            return
+
+        self._pendingMainWindowActivation = False
+
+        if window.isMinimized():
+            window.showNormal()
+        else:
+            window.show()
+
+        window.showPage('home')
+        window.raise_()
+        window.activateWindow()
+
     @callRateLimited(maxCallPerSecond=2)
     @QtCore.Slot()
     def handleNewConnection(self):
@@ -492,13 +514,8 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
             datastr = str(data)
 
         if datastr == AppBuiltinCommand.Empty.value:
-            if isinstance(self.systemTray, TrayIcon):
-                logger.info('attempting to start multiple instance. Show tray message')
-
-                self.systemTray.showMessage(_('Already started'))
-            else:
-                # The tray hasn't been initialized. Do nothing
-                pass
+            logger.info('showing the existing main window after a new launch request')
+            self._showMainWindow()
         elif datastr == AppBuiltinCommand.RunAs.value:
             logger.info('detected requests to start as admin in new instance. Exiting')
 
@@ -793,9 +810,12 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
 
             # A normal application launch should always land on the Home page.
             # Keep the tray available for minimizing/closing to the background.
-            self.mainWindow.show()
-            self.mainWindow.raise_()
-            self.mainWindow.activateWindow()
+            if self._pendingMainWindowActivation:
+                self._showMainWindow()
+            else:
+                self.mainWindow.show()
+                self.mainWindow.raise_()
+                self.mainWindow.activateWindow()
         except Exception:
             # Any non-exit exceptions
 
