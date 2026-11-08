@@ -11,12 +11,18 @@
 
 from __future__ import annotations
 
+from Furious.Backends.Hysteria2.Plugin import Hysteria2Plugin
+from Furious.Backends.Hysteria2.Process import Hysteria2
 from Furious.Backends.Hysteria2.Stats import (
     HYSTERIA2_STATS_MAX_AGE_SECONDS,
     Hysteria2StatsProvider,
     Hysteria2StatsTarget,
     queryHysteria2TrafficStats,
 )
+
+from Furious.Plugins.API import TrafficStatsProvider
+from Furious.Plugins.Registry import PluginRegistry
+from tests.support import application
 
 import json
 import os
@@ -32,6 +38,7 @@ class _Runtime:
 
 class Hysteria2LocalTrafficStatsTest(unittest.TestCase):
     def setUp(self):
+        application()
         self.directory = tempfile.TemporaryDirectory()
         self.path = os.path.join(self.directory.name, 'traffic.json')
         self.target = Hysteria2StatsTarget(self.path)
@@ -87,6 +94,45 @@ class Hysteria2LocalTrafficStatsTest(unittest.TestCase):
             with self.subTest(tx=tx, rx=rx):
                 self.writeSnapshot(tx=tx, rx=rx)
                 self.assertIsNone(queryHysteria2TrafficStats(self.target))
+
+    def testPluginRegistersSharedRuntimeStatisticsCapability(self):
+        registry = PluginRegistry()
+        plugin = Hysteria2Plugin()
+        registry.register(plugin)
+
+        providers = tuple(
+            item
+            for item in plugin.capabilities
+            if isinstance(item, TrafficStatsProvider)
+        )
+        self.assertEqual(len(providers), 1)
+        self.assertIs(registry.trafficStatsProviders()[0], providers[0])
+        self.assertTrue(providers[0].workerSafe)
+
+    def testRuntimeInjectsAndCleansPrivateCounterFile(self):
+        runtime = Hysteria2(json.dumps({'server': '127.0.0.1:443'}))
+        path = runtime.hysteria2StatsFile
+        try:
+            self.assertTrue(path)
+            self.assertTrue(os.path.exists(path))
+            runtimeConfiguration = json.loads(runtime._launch.args[0])
+            self.assertEqual(runtimeConfiguration['furiousStatsFile'], path)
+        finally:
+            runtime.dispose()
+
+        self.assertFalse(os.path.exists(path))
+
+    def testProbeRuntimeDoesNotCreateStatisticsFile(self):
+        runtime = Hysteria2(
+            json.dumps({'server': '127.0.0.1:443'}),
+            enableTrafficStats=False,
+        )
+        try:
+            self.assertEqual(runtime.hysteria2StatsFile, '')
+            runtimeConfiguration = json.loads(runtime._launch.args[0])
+            self.assertNotIn('furiousStatsFile', runtimeConfiguration)
+        finally:
+            runtime.dispose()
 
     def testRuntimeWithoutCounterFileDoesNotAdvertiseMonitor(self):
         provider = Hysteria2StatsProvider()
