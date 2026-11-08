@@ -434,9 +434,16 @@ class SettingsPageOrganizationTest(unittest.TestCase):
         """Keep the three independent backend editors together in TUN & DNS."""
         page, callbacks = self.buildPage()
 
-        self.assertIn(page.tunSettingsCard, page.tunSection.cards)
-        self.assertIn(page.xrayTunSettingsCard, page.tunSection.cards)
-        self.assertIn(page.hysteria2TunSettingsCard, page.tunSection.cards)
+        self.assertEqual(
+            page.tunSection.cards[-5:],
+            [
+                page.tunModeCard,
+                page.tunBackendCard,
+                page.tunSettingsCard,
+                page.xrayTunSettingsCard,
+                page.hysteria2TunSettingsCard,
+            ],
+        )
 
         page._openXrayTUNSettings()
         callbacks['xrayTunSettingsDialogFactory'].assert_called_once_with(parent=page)
