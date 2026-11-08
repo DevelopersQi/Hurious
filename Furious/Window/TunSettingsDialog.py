@@ -39,14 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def tunModeTitle() -> str:
-    """Return the platform-appropriate translated TUN control title."""
-    if PLATFORM == 'Linux' or SystemRuntime.isAdmin():
-        return _('TUN Mode')
-
-    if ADMINISTRATOR_NAME == 'Administrator':
-        return _('TUN Mode Disabled (Administrator)')
-
-    return _('TUN Mode Disabled (Superuser)')
+    """Return the stable TUN control title; its switch conveys the state."""
+    return _('TUN Mode')
 
 
 class GuiTUNSettingsItemXXX(GuiEditorItemTextInput):
