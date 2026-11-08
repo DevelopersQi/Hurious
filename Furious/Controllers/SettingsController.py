@@ -184,6 +184,11 @@ class SettingsController(QtCore.QObject):
         if PLATFORM == 'Linux':
             return not SystemRuntime.flatpakID()
 
+        # On desktop platforms, let the TUN switch request elevation when
+        # needed instead of exposing a separate administrator-restart action.
+        if PLATFORM in ('Windows', 'Darwin'):
+            return True
+
         return SystemRuntime.isAdmin()
 
     def setTUNBackend(self, backend: str):
