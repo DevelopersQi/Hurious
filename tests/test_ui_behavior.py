@@ -444,6 +444,13 @@ class SettingsPageOrganizationTest(unittest.TestCase):
                 page.hysteria2TunSettingsCard,
             ],
         )
+        self.assertEqual(
+            page.tunBackendSettingsTitleLabel.text(),
+            'Backend-specific settings',
+        )
+        self.assertFalse(page.tunSettingsCard.iconFileName)
+        self.assertFalse(page.xrayTunSettingsCard.iconFileName)
+        self.assertFalse(page.hysteria2TunSettingsCard.iconFileName)
 
         page._openXrayTUNSettings()
         callbacks['xrayTunSettingsDialogFactory'].assert_called_once_with(
