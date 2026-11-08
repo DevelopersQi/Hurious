@@ -23,7 +23,7 @@ from Furious.Frozenlib import *
 from Furious.Models import CoreConfiguration, ServerProfile
 from Furious.Qt import *
 from Furious.Qt import gettext as _
-from Furious.Service import MetricsHistory, PluginNavigationManager
+from Furious.Service import MetricsHistory, PluginNavigationManager, isCoreActive
 from Furious.Widget.NavigationView import NavigationView
 from Furious.Window.HomePage import HomePage
 from Furious.Window.LogPage import LogPage
@@ -40,6 +40,29 @@ import logging
 __all__ = ['MainWindow']
 
 logger = logging.getLogger(__name__)
+
+
+def _xrayTunSettingsDialogFactory(**kwargs):
+    """Create the Xray native-TUN editor without importing its UI at startup."""
+    from Furious.Backends.Xray.Process import XrayCore
+    from Furious.Backends.Xray.TunSettingsDialog import XrayTunSettingsDialog
+
+    return XrayTunSettingsDialog(
+        isConnectionActive=lambda: isCoreActive(XrayCore),
+        **kwargs,
+    )
+
+
+def _hysteria2TunSettingsDialogFactory(**kwargs):
+    """Create the Hysteria 2 native-TUN editor on demand."""
+    from Furious.Backends.Hysteria2.Process import Hysteria2
+    from Furious.Backends.Hysteria2.TunSettingsDialog import Hysteria2TunSettingsDialog
+
+    return Hysteria2TunSettingsDialog(
+        isConnectionActive=lambda: isCoreActive(Hysteria2),
+        **kwargs,
+    )
+
 
 # Migrate legacy settings.
 registerAppSettings('ServerWidgetWindowSize')
@@ -93,6 +116,8 @@ class MainWindow(AppQMainWindow):
         self._routingEditor = None
         self.settingsPage = SettingsPage(
             tunSettingsDialogFactory=self.homePage.getGuiTUNSettings,
+            xrayTunSettingsDialogFactory=_xrayTunSettingsDialogFactory,
+            hysteria2TunSettingsDialogFactory=_hysteria2TunSettingsDialogFactory,
             proxyBypassDialog=self.homePage.customizeProxyBypassDialog,
             networkTestDialog=self.homePage.customizeNetworkTestDialog,
             checkForUpdates=self.homePage.checkForUpdates,
