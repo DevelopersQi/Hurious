@@ -936,18 +936,29 @@ class HomePage(Mixins.QTranslatable, QMainWindow):
             # Keep the switch OFF until the user confirms the first-run restart.
             self.tunModeSwitch.syncChecked(False)
 
-            answer = QMessageBox.question(
-                self,
-                _('TUN Mode'),
+            messageBox = QMessageBox(self)
+            messageBox.setIcon(QMessageBox.Icon.Question)
+            messageBox.setWindowTitle(_('TUN Mode'))
+            messageBox.setText(
                 _(
                     'The first time you enable TUN mode, the application needs '
                     'to restart. Restart now?'
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                )
             )
 
-            if answer == QMessageBox.StandardButton.Yes:
+            cancelButton = messageBox.addButton(
+                _('Not now'),
+                QMessageBox.ButtonRole.RejectRole,
+            )
+            restartButton = messageBox.addButton(
+                _('Restart now'),
+                QMessageBox.ButtonRole.AcceptRole,
+            )
+            messageBox.setDefaultButton(cancelButton)
+            messageBox.setEscapeButton(cancelButton)
+            messageBox.exec()
+
+            if messageBox.clickedButton() == restartButton:
                 # The RunAs child enables TUN during its own startup.
                 self.restartAsAdmin()
 
