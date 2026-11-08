@@ -1028,12 +1028,12 @@ class PluginRegistry:
             if nativeBackend == 'xray':
                 raise TUNPreparationError(
                     'Hysteria 2 Native TUN is not supported by the selected '
-                    'Xray-core configuration. Select Auto or Xray-core Native TUN.'
+                    'Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.'
                 )
 
             raise TUNPreparationError(
                 'Xray-core Native TUN is not supported by the selected '
-                'Hysteria 2 configuration. Select Auto or Hysteria 2 Native TUN.'
+                'Hysteria 2 configuration. Open Settings > TUN Backend and select Auto or Hysteria 2 Native TUN.'
             )
 
         try:
