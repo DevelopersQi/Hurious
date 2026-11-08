@@ -184,6 +184,9 @@ class TUNSettingsUITest(unittest.TestCase):
             'Detected System Network',
             'Not detected',
             'Adapter: {name}    IPv4: {address}    Default gateway: {gateway}',
+            'Create Xray routing profiles and configure domain, IP, port, protocol, and process rules. Windows Xray native TUN also supports application rules. Open the editor and choose Application Rules to configure per-app proxy/direct policy.',
+            'Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.',
+            'Xray-core Native TUN is not supported by the selected Hysteria 2 configuration. Open Settings > TUN Backend and select Auto or Hysteria 2 Native TUN.',
         )
 
         for key in required:
