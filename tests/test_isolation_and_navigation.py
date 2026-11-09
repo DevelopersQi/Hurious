@@ -194,8 +194,8 @@ class NavigationBehaviorTest(unittest.TestCase):
         self.navigation.setExpanded(False, animated=False)
         self.assertEqual(requestedIcons[0], 'chevron-bar-right.svg')
 
-    def testOutsideClickKeepsNavigationExpandedAndStillReachesTarget(self):
-        """Keep the navigation expanded while allowing the page click through."""
+    def testOutsideClickCollapsesAndStillReachesTarget(self):
+        """Dismiss the temporary overlay without consuming the original click."""
         clicks = []
 
         self.outsideButton.clicked.connect(lambda: clicks.append(True))
@@ -209,7 +209,7 @@ class NavigationBehaviorTest(unittest.TestCase):
         processQtEvents()
 
         self.assertEqual(clicks, [True])
-        self.assertTrue(self.navigation.isExpanded())
+        self.assertFalse(self.navigation.isExpanded())
         self.assertFalse(self.navigation._outsideClickFilterInstalled)
 
     def testInsideNavigationClickKeepsOverlayExpandedAndSwitchesPage(self):

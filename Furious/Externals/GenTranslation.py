@@ -199,9 +199,9 @@ TRANSLATION = {
         "ZH": "路由规则配置",
         "isReviewed": "True"
     },
-    "Configure custom Xray routing profiles and define domain, IP, port, protocol, and process matching rules. Select a profile in the routing selector to apply it.": {
+    "Configure Xray routing by domain, IP, port, protocol, or process. Rules follow their configured order within the selected routing profile. Priority against application rules depends on the selected backend.": {
         "source": ["Furious.Window.SettingsPage"],
-        "ZH": "创建和编辑自定义 Xray 路由配置，可按域名、IP、端口、协议和进程匹配流量。保存后，在主界面的路由选择器中选择配置即可应用。",
+        "ZH": "按域名、IP、端口、协议或进程配置 Xray 路由。规则在所选路由配置中按设定顺序匹配；与应用规则之间的优先级由当前后端决定。",
         "isReviewed": "True"
     },
     "Application Rules Configuration": {
@@ -209,9 +209,9 @@ TRANSLATION = {
         "ZH": "应用规则配置",
         "isReviewed": "True"
     },
-    "Configure per-application proxy or direct rules on Windows. Add running applications or browse to an EXE, then set rule order; current mode and protocol limitations are shown in the editor.": {
+    "Set proxy or direct actions for individual Windows applications. Within this list, rules are checked from top to bottom and the first matching rule wins. Priority against routing rules depends on the selected backend.": {
         "source": ["Furious.Window.SettingsPage"],
-        "ZH": "为 Windows 配置应用级代理或直连规则。可添加正在运行的应用或浏览选择 EXE，并设置规则顺序；当前模式和协议限制会在编辑窗口中说明。",
+        "ZH": "为指定 Windows 应用设置代理或直连。本列表按从上到下的顺序匹配，命中第一条规则后即采用该策略；与路由规则之间的优先级由当前后端决定。",
         "isReviewed": "True"
     },
     "Configure": {

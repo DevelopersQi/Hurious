@@ -867,6 +867,7 @@ class RoutingRulesDialog(AppQTransientDialog):
         actionLayout.addWidget(self.addButton)
         actionLayout.addWidget(self.deleteButton)
         actionLayout.addStretch(1)
+        actionLayout.addWidget(self.applicationRulesButton)
         actionLayout.addWidget(self.closeWindowButton)
 
         layout = QVBoxLayout()
@@ -1514,6 +1515,10 @@ class XrayRoutingWindow(AppQMainWindow):
 
         self.tableView = UserRoutingTableView(parent=self)
 
+        self.applicationRulesButton = AppQPushButton(_('Application Rules...'))
+        self.applicationRulesButton.clicked.connect(self.openApplicationRules)
+        self.applicationRulesButton.setVisible(PLATFORM == 'Windows')
+
         self.addButton, self.previewButton, self.renameButton, self.deleteButton = (
             AppQPushButton(
                 _('Add'),
@@ -1565,6 +1570,12 @@ class XrayRoutingWindow(AppQMainWindow):
         layout.addWidget(self.tableView)
 
         self.setCentralWidget(centralWidget)
+
+    def openApplicationRules(self):
+        """Open the Windows Xray process-routing editor."""
+        if PLATFORM != 'Windows':
+            return
+        ApplicationRoutingDialog(parent=self).open()
 
     def prepareInitialGeometry(self):
         """Restore routing-window geometry and state before its first show."""

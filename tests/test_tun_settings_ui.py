@@ -370,6 +370,11 @@ class TUNSettingsUITest(unittest.TestCase):
         )
         self.assertIn("_('Routing Rules Configuration')", source)
         self.assertIn("_('Application Rules Configuration')", source)
+        application_index = source.index("self.applicationRoutingCard = None")
+        routing_index = source.index("self.customRoutingCard = None")
+        self.assertLess(application_index, routing_index)
+        self.assertIn('first matching rule wins', source)
+        self.assertIn('Priority against routing rules depends on the selected backend.', source)
         self.assertIn('self._openRoutingEditor', source)
         self.assertIn('self._openApplicationRoutingEditor', source)
         self.assertIn(
@@ -393,7 +398,9 @@ class TUNSettingsUITest(unittest.TestCase):
             'from Furious.Backends.Xray.RoutingWindow import ApplicationRoutingDialog',
             source,
         )
-        self.assertIn('ApplicationRoutingDialog(parent=self).open()', source)
+        self.assertIn('self._applicationRoutingDialog = dialog', source)
+        self.assertIn('dialog.finished.connect(self._applicationRoutingDialogFinished)', source)
+        self.assertIn('self._applicationRoutingDialog.raise_()', source)
 
     def test_route_profile_editor_does_not_embed_application_rules_action(self):
         source = read_source('Furious/Backends/Xray/RoutingWindow.py')
@@ -407,17 +414,16 @@ class TUNSettingsUITest(unittest.TestCase):
             'Routing Rules Configuration': '路由规则配置',
             'Application Rules Configuration': '应用规则配置',
             (
-                'Configure custom Xray routing profiles and define domain, IP, port, '
-                'protocol, and process matching rules. Select a profile in the routing selector to apply it.'
+                'Set proxy or direct actions for individual Windows applications. Within this list, rules are checked from top to bottom and the first matching rule wins. Priority against routing rules depends on the selected backend.'
             ): (
-                '创建和编辑自定义 Xray 路由配置，可按域名、IP、端口、协议和进程匹配流量。'
-                '保存后，在主界面的路由选择器中选择配置即可应用。'
+                '为指定 Windows 应用设置代理或直连。本列表按从上到下的顺序匹配，'
+                '命中第一条规则后即采用该策略；与路由规则之间的优先级由当前后端决定。'
             ),
             (
-                'Configure per-application proxy or direct rules on Windows. Add running applications or browse to an EXE, then set rule order; current mode and protocol limitations are shown in the editor.'
+                'Configure Xray routing by domain, IP, port, protocol, or process. Rules follow their configured order within the selected routing profile. Priority against application rules depends on the selected backend.'
             ): (
-                '为 Windows 配置应用级代理或直连规则。可添加正在运行的应用或浏览选择 EXE，'
-                '并设置规则顺序；当前模式和协议限制会在编辑窗口中说明。'
+                '按域名、IP、端口、协议或进程配置 Xray 路由。规则在所选路由配置中按设定顺序匹配；'
+                '与应用规则之间的优先级由当前后端决定。'
             ),
         }
         for key, translated in expected.items():

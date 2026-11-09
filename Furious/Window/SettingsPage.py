@@ -61,9 +61,9 @@ _PLUGIN_TEXT_ZH_CN = {
     'and process rules. Windows Xray native TUN also supports application '
     'rules. Open the editor and choose Application Rules to configure '
     'per-app proxy/direct policy.':
-        '创建 Xray 路由配置，可按域名、IP、端口、协议和进程设置规则。'
-        'Windows 下的 Xray 原生 TUN 还支持应用程序规则。打开编辑器并选择“应用程序规则”，'
-        '即可配置按应用代理或直连。',
+        '创建和编辑自定义 Xray 路由配置，可按域名、IP、端口、协议和进程匹配流量。'
+        '保存后，在主界面的路由选择器中选择配置即可应用。应用规则请通过独立的'
+        '“应用规则配置”入口管理。',
 }
 
 # Static translation keys for the radio labels and helper text, which are
@@ -1156,20 +1156,8 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
             self.tunBackendSettingsTitleLabel.hide()
         self.connectionSection.addCard(self.systemProxyCard)
 
-        self.customRoutingCard = None
-        if callable(self._openRoutingEditor):
-            self.customRoutingCard = _ActionSettingsCard(
-                'signpost.svg',
-                self._openRoutingEditor,
-                _('Routing Rules Configuration'),
-                _(
-                    'Configure custom Xray routing profiles and define domain, IP, port, '
-                    'protocol, and process matching rules. Select a profile in the routing selector to apply it.'
-                ),
-                _('Configure'),
-            )
-            self.routingSection.addCard(self.customRoutingCard)
-
+        # Show the more specific application policy first. This is a visual
+        # grouping only: cross-type precedence is determined by the selected core.
         self.applicationRoutingCard = None
         if callable(self._openApplicationRoutingEditor):
             self.applicationRoutingCard = _ActionSettingsCard(
@@ -1177,13 +1165,28 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
                 self._openApplicationRoutingEditor,
                 _('Application Rules Configuration'),
                 _(
-                    'Configure per-application proxy or direct rules on Windows. '
-                    'Add running applications or browse to an EXE, then set rule order; '
-                    'current mode and protocol limitations are shown in the editor.'
+                    'Set proxy or direct actions for individual Windows applications. '
+                    'Within this list, rules are checked from top to bottom and the first '
+                    'matching rule wins. Priority against routing rules depends on the selected backend.'
                 ),
                 _('Configure'),
             )
             self.routingSection.addCard(self.applicationRoutingCard)
+
+        self.customRoutingCard = None
+        if callable(self._openRoutingEditor):
+            self.customRoutingCard = _ActionSettingsCard(
+                'signpost.svg',
+                self._openRoutingEditor,
+                _('Routing Rules Configuration'),
+                _(
+                    'Configure Xray routing by domain, IP, port, protocol, or process. '
+                    'Rules follow their configured order within the selected routing profile. '
+                    'Priority against application rules depends on the selected backend.'
+                ),
+                _('Configure'),
+            )
+            self.routingSection.addCard(self.customRoutingCard)
         self.connectionSection.addCard(self.proxyBypassCard)
 
         self.networkSection.addCard(self.networkTestCard)

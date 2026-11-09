@@ -114,6 +114,7 @@ class MainWindow(AppQMainWindow):
         )
         self.logPage = AppLogPage()
         self._routingEditor = None
+        self._applicationRoutingDialog = None
         self.settingsPage = SettingsPage(
             tunSettingsDialogFactory=self.homePage.getGuiTUNSettings,
             xrayTunSettingsDialogFactory=_xrayTunSettingsDialogFactory,
@@ -215,9 +216,22 @@ class MainWindow(AppQMainWindow):
         if PLATFORM != 'Windows':
             return
 
+        if self._applicationRoutingDialog is not None:
+            self._applicationRoutingDialog.raise_()
+            self._applicationRoutingDialog.activateWindow()
+            return
+
         from Furious.Backends.Xray.RoutingWindow import ApplicationRoutingDialog
 
-        ApplicationRoutingDialog(parent=self).open()
+        dialog = ApplicationRoutingDialog(parent=self)
+        self._applicationRoutingDialog = dialog
+        dialog.finished.connect(self._applicationRoutingDialogFinished)
+        dialog.open()
+
+    @QtCore.Slot(int)
+    def _applicationRoutingDialogFinished(self, _result):
+        """Release the transient application editor after it has closed."""
+        self._applicationRoutingDialog = None
 
     @QtCore.Slot(object)
     def _handleConnectionError(self, error):
