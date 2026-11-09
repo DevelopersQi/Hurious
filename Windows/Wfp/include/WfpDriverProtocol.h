@@ -1,8 +1,7 @@
 #pragma once
 
 // Pointer-free ABI shared by the WFP kernel driver and elevated service.
-// Keep numeric values stable across driver/service upgrades. The kernel build
-// must use WDK types and must never pull the user-mode CRT headers into WDK.
+// Keep numeric values stable across driver/service upgrades.
 #if defined(FURIOUS_WFP_KERNEL_MODE)
 #include <ntdef.h>
 typedef ULONG FURIOUS_WFP_UINT32;
@@ -15,9 +14,13 @@ typedef uint32_t FURIOUS_WFP_UINT32;
 #define FURIOUS_WFP_DRIVER_IOCTL_QUERY_STATUS 0x00226000UL
 #define FURIOUS_WFP_DRIVER_IOCTL_SET_ENDPOINT_CONFIG 0x0022A004UL
 #define FURIOUS_WFP_DRIVER_IOCTL_CLEAR_ENDPOINT_CONFIG 0x0022A008UL
+#define FURIOUS_WFP_DRIVER_IOCTL_DEQUEUE_DATAGRAM 0x0022A00CUL
+#define FURIOUS_WFP_DRIVER_IOCTL_ENQUEUE_DATAGRAM_REPLY 0x0022A010UL
+#define FURIOUS_WFP_DRIVER_IOCTL_QUERY_DATAGRAM_QUEUE 0x00226014UL
 
 #define FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED 0x00000001u
 #define FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED 0x00000002u
+#define FURIOUS_WFP_DRIVER_FLAG_DATAGRAM_QUEUE_READY 0x00000004u
 
 #pragma pack(push, 1)
 typedef struct FURIOUS_WFP_DRIVER_STATUS {
@@ -26,4 +29,16 @@ typedef struct FURIOUS_WFP_DRIVER_STATUS {
     FURIOUS_WFP_UINT32 Flags;
     FURIOUS_WFP_UINT32 Reserved;
 } FURIOUS_WFP_DRIVER_STATUS;
+
+typedef struct FURIOUS_WFP_DATAGRAM_QUEUE_STATUS {
+    FURIOUS_WFP_UINT32 Size;
+    FURIOUS_WFP_UINT32 Version;
+    FURIOUS_WFP_UINT32 CapturedEntries;
+    FURIOUS_WFP_UINT32 ReplyEntries;
+    FURIOUS_WFP_UINT32 CapturedBytes;
+    FURIOUS_WFP_UINT32 ReplyBytes;
+    FURIOUS_WFP_UINT32 DroppedCaptured;
+    FURIOUS_WFP_UINT32 DroppedReplies;
+    FURIOUS_WFP_UINT32 Reserved[2];
+} FURIOUS_WFP_DATAGRAM_QUEUE_STATUS;
 #pragma pack(pop)
