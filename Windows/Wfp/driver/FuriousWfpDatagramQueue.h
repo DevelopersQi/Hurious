@@ -5,6 +5,7 @@
 
 NTSTATUS FuriousWfpDatagramQueueInitialize(VOID);
 VOID FuriousWfpDatagramQueueCleanup(VOID);
+VOID FuriousWfpDatagramQueueCancelFile(PFILE_OBJECT FileObject);
 BOOLEAN FuriousWfpDatagramQueueIsReady(VOID);
 BOOLEAN FuriousWfpDatagramQueueDispatch(PIRP Irp, PIO_STACK_LOCATION Stack);
 BOOLEAN FuriousWfpDatagramQueuePushCaptured(

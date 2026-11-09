@@ -214,6 +214,21 @@ static NTSTATUS NTAPI FuriousCreateClose(
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS NTAPI FuriousCleanup(
+    PDEVICE_OBJECT deviceObject,
+    PIRP irp)
+{
+    PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(irp);
+    UNREFERENCED_PARAMETER(deviceObject);
+    // Closing a service handle must not leave its pending dequeue IRPs
+    // resident in the global CSQ. The CSQ callback filters by FILE_OBJECT.
+    FuriousWfpDatagramQueueCancelFile(stack->FileObject);
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    irp->IoStatus.Information = 0;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS NTAPI FuriousDeviceControl(
     PDEVICE_OBJECT deviceObject,
     PIRP irp)
@@ -671,6 +686,7 @@ NTSTATUS DriverEntry(
     driverObject->DriverUnload = FuriousUnload;
     driverObject->MajorFunction[IRP_MJ_CREATE] = FuriousCreateClose;
     driverObject->MajorFunction[IRP_MJ_CLOSE] = FuriousCreateClose;
+    driverObject->MajorFunction[IRP_MJ_CLEANUP] = FuriousCleanup;
     driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = FuriousDeviceControl;
 
     status = IoCreateDeviceSecure(

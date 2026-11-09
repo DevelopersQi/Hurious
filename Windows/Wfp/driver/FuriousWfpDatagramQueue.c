@@ -182,6 +182,17 @@ VOID FuriousWfpDatagramQueueCleanup(VOID)
         ExFreePoolWithTag(entry, FURIOUS_DGRAM_POOL_TAG);
 }
 
+VOID FuriousWfpDatagramQueueCancelFile(PFILE_OBJECT FileObject)
+{
+    PIRP irp;
+    if (FileObject == NULL) return;
+    while ((irp = IoCsqRemoveNextIrp(&gReadCsq, FileObject)) != NULL) {
+        irp->IoStatus.Status = STATUS_CANCELLED;
+        irp->IoStatus.Information = 0;
+        IoCompleteRequest(irp, IO_NO_INCREMENT);
+    }
+}
+
 BOOLEAN FuriousWfpDatagramQueueIsReady(VOID)
 {
     return InterlockedCompareExchange(&gReady, 0, 0) != 0;
@@ -260,7 +271,8 @@ BOOLEAN FuriousWfpDatagramQueueDispatch(PIRP Irp, PIO_STACK_LOCATION Stack)
         Irp->IoStatus.Status = STATUS_PENDING;
         Irp->IoStatus.Information = 0;
         IoMarkIrpPending(Irp);
-        IoCsqInsertIrp(&gReadCsq, Irp, NULL);
+        Irp->Tail.Overlay.DriverContext[0] = Stack->FileObject;
+        IoCsqInsertIrp(&gReadCsq, Irp, Stack->FileObject);
         ExReleaseRundownProtection(&gDispatchRundown);
         KeSetEvent(&gWorkEvent, IO_NO_INCREMENT, FALSE);
         return TRUE;

@@ -24,7 +24,78 @@ HANDLE OpenDevice(DWORD access, DWORD flags) {
 }
 
 int main() {
-    HANDLE queryDevice = OpenDevice(GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
+    // Real-device stress: many outstanding reads across independent file
+    // objects. Explicit cancellation races the worker/CSQ path; closing the
+    // remaining handles exercises IRP_MJ_CLEANUP cancellation.
+    constexpr unsigned kHandles = 8;
+    constexpr unsigned kReadsPerHandle = 8;
+    struct PendingRead {
+        OVERLAPPED overlapped{};
+        std::vector<unsigned char> buffer;
+        bool explicitlyCancelled = false;
+    };
+    HANDLE handles[kHandles] = {};
+    std::vector<PendingRead> pending[kHandles];
+    for (unsigned h = 0; h < kHandles; ++h) {
+        handles[h] = OpenDevice(GENERIC_WRITE, FILE_FLAG_OVERLAPPED);
+        if (handles[h] == INVALID_HANDLE_VALUE) {
+            std::printf("SKIP: cannot open live WFP driver (%lu).\\n", GetLastError());
+            for (unsigned i = 0; i < h; ++i) CloseHandle(handles[i]);
+            return static_cast<int>(kSkip);
+        }
+        pending[h].resize(kReadsPerHandle);
+        for (auto& item : pending[h]) {
+            item.buffer.resize(kMaxMessage);
+            item.overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (item.overlapped.hEvent == nullptr) return 1;
+            DWORD bytes = 0;
+            const BOOL started = DeviceIoControl(
+                handles[h], FURIOUS_WFP_DRIVER_IOCTL_DEQUEUE_DATAGRAM,
+                nullptr, 0, item.buffer.data(),
+                static_cast<DWORD>(item.buffer.size()), &bytes, &item.overlapped);
+            if (started || GetLastError() != ERROR_IO_PENDING) {
+                std::printf("FAIL: read did not pend (%lu).\\n", GetLastError());
+                return 1;
+            }
+        }
+    }
+
+    // Cancel half from concurrent worker threads; the other half must be
+    // completed by per-file cleanup when each handle is closed.
+    std::vector<HANDLE> cancelThreads;
+    for (unsigned h = 0; h < kHandles; ++h) {
+        for (unsigned i = 0; i < kReadsPerHandle; i += 2) {
+            pending[h][i].explicitlyCancelled = true;
+            struct CancelArgs { HANDLE file; PendingRead* request; };
+            auto* args = new CancelArgs{handles[h], &pending[h][i]};
+            HANDLE thread = CreateThread(nullptr, 0, [](LPVOID raw) -> DWORD {
+                auto* args = static_cast<CancelArgs*>(raw);
+                const BOOL ok = CancelIoEx(args->file, &args->request->overlapped);
+                const DWORD error = ok ? ERROR_SUCCESS : GetLastError();
+                delete args;
+                return error == ERROR_NOT_FOUND ? ERROR_SUCCESS : error;
+            }, args, 0, nullptr);
+            // CancelIoEx requires the originating file handle. The thread
+            // argument therefore carries both values below.
+            if (thread) cancelThreads.push_back(thread);
+        }
+    }
+    for (HANDLE thread : cancelThreads) { WaitForSingleObject(thread, INFINITE); CloseHandle(thread); }
+
+    for (unsigned h = 0; h < kHandles; ++h) CloseHandle(handles[h]);
+    for (unsigned h = 0; h < kHandles; ++h) {
+        for (auto& item : pending[h]) {
+            if (WaitForSingleObject(item.overlapped.hEvent, 5000) != WAIT_OBJECT_0) {
+                std::printf("FAIL: outstanding IRP did not complete after cancel/cleanup.\\n");
+                return 1;
+            }
+            CloseHandle(item.overlapped.hEvent);
+        }
+    }
+    std::puts("PASS: concurrent pending reads, cancel requests, and file cleanup.");
+    return 0;
+}
+
     if (queryDevice == INVALID_HANDLE_VALUE) {
         const DWORD error = GetLastError();
         if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ||
