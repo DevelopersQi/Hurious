@@ -63,6 +63,16 @@ class _WfpIpcWorker:
         if current_thread() is not self._thread:
             self._thread.join(timeout=3.0)
 
+    def _notify(self, request_id, command, result, error):
+        """Keep consumer callback failures from terminating the IPC worker."""
+        try:
+            self._completed(request_id, command, result, error)
+        except Exception:
+            # A UI receiver may be tearing down during application shutdown.
+            # This must not turn a successful IPC into a failed request or kill
+            # the worker thread; the next queued command must still run.
+            pass
+
     def _run(self):
         client = None
 
@@ -104,12 +114,13 @@ class _WfpIpcWorker:
                     else:
                         raise ValueError("unsupported WFP IPC operation")
 
-                    self._completed(request_id, command, result, "")
                 except Exception as error:
                     # A broken pipe or service restart must not poison all
                     # subsequent commands with a stale client object.
                     client = None
-                    self._completed(request_id, command, None, str(error))
+                    self._notify(request_id, command, None, str(error))
+                else:
+                    self._notify(request_id, command, result, "")
             finally:
                 self._queue.task_done()
 

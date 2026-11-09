@@ -77,6 +77,32 @@ class WfpIpcControllerTests(unittest.TestCase):
         self.assertIn("simulated service restart", completed[0][2])
         self.assertEqual(completed[1][1:], ("ok", ""))
 
+    def test_callback_exception_does_not_kill_worker_or_invalidate_client(self):
+        factory_calls = []
+        second_done = threading.Event()
+        results = []
+
+        def factory():
+            factory_calls.append(1)
+            return _Client()
+
+        def callback(request_id, command, result, error):
+            if request_id == 1:
+                raise RuntimeError("receiver is shutting down")
+            results.append((request_id, result, error))
+            second_done.set()
+
+        worker = _WfpIpcWorker(factory, callback)
+        try:
+            self.assertTrue(worker.submit(1, "status"))
+            self.assertTrue(worker.submit(2, "status"))
+            self.assertTrue(second_done.wait(1.0))
+        finally:
+            worker.close()
+
+        self.assertEqual(len(factory_calls), 1)
+        self.assertEqual(results, [(2, "ok", "")])
+
 
 if __name__ == "__main__":
     unittest.main()
