@@ -707,6 +707,7 @@ NTSTATUS DriverEntry(
         gSymbolicLinkCreated = FALSE;
         IoDeleteDevice(gDeviceObject);
         gDeviceObject = NULL;
+        FuriousWfpDatagramQueueCleanup();
         return status;
     }
 
