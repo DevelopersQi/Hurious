@@ -54,7 +54,7 @@ WfpUdpRedirectRecordResult ExtractControlData(
         if (control->cmsg_type != messageType) {
             continue;
         }
-        if ((expectedLevel != 0 && control->cmsg_level != expectedLevel) ||
+        if (control->cmsg_level != expectedLevel ||
             (control->cmsg_level != IPPROTO_IP &&
              control->cmsg_level != IPPROTO_IPV6)) {
             output.clear();
