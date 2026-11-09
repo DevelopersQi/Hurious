@@ -272,7 +272,7 @@ BOOLEAN FuriousWfpDatagramQueueDispatch(PIRP Irp, PIO_STACK_LOCATION Stack)
         Irp->IoStatus.Information = 0;
         IoMarkIrpPending(Irp);
         Irp->Tail.Overlay.DriverContext[0] = Stack->FileObject;
-        IoCsqInsertIrp(&gReadCsq, Irp, Stack->FileObject);
+        IoCsqInsertIrp(&gReadCsq, Irp, NULL);
         ExReleaseRundownProtection(&gDispatchRundown);
         KeSetEvent(&gWorkEvent, IO_NO_INCREMENT, FALSE);
         return TRUE;
