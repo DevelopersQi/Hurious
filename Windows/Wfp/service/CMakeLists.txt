@@ -74,6 +74,16 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME FuriousWfpIpcProtocolTests COMMAND FuriousWfpIpcProtocolTests)
 
+    add_executable(FuriousWfpDriverDatagramIoctlTests tests/DriverDatagramIoctlTests.cpp)
+    target_compile_features(FuriousWfpDriverDatagramIoctlTests PRIVATE cxx_std_17)
+    target_compile_definitions(FuriousWfpDriverDatagramIoctlTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
+    if(MSVC)
+        target_compile_options(FuriousWfpDriverDatagramIoctlTests PRIVATE /W4 /WX /permissive- /UNDEBUG)
+    endif()
+    add_test(NAME FuriousWfpDriverDatagramIoctlTests COMMAND FuriousWfpDriverDatagramIoctlTests)
+    set_tests_properties(FuriousWfpDriverDatagramIoctlTests PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 10)
+
     add_executable(FuriousWfpDatagramProtocolTests tests/DatagramProtocolTests.cpp)
     target_compile_features(FuriousWfpDatagramProtocolTests PRIVATE cxx_std_17)
     target_compile_definitions(FuriousWfpDatagramProtocolTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
