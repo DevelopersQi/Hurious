@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from queue import Queue
+from queue import Empty, Full, Queue
 from threading import Lock, Thread, current_thread
 from itertools import count
 
@@ -16,15 +16,21 @@ from PySide6 import QtCore
 from Furious.Service.WfpIpcClient import WfpIpcClient
 
 
-class _WfpIpcWorker:
-    """Own one IPC client and process commands sequentially on a daemon thread."""
+MAX_PENDING_WFP_COMMANDS = 128
+WFP_WORKER_POLL_INTERVAL_SECONDS = 0.1
 
-    _STOP = object()
+
+class _WfpIpcWorker:
+    """Own one IPC client and process bounded commands on a daemon thread.
+
+    A failed request invalidates the client instance. The next queued command
+    creates a fresh client, allowing recovery after a named-pipe/service restart.
+    """
 
     def __init__(self, client_factory, completed):
         self._client_factory = client_factory
         self._completed = completed
-        self._queue = Queue()
+        self._queue = Queue(maxsize=MAX_PENDING_WFP_COMMANDS)
         self._stateLock = Lock()
         self._closed = False
         self._thread = Thread(
@@ -35,21 +41,25 @@ class _WfpIpcWorker:
         self._thread.start()
 
     def submit(self, request_id, command, arguments=()):
+        """Queue a command without blocking the caller or growing without bound."""
+        item = (int(request_id), str(command), tuple(arguments))
         with self._stateLock:
             if self._closed:
                 return False
-
-            self._queue.put((int(request_id), str(command), tuple(arguments)))
+            try:
+                self._queue.put_nowait(item)
+            except Full:
+                return False
             return True
 
     def close(self):
+        """Stop accepting work, drain accepted commands, then exit the worker."""
         with self._stateLock:
-            if not self._closed:
-                self._closed = True
-                self._queue.put(self._STOP)
+            self._closed = True
 
-        # IPC requests are bounded; wait briefly so queued endpoint-clear and
-        # broker-stop operations can finish before the application exits.
+        # No sentinel is required: the worker drains accepted work and observes
+        # _closed after the queue becomes empty. This cannot block the GUI thread
+        # even when the bounded queue is full.
         if current_thread() is not self._thread:
             self._thread.join(timeout=3.0)
 
@@ -57,11 +67,17 @@ class _WfpIpcWorker:
         client = None
 
         while True:
-            item = self._queue.get()
             try:
-                if item is self._STOP:
-                    return
+                item = self._queue.get(
+                    timeout=WFP_WORKER_POLL_INTERVAL_SECONDS
+                )
+            except Empty:
+                with self._stateLock:
+                    if self._closed:
+                        return
+                continue
 
+            try:
                 request_id, command, arguments = item
                 try:
                     if client is None:
@@ -90,6 +106,9 @@ class _WfpIpcWorker:
 
                     self._completed(request_id, command, result, "")
                 except Exception as error:
+                    # A broken pipe or service restart must not poison all
+                    # subsequent commands with a stale client object.
+                    client = None
                     self._completed(request_id, command, None, str(error))
             finally:
                 self._queue.task_done()
@@ -175,7 +194,7 @@ class WfpIpcController(QtCore.QObject):
         return self._submit("clear-policy")
 
     def close(self):
-        """Stop accepting commands and let the worker drain queued requests."""
+        """Stop accepting commands and drain accepted work."""
         if self._closed:
             return
 

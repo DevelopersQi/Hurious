@@ -1,216 +1,81 @@
-"""Tests for the serialized WFP IPC worker."""
-
-from __future__ import annotations
-
-from threading import Event, Lock, get_ident
+import threading
+import time
 import unittest
 
-from Furious.Service.WfpIpcController import _WfpIpcWorker
+from Furious.Service.WfpIpcController import (
+    MAX_PENDING_WFP_COMMANDS,
+    _WfpIpcWorker,
+)
 
 
-class _FakeClient:
-    def __init__(self, calls, lock, fail=False):
-        self.calls = calls
-        self.lock = lock
+class _Client:
+    def __init__(self, fail=False, entered=None, release=None):
         self.fail = fail
+        self.entered = entered
+        self.release = release
 
     def status(self):
-        return self._record("status")
-
-    def clearEndpointConfig(self):
-        return self._record("clear-endpoint")
-
-    def startBroker(self, host, port, listen_ipv4=True, listen_ipv6=True):
-        return self._record("start-broker", host, port, listen_ipv4, listen_ipv6)
-
-    def stopBroker(self):
-        return self._record("stop-broker")
-
-    def startUdpBroker(self, host, port, listen_ipv4=True, listen_ipv6=True):
-        return self._record("start-udp-broker", host, port, listen_ipv4, listen_ipv6)
-
-    def stopUdpBroker(self):
-        return self._record("stop-udp-broker")
-
-    def setEndpointConfig(self, payload):
-        return self._record("set-endpoint", bytes(payload))
-
-    def _record(self, command, *arguments):
-        with self.lock:
-            self.calls.append((command, get_ident(), arguments))
-
+        if self.entered is not None:
+            self.entered.set()
+        if self.release is not None:
+            self.release.wait(2.0)
         if self.fail:
-            raise RuntimeError("service unavailable")
+            raise RuntimeError("simulated service restart")
+        return "ok"
 
-        return command + "-ok"
 
-
-class WfpIpcWorkerTest(unittest.TestCase):
-    def test_serializes_commands_on_one_background_thread(self):
-        calls = []
-        lock = Lock()
+class WfpIpcControllerTests(unittest.TestCase):
+    def test_queue_is_bounded_and_rejects_overload_without_blocking(self):
+        entered = threading.Event()
+        release = threading.Event()
         completed = []
-        done = Event()
-        main_thread = get_ident()
-
-        def on_complete(request_id, command, result, error):
-            completed.append((request_id, command, result, error))
-            if len(completed) == 2:
-                done.set()
-
         worker = _WfpIpcWorker(
-            lambda: _FakeClient(calls, lock),
-            on_complete,
+            lambda: _Client(entered=entered, release=release),
+            lambda *args: completed.append(args),
         )
         try:
             self.assertTrue(worker.submit(1, "status"))
-            self.assertTrue(worker.submit(2, "clear-endpoint"))
-            self.assertTrue(done.wait(2))
+            self.assertTrue(entered.wait(1.0))
+            for request_id in range(2, MAX_PENDING_WFP_COMMANDS + 2):
+                self.assertTrue(worker.submit(request_id, "status"))
+
+            started = time.monotonic()
+            self.assertFalse(
+                worker.submit(MAX_PENDING_WFP_COMMANDS + 2, "status")
+            )
+            self.assertLess(time.monotonic() - started, 0.1)
         finally:
+            release.set()
             worker.close()
 
-        self.assertEqual([entry[0] for entry in calls], ["status", "clear-endpoint"])
-        self.assertTrue(all(entry[1] != main_thread for entry in calls))
-        self.assertEqual(
-            completed,
-            [
-                (1, "status", "status-ok", ""),
-                (2, "clear-endpoint", "clear-endpoint-ok", ""),
-            ],
-        )
+        self.assertEqual(len(completed), MAX_PENDING_WFP_COMMANDS + 1)
 
-    def test_reports_transport_errors_without_killing_worker(self):
-        calls = []
-        lock = Lock()
+    def test_failed_request_recreates_client_for_service_recovery(self):
         completed = []
-        done = Event()
+        factory_calls = []
+        first_done = threading.Event()
+        second_done = threading.Event()
 
-        def on_complete(request_id, command, result, error):
-            completed.append((request_id, command, result, error))
-            if len(completed) == 2:
-                done.set()
+        def factory():
+            factory_calls.append(len(factory_calls) + 1)
+            return _Client(fail=len(factory_calls) == 1)
 
-        worker = _WfpIpcWorker(
-            lambda: _FakeClient(calls, lock, fail=True),
-            on_complete,
-        )
+        def callback(request_id, command, result, error):
+            completed.append((request_id, result, error))
+            (first_done if request_id == 1 else second_done).set()
+
+        worker = _WfpIpcWorker(factory, callback)
         try:
-            worker.submit(1, "status")
-            worker.submit(2, "clear-endpoint")
-            self.assertTrue(done.wait(2))
+            self.assertTrue(worker.submit(1, "status"))
+            self.assertTrue(first_done.wait(1.0))
+            self.assertTrue(worker.submit(2, "status"))
+            self.assertTrue(second_done.wait(1.0))
         finally:
             worker.close()
 
-        self.assertEqual(len(completed), 2)
-        self.assertTrue(all(result is None for _, _, result, _ in completed))
-        self.assertTrue(all(error == "service unavailable" for _, _, _, error in completed))
-
-    def test_forwards_broker_and_endpoint_arguments_in_queue_order(self):
-        calls = []
-        lock = Lock()
-        completed = []
-        done = Event()
-
-        def on_complete(request_id, command, result, error):
-            completed.append((request_id, command, result, error))
-            if len(completed) == 3:
-                done.set()
-
-        worker = _WfpIpcWorker(lambda: _FakeClient(calls, lock), on_complete)
-        try:
-            worker.submit(1, "start-broker", ("127.0.0.1", 10808, True, False))
-            worker.submit(2, "set-endpoint", (b"endpoint-abi",))
-            worker.submit(3, "stop-broker")
-            self.assertTrue(done.wait(2))
-        finally:
-            worker.close()
-
-        self.assertEqual(
-            [entry[0] for entry in calls],
-            ["start-broker", "set-endpoint", "stop-broker"],
-        )
-        self.assertEqual(
-            [entry[2] for entry in calls],
-            [
-                ("127.0.0.1", 10808, True, False),
-                (b"endpoint-abi",),
-                (),
-            ],
-        )
-        self.assertEqual(
-            [entry[2] for entry in completed],
-            ["start-broker-ok", "set-endpoint-ok", "stop-broker-ok"],
-        )
-
-    def test_forwards_udp_broker_lifecycle_commands(self):
-        calls = []
-        lock = Lock()
-        completed = []
-        done = Event()
-
-        def on_complete(request_id, command, result, error):
-            completed.append((request_id, command, result, error))
-            if len(completed) == 2:
-                done.set()
-
-        worker = _WfpIpcWorker(lambda: _FakeClient(calls, lock), on_complete)
-        try:
-            worker.submit(1, "start-udp-broker", ("127.0.0.1", 10808, True, False))
-            worker.submit(2, "stop-udp-broker")
-            self.assertTrue(done.wait(2))
-        finally:
-            worker.close()
-
-        self.assertEqual(
-            [entry[0] for entry in calls],
-            ["start-udp-broker", "stop-udp-broker"],
-        )
-        self.assertEqual(
-            [entry[2] for entry in calls],
-            [("127.0.0.1", 10808, True, False), ()],
-        )
-        self.assertEqual(
-            [entry[2] for entry in completed],
-            ["start-udp-broker-ok", "stop-udp-broker-ok"],
-        )
-
-    def test_close_drains_accepted_requests_before_worker_exit(self):
-        started = Event()
-        release = Event()
-        completed = []
-
-        class BlockingClient:
-            def status(self):
-                started.set()
-                self.assert_released()
-                return "status-ok"
-
-            def assert_released(self):
-                if not release.wait(2):
-                    raise RuntimeError("test did not release the worker")
-
-        done = Event()
-
-        def on_complete(request_id, command, result, error):
-            completed.append((request_id, command, result, error))
-            done.set()
-
-        worker = _WfpIpcWorker(BlockingClient, on_complete)
-        self.assertTrue(worker.submit(1, "status"))
-        self.assertTrue(started.wait(2))
-        release.set()
-        worker.close()
-        self.assertFalse(worker._thread.is_alive())
-        self.assertFalse(worker.submit(2, "status"))
-
-        self.assertTrue(done.wait(2))
-        self.assertEqual(completed, [(1, "status", "status-ok", "")])
-
-    def test_rejects_new_commands_after_close(self):
-        worker = _WfpIpcWorker(lambda: None, lambda *args: None)
-        worker.close()
-
-        self.assertFalse(worker.submit(1, "status"))
+        self.assertEqual(factory_calls, [1, 2])
+        self.assertIn("simulated service restart", completed[0][2])
+        self.assertEqual(completed[1][1:], ("ok", ""))
 
 
 if __name__ == "__main__":

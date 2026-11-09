@@ -224,4 +224,5 @@ jobs:
             tests.test_xray_application_routing \
             tests.test_wfp_endpoint_config \
             tests.test_wfp_leak_status \
+            tests.test_wfp_ipc_controller \
             -v
