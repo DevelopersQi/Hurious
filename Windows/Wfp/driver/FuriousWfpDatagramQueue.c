@@ -1,3 +1,4 @@
+#include <ntifs.h>
 #include "FuriousWfpDatagramQueue.h"
 
 #define FURIOUS_DGRAM_POOL_TAG 'qDwF'
