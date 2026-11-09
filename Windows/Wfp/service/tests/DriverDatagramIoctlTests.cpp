@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <vector>
-#include <atomic>
+#include <cwchar>
 
 #include "../../include/WfpDriverProtocol.h"
 #include "../../include/WfpDatagramProtocol.h"
@@ -39,7 +39,51 @@ DWORD WINAPI CancelOne(LPVOID raw) {
 }
 }
 
-int main() {
+static bool StopDriverService(const wchar_t* serviceName) {
+    SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!manager) {
+        std::printf("FAIL: OpenSCManager (%lu).\\n", GetLastError());
+        return false;
+    }
+    SC_HANDLE service = OpenServiceW(manager, serviceName,
+        SERVICE_STOP | SERVICE_QUERY_STATUS);
+    if (!service) {
+        std::printf("FAIL: OpenService (%lu).\\n", GetLastError());
+        CloseServiceHandle(manager);
+        return false;
+    }
+    SERVICE_STATUS status = {};
+    if (!ControlService(service, SERVICE_CONTROL_STOP, &status)) {
+        const DWORD error = GetLastError();
+        if (error != ERROR_SERVICE_NOT_ACTIVE) {
+            std::printf("FAIL: ControlService(STOP) (%lu).\\n", error);
+            CloseServiceHandle(service);
+            CloseServiceHandle(manager);
+            return false;
+        }
+    }
+    SERVICE_STATUS_PROCESS process = {};
+    DWORD bytes = 0;
+    bool stopped = false;
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        if (!QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO,
+            reinterpret_cast<LPBYTE>(&process), sizeof(process), &bytes)) break;
+        if (process.dwCurrentState == SERVICE_STOPPED) {
+            stopped = true;
+            break;
+        }
+        Sleep(100);
+    }
+    if (!stopped) {
+        std::printf("FAIL: driver service did not reach STOPPED (%lu).\\n",
+                    GetLastError());
+    }
+    CloseServiceHandle(service);
+    CloseServiceHandle(manager);
+    return stopped;
+}
+
+int wmain(int argc, wchar_t** argv) {
     HANDLE queryDevice = OpenDevice(GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
     if (queryDevice == INVALID_HANDLE_VALUE) {
         const DWORD error = GetLastError();
@@ -137,5 +181,9 @@ int main() {
     }
 
     std::puts("PASS: live kernel queue status, concurrent pending reads, cancellation, and file cleanup.");
+    if (argc == 3 && std::wcscmp(argv[1], L"--stop-service") == 0) {
+        if (!StopDriverService(argv[2])) return 1;
+        std::puts("PASS: driver service stopped; DriverUnload completed.");
+    }
     return 0;
 }
