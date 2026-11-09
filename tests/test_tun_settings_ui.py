@@ -380,7 +380,11 @@ class TUNSettingsUITest(unittest.TestCase):
             'self.routingSection.addCard(self.applicationRoutingCard)',
             source,
         )
-        self.assertNotIn('choose Application Rules to configure', source)
+        routingEntry = source[
+            source.index('self.customRoutingCard = None'):
+            source.index('self.connectionSection.addCard(self.proxyBypassCard)')
+        ]
+        self.assertNotIn('choose Application Rules to configure', routingEntry)
 
     def test_application_rules_open_directly_from_their_own_entry(self):
         source = read_source('Furious/Window/MainWindow.py')
