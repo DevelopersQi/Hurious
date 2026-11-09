@@ -56,7 +56,7 @@ a disposable Windows 10 x64 VM, test-signing configuration, installation and
 rollback tests. Do not deploy this bootstrap driver to a production system.
 
 
-## UDP and flow-identity limitations (must remain gated)
+## UDP and flow-identity limitations (experimental validation only)
 
 The current driver registers only `FWPS_LAYER_ALE_CONNECT_REDIRECT_V4` and
 `FWPS_LAYER_ALE_CONNECT_REDIRECT_V6`. It does **not** register
@@ -78,10 +78,12 @@ and does not attach per-flow state. Consequently:
   compartment/interface/scope information where relevant, and a generation-safe
   redirect record. It must define cleanup for flow deletion, process exit,
   service stop, network change, and PID/tuple reuse.
-- Do not enable UDP endpoint configuration or install UDP application filters
-  until the driver and broker share a tested flow-identity contract and the
-  unconnected UDP path is explicitly covered (or explicitly excluded in product
-  behavior and UI).
+- UDP endpoint configuration and application filters are enabled experimentally
+  for Windows 10 x64 validation. The supported scope is connected UDP socket
+  operations reaching ALE connect redirection. Arbitrary unconnected
+  sendto()/WSASendTo() capture is not guaranteed and remains a product limitation
+  unless separately implemented and verified. Disable the experimental gate if
+  real-machine capture, SOCKS forwarding, or original-client return traffic fails.
 
 A successful WDK build and the current SOCKS5 UDP unit/integration tests do not
 change these limitations. Real Windows 10 x64 packet-capture tests are still

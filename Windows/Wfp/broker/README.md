@@ -1,4 +1,4 @@
-# WFP TCP broker primitives
+# WFP TCP and UDP broker
 
 This directory contains the native TCP redirect primitives and the service-hosted
 long-running broker.
@@ -39,7 +39,7 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 - Parse SOCKS5 UDP datagrams with strict RSV, FRAG, ATYP, address-length and nonzero-port validation.
 - Expose a non-owning payload/address view for IPv4, IPv6 and domain targets; the caller retains buffer ownership.
 - Reject fragmented datagrams until bounded fragment reassembly is implemented.
-- This parser is not a UDP relay: it performs no DNS resolution, socket forwarding, association management, or WFP UDP redirection. UDP remains disabled at the IPC boundary.
+- This parser handles only SOCKS5 UDP datagram framing. The service-hosted UDP broker composes it with the flow registry, SOCKS5 association, and per-flow relay; DNS resolution for domain targets is delegated to the SOCKS server.
 
 
 ## UDP association resource guard (not yet wired to sockets)
@@ -48,7 +48,7 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 - Enforce a global association ceiling and a per-control-peer-IP ceiling; the per-peer key ignores ephemeral TCP ports.
 - Reclaim idle associations through an explicit monotonic-clock sweep, and remove an association immediately when its control session closes.
 - Enforce per-association datagram-size limits through the existing association state guard.
-- This manager is currently a tested policy primitive only. It is not yet connected to TCP control-session handling or UDP sockets, and UDP remains disabled at the IPC/WFP boundary.
+- The association manager is used by the UDP flow-relay registry to bound and expire per-flow SOCKS5 associations. It is not a substitute for real Windows WFP integration testing.
 
 
 ## UDP socket ownership primitive
@@ -57,7 +57,7 @@ are used. No redirect endpoint or listener is enabled by this library alone.
 - Socket ownership is RAII-based; close is idempotent and failure paths close partially initialized sockets.
 - Sockets are nonblocking, use exclusive address binding, and request bounded 64 KiB send/receive buffers.
 - The hosting service owns Winsock initialization. The socket wrapper intentionally does not call WSAStartup or WSACleanup.
-- This is a socket lifecycle primitive only: no datagram receive/send loop, DNS resolution, remote endpoint forwarding, or WFP UDP filter is enabled yet.
+- This class owns the per-flow UDP socket used by the relay bridge; the broker event loop owns receive/send scheduling and lifecycle.
 
 
 The association registry is internally synchronized so control-session workers and a periodic expiry sweep can safely share it. Validated client datagrams and accepted relay responses refresh the same monotonic idle timer; stale associations are removed on access or by the sweep.
@@ -68,7 +68,7 @@ The association registry is internally synchronized so control-session workers a
 - Windows delivers the redirect record for a non-TCP flow on the flow-creating datagram as an ancillary `IP_CONNECTION_REDIRECT_RECORD` control message.
 - The broker resolves the Winsock `WSARecvMsg` and `WSASendMsg` extension functions, extracts and bounds both first-packet redirect records and callout context, and can attach both to the corresponding outbound UDP message.
 - Subsequent datagrams are allowed to omit the record; duplicate, malformed, empty, and oversized records are rejected.
-- This is the ancillary-data protocol layer only. It does not yet create UDP flow mappings, forward payloads to Xray/Hysteria2, or enable UDP WFP filters.
+- The UDP broker consumes this ancillary metadata to create flow mappings, preserve original destinations, and return SOCKS-relayed datagrams to the redirected client endpoint.
 
 
 The receive helper now captures the source endpoint, payload, redirect-record ancillary data, and redirect-context ancillary data from a single `WSARecvMsg` operation. It rejects truncated payload/control data and malformed metadata before exposing a packet to the relay layer. Loopback tests cover receive, source capture, extension resolution, and nonblocking `WSAEWOULDBLOCK`.
@@ -83,7 +83,7 @@ The UDP ancillary context decoder validates the shared redirect ABI, exact struc
 - Key the flow by the client's local source endpoint (IPv4 or IPv6, including IPv6 scope ID); retain the validated original destination, process ID, policy generation, and redirect record.
 - Reject invalid/non-unicast source and target endpoints, source-endpoint identity conflicts, missing metadata, and malformed context.
 - Enforce global and per-process flow ceilings with a synchronized registry and monotonic idle expiry.
-- Later datagrams can resolve the existing flow by source endpoint; the table does not yet forward packets or open upstream proxy sockets.
+- Later datagrams resolve the existing flow by client source endpoint; the relay registry owns the associated SOCKS UDP socket and forwards client payloads and upstream responses.
 
 
 The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, IPv6, or domain endpoint, nonzero port, reply status, reserved byte, and exact message length. It returns a non-owning address view for the upcoming upstream association client.
@@ -99,7 +99,7 @@ The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, I
 - A fake local SOCKS5 server test validates the handshake, advertised UDP port, relay endpoint selection, and control-channel teardown.
 
 
-## Per-flow SOCKS5 UDP bridge (implemented, not activated)
+## Per-flow SOCKS5 UDP bridge (integrated; experimental WFP activation)
 
 - A flow bridge owns one wildcard-bound ephemeral UDP socket and one loopback-only upstream SOCKS5 UDP ASSOCIATE control connection.
 - Each client payload is wrapped with the original destination address and port from the validated WFP redirect context, then sent only to the negotiated relay endpoint.
@@ -107,9 +107,9 @@ The SOCKS5 UDP ASSOCIATE reply parser now validates the upstream relay's IPv4, I
 - The original client endpoint and opaque WFP redirect record/context are retained so the response can be sent back with the correct source identity through the redirected ingress socket.
 - IPv4/IPv6 endpoints are validated; unspecified, multicast and invalid source endpoints are rejected. IPv6 WFP ancillary metadata uses the IPv6 protocol level.
 - Local fake-SOCKS tests cover association handshake, payload forwarding, mismatched response destination rejection, and deterministic control/socket teardown.
-- The bridge is a tested primitive only. It is not yet hosted by a UDP broker listener or connected to the WFP flow table/IPC endpoint. UDP filters remain disabled.
+- `UdpBrokerServer` hosts the flow-relay registry, receives redirected datagrams, advances SOCKS5 UDP associations, forwards payloads, and sends validated responses back with the preserved WFP redirect metadata. WFP UDP filters are enabled experimentally; real Windows 10 packet-capture validation is still required.
 
 
-## UDP flow relay registry (not yet activated)
+## UDP flow relay registry (integrated into UdpBrokerServer)
 
-`WfpUdpFlowRelayRegistry` is the single-I/O-thread owner for per-flow relay instances. It validates first-packet WFP metadata, bounds flow creation through `WfpUdpFlowManager`, owns relay lifetimes, exposes the relay UDP sockets for an event loop, forwards upstream responses with the preserved redirect metadata, and closes relay resources before removing expired flow IDs. It is a broker integration primitive only; no UDP listener or WFP UDP filters are enabled yet.
+`WfpUdpFlowRelayRegistry` is the single-I/O-thread owner for per-flow relay instances. It validates first-packet WFP metadata, bounds flow creation through `WfpUdpFlowManager`, owns relay lifetimes, exposes the relay UDP sockets for an event loop, forwards upstream responses with the preserved redirect metadata, and closes relay resources before removing expired flow IDs. It is used by `UdpBrokerServer` as the live per-flow relay owner. The WFP application filters are enabled experimentally for connected UDP socket operations; arbitrary unconnected `sendto()/WSASendTo()` capture is not guaranteed. End-to-end real-machine validation remains outstanding.

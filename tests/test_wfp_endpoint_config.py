@@ -9,8 +9,8 @@ from Furious.Service.WfpEndpointConfig import (
 
 
 class WfpEndpointConfigTests(unittest.TestCase):
-    def test_live_udp_redirect_remains_gated_until_end_to_end_validation(self):
-        self.assertFalse(UDP_WFP_REDIRECT_END_TO_END_VERIFIED)
+    def test_live_udp_redirect_is_enabled_for_experimental_real_machine_validation(self):
+        self.assertTrue(UDP_WFP_REDIRECT_END_TO_END_VERIFIED)
 
     def test_builds_dual_stack_tcp_endpoint_from_runtime_snapshot(self):
         snapshot = SimpleNamespace(

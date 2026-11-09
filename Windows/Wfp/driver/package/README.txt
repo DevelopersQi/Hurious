@@ -18,8 +18,9 @@ Run Uninstall-WfpTest.ps1 to remove the service, driver service entry, and
 test certificate. TESTSIGNING is deliberately left unchanged because it is
 a system-wide setting that may be used by other test drivers.
 
-WFP application routing in this build is TCP-only. UDP filters remain
-disabled; arbitrary unconnected UDP sendto/WSASendTo capture is not implemented.
+WFP application routing in this test build enables TCP and experimental UDP
+filters. UDP is limited to connected socket operations reaching ALE connect
+redirection; arbitrary unconnected sendto/WSASendTo capture is not guaranteed.
 Real Windows 10 driver load/unload, rollback, IPv4/IPv6 traffic, crash recovery,
 Driver Verifier, and actual proxy traffic validation are still required.
 

@@ -17,7 +17,7 @@ The server uses message-mode framing, a fixed 512 KiB request bound, and the
 shared protocol validator. STATUS validates an empty request. SET_POLICY accepts
 a bounded ABI-v1 policy payload, validates its header, generation, backend,
 rules, priorities and executable paths, resolves enabled paths to WFP App IDs,
-and transactionally replaces the application-specific IPv4/IPv6 TCP filters.
+and transactionally replaces the application-specific IPv4/IPv6 TCP filters and, when the experimental UDP gate is active with a valid UDP endpoint, UDP filters.
 Direct rules install terminating permit filters; Proxy rules install terminating
 callout filters. CLEAR_POLICY removes those application filters and empties the
 in-memory snapshot. Policy generations must increase monotonically; clearing

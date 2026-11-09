@@ -1,8 +1,10 @@
 """Build validated WFP endpoint payloads from live broker/runtime state."""
 
-# Production UDP WFP filters stay disabled until a real end-to-end
-# application -> WFP redirect -> UDP broker -> SOCKS5 relay test passes.
-UDP_WFP_REDIRECT_END_TO_END_VERIFIED = False
+# EXPERIMENTAL: enable WFP UDP application filters for Windows 10 x64
+# real-machine validation. Scope is connected UDP sockets handled by ALE
+# connect redirection; arbitrary unconnected sendto() capture is not guaranteed.
+# Disable this gate again if the end-to-end packet/return-path test fails.
+UDP_WFP_REDIRECT_END_TO_END_VERIFIED = True
 
 from Furious.Service.WfpIpcClient import (
     REDIRECT_FLAG_IPV4,

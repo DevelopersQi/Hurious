@@ -17,9 +17,11 @@
 
 namespace furious::wfp::ipc {
 
-// Keep live UDP WFP redirection disabled until a complete application-to-SOCKS
-// end-to-end test exercises the real redirect metadata and return path.
-inline constexpr bool kUdpWfpRedirectEndToEndVerified = false;
+// EXPERIMENTAL: allow UDP WFP application filters for Windows 10 x64 validation.
+// The current ALE connect-redirect path covers connected UDP sockets; it does
+// not promise capture of every unconnected sendto()/WSASendTo() code path.
+// Revert this gate if real-machine packet capture or return-path tests fail.
+inline constexpr bool kUdpWfpRedirectEndToEndVerified = true;
 
 class PolicyStore final {
 public:

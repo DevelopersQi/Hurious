@@ -84,8 +84,8 @@ A production redirect path additionally requires:
 - DNS, QUIC, suspend/resume and network-change tests;
 - signed package, rollback and uninstall verification.
 
-Hysteria2 supports WFP TCP application routing only when system TUN mode is
-disabled. Hysteria2 Native TUN and Tun2socks full-tunnel modes do not use WFP
+Hysteria2 supports WFP TCP application routing and experimental connected-UDP
+routing only when system TUN mode is disabled. Hysteria2 Native TUN and Tun2socks full-tunnel modes do not use WFP
 Direct/Proxy application rules yet. Xray's existing native-TUN process routing
 remains independent and must not be silently replaced by WFP.
 
