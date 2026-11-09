@@ -187,8 +187,8 @@ class TUNSettingsUITest(unittest.TestCase):
                         'Application & Routing Rules',
             'Routing Rules Configuration',
             'Application Rules Configuration',
-            'Configure custom Xray routing profiles and define domain, IP, port, protocol, and process matching rules. Select a profile in the routing selector to apply it.',
-            'Configure per-application proxy or direct rules on Windows. Add running applications or browse to an EXE, then set rule order; current mode and protocol limitations are shown in the editor.',
+            'Set proxy or direct actions for individual Windows applications. Within this list, rules are checked from top to bottom and the first matching rule wins. Priority against routing rules depends on the selected backend.',
+            'Configure Xray routing by domain, IP, port, protocol, or process. Rules follow their configured order within the selected routing profile. Priority against application rules depends on the selected backend.',
             'Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.',
             'Xray-core Native TUN is not supported by the selected Hysteria 2 configuration. Open Settings > TUN Backend and select Auto or Hysteria 2 Native TUN.',
         )
