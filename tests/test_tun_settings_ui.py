@@ -184,7 +184,11 @@ class TUNSettingsUITest(unittest.TestCase):
             'Detected System Network',
             'Not detected',
             'Adapter: {name}    IPv4: {address}    Default gateway: {gateway}',
-            'Create Xray routing profiles and configure domain, IP, port, protocol, and process rules. Windows Xray native TUN also supports application rules. Open the editor and choose Application Rules to configure per-app proxy/direct policy.',
+                        'Application & Routing Rules',
+            'Routing Rules Configuration',
+            'Application Rules Configuration',
+            'Configure custom Xray routing profiles and define domain, IP, port, protocol, and process matching rules. Select a profile in the routing selector to apply it.',
+            'Configure per-application proxy or direct rules on Windows. Add running applications or browse to an EXE, then set rule order; current mode and protocol limitations are shown in the editor.',
             'Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.',
             'Xray-core Native TUN is not supported by the selected Hysteria 2 configuration. Open Settings > TUN Backend and select Auto or Hysteria 2 Native TUN.',
         )
@@ -356,6 +360,66 @@ class TUNSettingsUITest(unittest.TestCase):
             'self.tunModeCard.checkBox.syncCheckedAnimated',
             settings,
         )
+
+
+    def test_settings_show_two_independent_configuration_entries(self):
+        source = read_source('Furious/Window/SettingsPage.py')
+        self.assertIn(
+            "_SettingsSection(_('Application & Routing Rules'))",
+            source,
+        )
+        self.assertIn("_('Routing Rules Configuration')", source)
+        self.assertIn("_('Application Rules Configuration')", source)
+        self.assertIn('self._openRoutingEditor', source)
+        self.assertIn('self._openApplicationRoutingEditor', source)
+        self.assertIn(
+            'self.routingSection.addCard(self.customRoutingCard)',
+            source,
+        )
+        self.assertIn(
+            'self.routingSection.addCard(self.applicationRoutingCard)',
+            source,
+        )
+        self.assertNotIn('choose Application Rules to configure', source)
+
+    def test_application_rules_open_directly_from_their_own_entry(self):
+        source = read_source('Furious/Window/MainWindow.py')
+        self.assertIn('openApplicationRoutingEditor=', source)
+        self.assertIn(
+            'from Furious.Backends.Xray.RoutingWindow import ApplicationRoutingDialog',
+            source,
+        )
+        self.assertIn('ApplicationRoutingDialog(parent=self).open()', source)
+
+    def test_route_profile_editor_does_not_embed_application_rules_action(self):
+        source = read_source('Furious/Backends/Xray/RoutingWindow.py')
+        self.assertNotIn('applicationRulesButton', source)
+        self.assertNotIn('def openApplicationRules(', source)
+
+    def test_routing_settings_descriptions_have_chinese_translations(self):
+        catalogue = translation_catalogue()
+        expected = {
+            'Application & Routing Rules': '应用和路由规则',
+            'Routing Rules Configuration': '路由规则配置',
+            'Application Rules Configuration': '应用规则配置',
+            (
+                'Configure custom Xray routing profiles and define domain, IP, port, '
+                'protocol, and process matching rules. Select a profile in the routing selector to apply it.'
+            ): (
+                '创建和编辑自定义 Xray 路由配置，可按域名、IP、端口、协议和进程匹配流量。'
+                '保存后，在主界面的路由选择器中选择配置即可应用。'
+            ),
+            (
+                'Configure per-application proxy or direct rules on Windows. Add running applications or browse to an EXE, then set rule order; current mode and protocol limitations are shown in the editor.'
+            ): (
+                '为 Windows 配置应用级代理或直连规则。可添加正在运行的应用或浏览选择 EXE，'
+                '并设置规则顺序；当前模式和协议限制会在编辑窗口中说明。'
+            ),
+        }
+        for key, translated in expected.items():
+            with self.subTest(key=key):
+                self.assertEqual(catalogue[key].get('ZH'), translated)
+
 
 
 if __name__ == '__main__':
