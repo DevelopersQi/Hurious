@@ -13,6 +13,7 @@
 
 #include "../include/WfpDriverProtocol.h"
 #include "../include/WfpRedirectProtocol.h"
+#include "FuriousWfpDatagramQueue.h"
 
 C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 76);
 C_ASSERT(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64);
@@ -195,6 +196,9 @@ static ULONG FuriousGetDriverFlags(void)
     if (gEndpointConfigValid) {
         flags |= FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED;
     }
+    if (FuriousWfpDatagramQueueIsReady()) {
+        flags |= FURIOUS_WFP_DRIVER_FLAG_DATAGRAM_QUEUE_READY;
+    }
     KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
     return flags;
 }
@@ -219,6 +223,9 @@ static NTSTATUS NTAPI FuriousDeviceControl(
     ULONG_PTR information = 0;
 
     UNREFERENCED_PARAMETER(deviceObject);
+    if (FuriousWfpDatagramQueueDispatch(irp, stack)) {
+        return irp->IoStatus.Status;
+    }
     if (stack->Parameters.DeviceIoControl.IoControlCode ==
             FURIOUS_WFP_DRIVER_IOCTL_SET_ENDPOINT_CONFIG) {
         const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG* input =
@@ -591,6 +598,7 @@ static VOID NTAPI FuriousFlowDelete(
 static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
+    FuriousWfpDatagramQueueCleanup();
     if (gProcessNotifyRegistered) {
         NTSTATUS status = PsSetCreateProcessNotifyRoutineEx(
             FuriousProcessNotify, TRUE);
@@ -657,6 +665,9 @@ NTSTATUS DriverEntry(
     RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
     gEndpointConfigValid = FALSE;
 
+    status = FuriousWfpDatagramQueueInitialize();
+    if (!NT_SUCCESS(status)) return status;
+
     driverObject->DriverUnload = FuriousUnload;
     driverObject->MajorFunction[IRP_MJ_CREATE] = FuriousCreateClose;
     driverObject->MajorFunction[IRP_MJ_CLOSE] = FuriousCreateClose;
@@ -674,6 +685,7 @@ NTSTATUS DriverEntry(
         &gDeviceObject);
     if (!NT_SUCCESS(status)) {
         gDeviceObject = NULL;
+        FuriousWfpDatagramQueueCleanup();
         return status;
     }
 
@@ -683,6 +695,7 @@ NTSTATUS DriverEntry(
     if (!NT_SUCCESS(status)) {
         IoDeleteDevice(gDeviceObject);
         gDeviceObject = NULL;
+        FuriousWfpDatagramQueueCleanup();
         return status;
     }
     gSymbolicLinkCreated = TRUE;
@@ -735,5 +748,6 @@ NTSTATUS DriverEntry(
     gSymbolicLinkCreated = FALSE;
     IoDeleteDevice(gDeviceObject);
     gDeviceObject = NULL;
+    FuriousWfpDatagramQueueCleanup();
     return status;
 }

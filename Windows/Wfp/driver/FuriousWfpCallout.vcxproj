@@ -31,6 +31,10 @@
     <Link><AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions><AdditionalDependencies>Fwpkclnt.lib;Wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <DriverSign><SignMode>TestSign</SignMode><FileDigestAlgorithm>SHA256</FileDigestAlgorithm></DriverSign>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="FuriousWfpCallout.c" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FuriousWfpCallout.c" />
+    <ClCompile Include="FuriousWfpDatagramQueue.c" />
+    <ClInclude Include="FuriousWfpDatagramQueue.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
