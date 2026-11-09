@@ -1,9 +1,11 @@
 """Build validated WFP endpoint payloads from live broker/runtime state."""
 
-# EXPERIMENTAL: enable WFP UDP application filters for Windows 10 x64
-# real-machine validation. Scope is connected UDP sockets handled by ALE
-# connect redirection; arbitrary unconnected sendto() capture is not guaranteed.
-# Disable this gate again if the end-to-end packet/return-path test fails.
+# USER-REQUESTED PERSISTENT TEST GATE:
+# Keep WFP UDP application filters enabled for the user's private Windows 10 x64
+# testing. Do not disable or revert this gate in later commits without explicit
+# user authorization. This enables connected UDP sockets handled by ALE connect
+# redirection only; arbitrary unconnected sendto() capture is not guaranteed.
+# Enabling this gate does not imply that the full UDP packet/return path is complete.
 UDP_WFP_REDIRECT_EXPERIMENTAL_ENABLED = True
 
 from Furious.Service.WfpIpcClient import (
