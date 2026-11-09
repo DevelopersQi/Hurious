@@ -140,12 +140,17 @@ NTSTATUS FuriousWfpDatagramQueueInitialize(VOID)
         return status;
     status = ObReferenceObjectByHandle(threadHandle, SYNCHRONIZE, *PsThreadType,
         KernelMode, (PVOID*)&gWorkerThread, NULL);
-    ZwClose(threadHandle);
     if (!NT_SUCCESS(status)) {
+        // The system thread already exists even if obtaining an object
+        // reference fails. Signal and wait on its still-open handle before
+        // returning, otherwise DriverEntry could unload code under a worker.
         InterlockedExchange(&gStopping, 1);
         KeSetEvent(&gWorkEvent, IO_NO_INCREMENT, FALSE);
+        ZwWaitForSingleObject(threadHandle, FALSE, NULL);
+        ZwClose(threadHandle);
         return status;
     }
+    ZwClose(threadHandle);
     InterlockedExchange(&gReady, 1);
     return STATUS_SUCCESS;
 }
