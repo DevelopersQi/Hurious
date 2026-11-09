@@ -222,4 +222,5 @@ jobs:
             tests.test_runtime_lifecycle \
             tests.test_wintun_deployment \
             tests.test_xray_application_routing \
+            tests.test_wfp_endpoint_config \
             -v
