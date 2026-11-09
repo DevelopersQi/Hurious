@@ -20,6 +20,7 @@ static KEVENT gWorkEvent;
 static PETHREAD gWorkerThread = NULL;
 static volatile LONG gStopping = 0;
 static volatile LONG gReady = 0;
+static EX_RUNDOWN_REF gDispatchRundown;
 
 static VOID NTAPI CsqInsertIrp(PIO_CSQ Csq, PIRP Irp)
 {
@@ -127,6 +128,7 @@ NTSTATUS FuriousWfpDatagramQueueInitialize(VOID)
     InitializeListHead(&gPendingReads);
     KeInitializeEvent(&gWorkEvent, SynchronizationEvent, FALSE);
     gCapturedEntries = gCapturedBytes = gDroppedCaptured = 0;
+    ExInitializeRundownProtection(&gDispatchRundown);
     InterlockedExchange(&gStopping, 0);
     status = IoCsqInitialize(&gReadCsq, CsqInsertIrp, CsqRemoveIrp,
         CsqPeekNextIrp, CsqAcquireLock, CsqReleaseLock, CsqCompleteCanceledIrp);
@@ -161,6 +163,10 @@ VOID FuriousWfpDatagramQueueCleanup(VOID)
         ObDereferenceObject(gWorkerThread);
         gWorkerThread = NULL;
     }
+    // Wait until every dispatch that could have inserted a pending IRP has
+    // left the insertion window, then drain the cancel-safe queue. This
+    // closes the stop-vs-insert race that could otherwise strand an IRP.
+    ExWaitForRundownProtectionRelease(&gDispatchRundown);
     while ((irp = IoCsqRemoveNextIrp(&gReadCsq, NULL)) != NULL) {
         irp->IoStatus.Status = STATUS_DELETE_PENDING;
         irp->IoStatus.Information = 0;
@@ -228,7 +234,18 @@ BOOLEAN FuriousWfpDatagramQueueDispatch(PIRP Irp, PIO_STACK_LOCATION Stack)
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
             return TRUE;
         }
-        if (!FuriousWfpDatagramQueueIsReady()) {
+        // Rundown protection serializes pending-IRP insertion against driver
+        // shutdown. Cleanup closes rundown, waits for this window to finish,
+        // and only then drains the CSQ.
+        if (!ExAcquireRundownProtection(&gDispatchRundown)) {
+            Irp->IoStatus.Status = STATUS_DELETE_PENDING;
+            Irp->IoStatus.Information = 0;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+            return TRUE;
+        }
+        if (!FuriousWfpDatagramQueueIsReady() ||
+            InterlockedCompareExchange(&gStopping, 0, 0) != 0) {
+            ExReleaseRundownProtection(&gDispatchRundown);
             Irp->IoStatus.Status = STATUS_DEVICE_NOT_READY;
             Irp->IoStatus.Information = 0;
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -238,6 +255,7 @@ BOOLEAN FuriousWfpDatagramQueueDispatch(PIRP Irp, PIO_STACK_LOCATION Stack)
         Irp->IoStatus.Information = 0;
         IoMarkIrpPending(Irp);
         IoCsqInsertIrp(&gReadCsq, Irp, NULL);
+        ExReleaseRundownProtection(&gDispatchRundown);
         KeSetEvent(&gWorkEvent, IO_NO_INCREMENT, FALSE);
         return TRUE;
     }
