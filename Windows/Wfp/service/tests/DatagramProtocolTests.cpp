@@ -1,4 +1,4 @@
-#include "../include/WfpDatagramProtocol.h"
+#include "../../include/WfpDatagramProtocol.h"
 
 #include <array>
 #include <cstdint>
