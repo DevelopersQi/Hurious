@@ -2,8 +2,8 @@
 #include <cstdio>
 #include <vector>
 
-#include "../include/WfpDriverProtocol.h"
-#include "../include/WfpDatagramProtocol.h"
+#include "../../include/WfpDriverProtocol.h"
+#include "../../include/WfpDatagramProtocol.h"
 
 namespace {
 constexpr DWORD kSkip = 77;
