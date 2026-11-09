@@ -893,6 +893,7 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
         restartAsAdmin,
         openApplicationFolder,
         openRoutingEditor=None,
+        openApplicationRoutingEditor=None,
         parent=None,
     ):
         """Build settings sections around existing actions and dialogs."""
@@ -911,6 +912,7 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
             self._restartAsAdmin,
             self._openApplicationFolder,
             self._openRoutingEditor,
+            self._openApplicationRoutingEditor,
         ) = (
             tunSettingsDialogFactory,
             xrayTunSettingsDialogFactory,
@@ -922,6 +924,7 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
             restartAsAdmin,
             openApplicationFolder,
             openRoutingEditor,
+            openApplicationRoutingEditor,
         )
 
         self.pageTitleLabel = AppQLabel(_('Settings'))
@@ -930,7 +933,7 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
         self.generalSection = _SettingsSection(_('General'))
         self.connectionSection = _SettingsSection(_('Connection'))
         self.tunSection = _SettingsSection(_('TUN & DNS'))
-        self.routingSection = _SettingsSection(_('Routing Rules'))
+        self.routingSection = _SettingsSection(_('Application & Routing Rules'))
         self.networkSection = _SettingsSection(_('Network'))
         self.privacySection = _SettingsSection(_('Privacy and Statistics'))
         self.advancedSection = _SettingsSection(_('Advanced'))
@@ -1158,15 +1161,29 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
             self.customRoutingCard = _ActionSettingsCard(
                 'signpost.svg',
                 self._openRoutingEditor,
-                _('Custom Routing Rules'),
+                _('Routing Rules Configuration'),
                 _(
-                    'Create Xray routing profiles and configure domain, IP, port, protocol, '
-                    'and process rules. Windows Xray native TUN also supports application rules. '
-                    'Open the editor and choose Application Rules to configure per-app proxy/direct policy.'
+                    'Configure custom Xray routing profiles and define domain, IP, port, '
+                    'protocol, and process matching rules. Select a profile in the routing selector to apply it.'
                 ),
                 _('Configure'),
             )
             self.routingSection.addCard(self.customRoutingCard)
+
+        self.applicationRoutingCard = None
+        if callable(self._openApplicationRoutingEditor):
+            self.applicationRoutingCard = _ActionSettingsCard(
+                'app.svg',
+                self._openApplicationRoutingEditor,
+                _('Application Rules Configuration'),
+                _(
+                    'Configure per-application proxy or direct rules on Windows. '
+                    'Add running applications or browse to an EXE, then set rule order; '
+                    'current mode and protocol limitations are shown in the editor.'
+                ),
+                _('Configure'),
+            )
+            self.routingSection.addCard(self.applicationRoutingCard)
         self.connectionSection.addCard(self.proxyBypassCard)
 
         self.networkSection.addCard(self.networkTestCard)
@@ -1268,7 +1285,7 @@ class SettingsPage(Mixins.QTranslatable, Mixins.ThemeAware, QMainWindow):
             ('General', (self.generalSection,)),
             ('Connection', (self.connectionSection,)),
             ('TUN & DNS', (self.tunSection,)),
-            ('Routing Rules', (self.routingSection,)),
+            ('Application & Routing Rules', (self.routingSection,)),
             ('Network', (self.networkSection,)),
             ('Privacy and Statistics', (self.privacySection,)),
             ('Advanced', (self.advancedSection,)),

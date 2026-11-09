@@ -189,14 +189,29 @@ TRANSLATION = {
         "ZH": "插件设置",
         "isReviewed": "True"
     },
-    "Custom Routing Rules": {
+    "Application & Routing Rules": {
         "source": ["Furious.Window.SettingsPage"],
-        "ZH": "自定义路由规则",
+        "ZH": "应用和路由规则",
         "isReviewed": "True"
     },
-    "Create Xray routing profiles and configure domain, IP, port, protocol, and process rules. This feature currently supports Xray-core. Select a profile in the routing selector to apply it.": {
+    "Routing Rules Configuration": {
         "source": ["Furious.Window.SettingsPage"],
-        "ZH": "创建 Xray 路由配置，设置域名、IP、端口、协议和进程规则。目前仅支持 Xray 核心。创建后，在路由选择器中选择配置即可应用。",
+        "ZH": "路由规则配置",
+        "isReviewed": "True"
+    },
+    "Configure custom Xray routing profiles and define domain, IP, port, protocol, and process matching rules. Select a profile in the routing selector to apply it.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "创建和编辑自定义 Xray 路由配置，可按域名、IP、端口、协议和进程匹配流量。保存后，在主界面的路由选择器中选择配置即可应用。",
+        "isReviewed": "True"
+    },
+    "Application Rules Configuration": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "应用规则配置",
+        "isReviewed": "True"
+    },
+    "Configure per-application proxy or direct rules on Windows. Add running applications or browse to an EXE, then set rule order; current mode and protocol limitations are shown in the editor.": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "为 Windows 配置应用级代理或直连规则。可添加正在运行的应用或浏览选择 EXE，并设置规则顺序；当前模式和协议限制会在编辑窗口中说明。",
         "isReviewed": "True"
     },
     "Configure": {
@@ -3814,11 +3829,6 @@ TRANSLATION = {
     "Use Browse EXE or Add Running App to select an application with a full executable path.": {
         "source": ["Furious.Backends.Xray.RoutingWindow"],
         "ZH": "请使用“浏览 EXE”或“添加运行中的应用”选择具有完整可执行文件路径的应用。",
-        "isReviewed": "True"
-    },
-    "Create Xray routing profiles and configure domain, IP, port, protocol, and process rules. Windows Xray native TUN also supports application rules. Open the editor and choose Application Rules to configure per-app proxy/direct policy.": {
-        "source": ["Furious.Window.SettingsPage"],
-        "ZH": "创建 Xray 路由配置，可按域名、IP、端口、协议和进程设置规则。Windows 下的 Xray 原生 TUN 还支持应用程序规则。打开编辑器并选择“应用程序规则”，即可配置按应用代理或直连。",
         "isReviewed": "True"
     },
     "Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.": {

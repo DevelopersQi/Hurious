@@ -125,6 +125,9 @@ class MainWindow(AppQMainWindow):
             restartAsAdmin=self.homePage.restartAsAdmin,
             openApplicationFolder=self.homePage.openApplicationFolder,
             openRoutingEditor=self.openRoutingEditor,
+            openApplicationRoutingEditor=(
+                self.openApplicationRoutingEditor if PLATFORM == 'Windows' else None
+            ),
             parent=self.navigationView,
         )
 
@@ -206,6 +209,15 @@ class MainWindow(AppQMainWindow):
 
         self._routingEditor.raise_()
         self._routingEditor.activateWindow()
+
+    def openApplicationRoutingEditor(self):
+        """Open the transient Windows per-application routing editor."""
+        if PLATFORM != 'Windows':
+            return
+
+        from Furious.Backends.Xray.RoutingWindow import ApplicationRoutingDialog
+
+        ApplicationRoutingDialog(parent=self).open()
 
     @QtCore.Slot(object)
     def _handleConnectionError(self, error):

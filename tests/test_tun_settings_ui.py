@@ -232,7 +232,7 @@ class TUNSettingsUITest(unittest.TestCase):
             'General',
             'Connection',
             'TUN & DNS',
-            'Routing Rules',
+            'Application & Routing Rules',
             'Network',
             'Privacy and Statistics',
             'Advanced',
