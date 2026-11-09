@@ -27,15 +27,18 @@ does not reset the generation counter.
 
 SET_POLICY resolves enabled executable paths to WFP application IDs,
 sorts rules by ascending numeric priority, rejects duplicate App IDs, and
-transactionally replaces per-application TCP filters for IPv4 and IPv6. Direct
-rules install terminating permit filters; Proxy rules install terminating
-callout filters. CLEAR_POLICY removes those filters and clears the in-memory
-snapshots. UDP filters remain deliberately disabled: although a separately
-managed UDP broker, START_UDP_BROKER/STOP_UDP_BROKER IPC commands, SOCKS5 UDP
-association/relay primitives and broker lifecycle tests exist, the complete
-WFP redirect-to-SOCKS-to-original-client packet path has not passed end-to-end
-verification. The IPC broker lifecycle tests do not prove transparent WFP UDP
-forwarding.
+transactionally replaces per-application TCP filters for IPv4 and IPv6 and,
+when the experimental UDP gate is active and the UDP broker has valid listener
+endpoints, connected-UDP filters for IPv4 and IPv6. Direct rules install
+terminating permit filters; Proxy rules install terminating callout filters.
+CLEAR_POLICY removes those filters and clears the in-memory snapshots. The
+experimental UDP scope is limited to UDP socket operations that reach ALE
+connect redirection. The driver does not register ALE_FLOW_ESTABLISHED or
+Datagram Data/Transport callouts, so arbitrary unconnected sendto()/WSASendTo()
+traffic is not guaranteed to be intercepted. Broker lifecycle and SOCKS5 relay
+tests do not prove the complete Windows WFP redirect-to-SOCKS-to-original-client
+packet path; real Windows 10 packet-capture validation remains outstanding.
+DNS-transparent interception and ICMP forwarding are not implemented.
 
 The service clears endpoint configuration at startup. Proxy-action filters fail
 closed when no valid endpoint is configured; direct-action filters remain
@@ -57,8 +60,11 @@ Before enabling this feature for general users:
 - finish UI translation and verify that policy changes clearly report success or failure;
 - package a correctly signed driver beside the service executable and validate
   SCM start/stop behavior under the actual service account;
-- complete a real WFP UDP redirect-to-SOCKS-to-original-client integration test before enabling UDP application filters;
-- test TCP and UDP separately, with IPv4 and IPv6 parity; UDP broker lifecycle and SOCKS5 relay unit tests alone are insufficient;
+- complete a real WFP connected-UDP redirect-to-SOCKS-to-original-client integration test before enabling UDP for general users;
+- implement and verify unconnected UDP interception (sendto/WSASendTo) with flow identity, cleanup and IPv4/IPv6 parity;
+- implement a separate DNS interception/forwarding path and verify UDP/TCP DNS without leaks;
+- implement an ICMP transport/relay path; do not treat SOCKS5 UDP support as ICMP support;
+- test TCP and UDP separately; UDP broker lifecycle and SOCKS5 relay unit tests alone are insufficient;
 - reconcile stale filters after crashes and ensure safe rollback;
 - test allowed and denied client tokens, impersonation failures, malformed
   frames, stop during connect/read, and BFE unavailable;

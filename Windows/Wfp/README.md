@@ -10,7 +10,7 @@ separate from the Python UI and proxy-core process lifecycle.
 - `driver/`: WDK kernel callout driver. Performs bounded, non-blocking classification
   only; it must never perform file, registry, network or user-mode IPC in classify callbacks.
 - `include/`: stable policy and control-plane ABI shared by the service and driver.
-- `broker/`: native TCP redirect metadata, SOCKS5 CONNECT and bidirectional relay primitives.
+- `broker/`: native TCP redirect metadata and SOCKS5 CONNECT relay, plus an experimental SOCKS5 UDP association/relay path.
 - `tests/`: Windows integration tests and packet-capture test plans.
 
 ## Safety gates
@@ -51,22 +51,23 @@ when a valid endpoint is unavailable.
 
 The native TCP broker is hosted by the elevated WFP service. Its authenticated
 IPC start command returns the actual service PID and dynamically bound IPv4/IPv6
-listener ports. A separate UDP broker is also hosted by the service and exposes
-authenticated START_UDP_BROKER/STOP_UDP_BROKER IPC commands with dynamically
-bound UDP listener ports. The UDP broker has SOCKS5 UDP association/relay
-primitives and lifecycle regression tests. However, UDP endpoint configuration
-and UDP application filters remain explicitly disabled behind an end-to-end
-verification gate. Broker lifecycle and relay unit tests do not prove that real
-WFP-redirected datagrams complete the full round trip through SOCKS and back to
-the original client. Only TCP application filters are currently installed.
+listener ports. A separate UDP broker is hosted by the service and exposes authenticated
+START_UDP_BROKER/STOP_UDP_BROKER IPC commands with dynamically bound UDP listener
+ports. The UDP endpoint configuration and application filters are enabled behind
+an explicitly experimental gate for connected UDP operations that reach ALE
+connect redirection. This does not capture arbitrary unconnected
+sendto()/WSASendTo() traffic. The broker has SOCKS5 UDP association/relay
+primitives and lifecycle regression tests, but real Windows 10 packet-capture
+validation of the full WFP-to-SOCKS-to-original-client return path is still
+required before production use.
 
 WFP application routing is used only when system TUN mode is disabled. In
 full-tunnel mode, WFP Direct permits cannot bypass the installed TUN default
 route; Xray Native TUN continues to use its own process-routing rules. The
 current WFP UI accepts full executable paths and applies Proxy/Direct policy
 through a configured loopback Xray or Hysteria2 SOCKS inbound. Hysteria2
-must expose its `socks5.listen` endpoint. The broker currently supports
-SOCKS5 no-auth only. Only TCP is supported.
+must expose its `socks5.listen` endpoint. The broker currently supports SOCKS5 no-auth only. TCP is supported; connected
+UDP is experimental and must not be treated as production-ready.
 
 The Windows 10 test ZIP builds and tests the native service, and includes an
 elevated installer/uninstaller plus a public self-signed test certificate.
@@ -79,9 +80,12 @@ A production redirect path additionally requires:
   Windows 10 x64;
 - restart, crash, PID reuse and stale endpoint recovery verified;
 - TCP behavior verified independently on IPv4 and IPv6;
-- complete real WFP UDP redirect, SOCKS5 relay and original-client return-path verification before enabling UDP filters;
+- complete real WFP UDP redirect, SOCKS5 relay and original-client return-path verification before enabling UDP for general users;
+- implement and verify unconnected UDP interception (including sendto/WSASendTo) with generation-safe flow identity and cleanup;
+- implement a separate DNS interception/forwarding path and verify UDP/TCP DNS without leaks; DoT/DoH require separate handling;
+- implement an ICMP transport/relay path (SOCKS5 UDP is not ICMP support);
 - IPv4 and IPv6 parity;
-- DNS, QUIC, suspend/resume and network-change tests;
+- QUIC, suspend/resume and network-change tests;
 - signed package, rollback and uninstall verification.
 
 Hysteria2 supports WFP TCP application routing and experimental connected-UDP
@@ -96,4 +100,4 @@ Build and test the driver on a disposable Windows 10 x64 VM with test signing.
 Never install an experimental callout driver on a production workstation.
 
 
-The UDP broker is wired to the service lifecycle through authenticated IPC and reports its actual listener ports. Its per-flow SOCKS5 UDP bridge preserves the original WFP destination and redirect metadata, validates the negotiated relay source and returned datagram destination, and owns its UDP socket/control connection lifecycle. This is not yet enabled in driver endpoint configuration or WFP application filters: the end-to-end transparent redirect and return path still requires integration verification.
+The current experimental UDP gate covers connected UDP operations reaching ALE connect redirection only. The driver does not register ALE_FLOW_ESTABLISHED or Datagram Data/Transport callouts, so arbitrary unconnected sendto()/WSASendTo() traffic is not guaranteed to be intercepted. DNS-transparent interception and ICMP forwarding are not implemented. The broker's unit/lifecycle tests do not substitute for Windows 10 end-to-end packet-capture validation.
