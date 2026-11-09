@@ -4,7 +4,7 @@
 # real-machine validation. Scope is connected UDP sockets handled by ALE
 # connect redirection; arbitrary unconnected sendto() capture is not guaranteed.
 # Disable this gate again if the end-to-end packet/return-path test fails.
-UDP_WFP_REDIRECT_END_TO_END_VERIFIED = True
+UDP_WFP_REDIRECT_EXPERIMENTAL_ENABLED = True
 
 from Furious.Service.WfpIpcClient import (
     REDIRECT_FLAG_IPV4,

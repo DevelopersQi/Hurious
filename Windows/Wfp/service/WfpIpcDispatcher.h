@@ -21,7 +21,7 @@ namespace furious::wfp::ipc {
 // The current ALE connect-redirect path covers connected UDP sockets; it does
 // not promise capture of every unconnected sendto()/WSASendTo() code path.
 // Revert this gate if real-machine packet capture or return-path tests fail.
-inline constexpr bool kUdpWfpRedirectEndToEndVerified = true;
+inline constexpr bool kUdpWfpRedirectExperimentalEnabled = true;
 
 class PolicyStore final {
 public:
@@ -189,7 +189,7 @@ inline DWORD SetEndpointConfig(
     // Application-policy installation currently always includes TCP filters;
     // do not accept a UDP-only endpoint that would leave TCP redirects targetless.
     if (!enableTcp) return ERROR_NOT_SUPPORTED;
-    if (enableUdp && !kUdpWfpRedirectEndToEndVerified) return ERROR_NOT_SUPPORTED;
+    if (enableUdp && !kUdpWfpRedirectExperimentalEnabled) return ERROR_NOT_SUPPORTED;
     if (enableUdp && engine == nullptr) return ERROR_INVALID_HANDLE;
     if (enableTcp) {
         auto& broker = GetTcpBrokerServer();
@@ -422,7 +422,7 @@ inline DWORD DispatchCommand(uint32_t command,
         // Serialize policy replacement with endpoint/broker lifecycle changes.
         // The endpoint lock is always acquired before the policy-store lock.
         std::lock_guard<std::mutex> lock(EndpointConfigMutex());
-        const bool includeUdp = kUdpWfpRedirectEndToEndVerified &&
+        const bool includeUdp = kUdpWfpRedirectExperimentalEnabled &&
             HasEndpointConfigSnapshot() &&
             (EndpointConfigSnapshot().Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) != 0;
         return GetPolicyStore().Set(payload, payloadSize, engine, includeUdp);

@@ -3,14 +3,14 @@ import unittest
 from types import SimpleNamespace
 
 from Furious.Service.WfpEndpointConfig import (
-    UDP_WFP_REDIRECT_END_TO_END_VERIFIED,
+    UDP_WFP_REDIRECT_EXPERIMENTAL_ENABLED,
     build_endpoint_config,
 )
 
 
 class WfpEndpointConfigTests(unittest.TestCase):
     def test_live_udp_redirect_is_enabled_for_experimental_real_machine_validation(self):
-        self.assertTrue(UDP_WFP_REDIRECT_END_TO_END_VERIFIED)
+        self.assertTrue(UDP_WFP_REDIRECT_EXPERIMENTAL_ENABLED)
 
     def test_builds_dual_stack_tcp_endpoint_from_runtime_snapshot(self):
         snapshot = SimpleNamespace(

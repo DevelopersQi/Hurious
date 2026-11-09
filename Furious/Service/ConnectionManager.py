@@ -55,7 +55,7 @@ from Furious.Service.WfpRuntimeSnapshot import (
 from Furious.Service.WfpIpcController import WfpIpcController
 from Furious.Service.WfpIpcClient import pack_application_routing_policy
 from Furious.Service.WfpEndpointConfig import (
-    UDP_WFP_REDIRECT_END_TO_END_VERIFIED,
+    UDP_WFP_REDIRECT_EXPERIMENTAL_ENABLED,
     build_endpoint_config,
 )
 
@@ -1460,7 +1460,7 @@ class ConnectionManager(Mixins.CleanupOnExit):
                 )
                 return None
 
-            udpSupported = UDP_WFP_REDIRECT_END_TO_END_VERIFIED
+            udpSupported = UDP_WFP_REDIRECT_EXPERIMENTAL_ENABLED
             if factoryId == 'official.hysteria2':
                 socksConfig = runtimeConfiguration.get('socks5', {})
                 if not isinstance(socksConfig, dict):
