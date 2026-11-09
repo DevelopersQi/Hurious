@@ -17,7 +17,6 @@ static ULONG gDroppedCaptured = 0;
 static IO_CSQ gReadCsq;
 static LIST_ENTRY gPendingReads;
 static KEVENT gWorkEvent;
-static HANDLE gWorkerHandle = NULL;
 static PETHREAD gWorkerThread = NULL;
 static volatile LONG gStopping = 0;
 static volatile LONG gReady = 0;
@@ -162,10 +161,6 @@ VOID FuriousWfpDatagramQueueCleanup(VOID)
         ObDereferenceObject(gWorkerThread);
         gWorkerThread = NULL;
     }
-    if (gWorkerHandle != NULL) {
-        ZwClose(gWorkerHandle);
-        gWorkerHandle = NULL;
-    }
     while ((irp = IoCsqRemoveNextIrp(&gReadCsq, NULL)) != NULL) {
         irp->IoStatus.Status = STATUS_DELETE_PENDING;
         irp->IoStatus.Information = 0;
@@ -190,9 +185,17 @@ BOOLEAN FuriousWfpDatagramQueuePushCaptured(
         Message->MessageType != FURIOUS_WFP_DATAGRAM_MESSAGE_CAPTURED ||
         MessageBytes > FURIOUS_DGRAM_MAX_MESSAGE)
         return FALSE;
+#if (NTDDI_VERSION >= NTDDI_WIN10_VB)
+    entry = (PFURIOUS_DGRAM_ENTRY)ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        FIELD_OFFSET(FURIOUS_DGRAM_ENTRY, Data) + MessageBytes,
+        FURIOUS_DGRAM_POOL_TAG);
+#else
+#pragma warning(suppress: 4996)
     entry = (PFURIOUS_DGRAM_ENTRY)ExAllocatePoolWithTag(
         NonPagedPoolNx, FIELD_OFFSET(FURIOUS_DGRAM_ENTRY, Data) + MessageBytes,
         FURIOUS_DGRAM_POOL_TAG);
+#endif
     if (entry == NULL)
         return FALSE;
     entry->Size = MessageBytes;
@@ -247,7 +250,7 @@ BOOLEAN FuriousWfpDatagramQueueDispatch(PIRP Irp, PIO_STACK_LOCATION Stack)
             Irp->IoStatus.Status = STATUS_BUFFER_TOO_SMALL;
             Irp->IoStatus.Information = 0;
         } else {
-            output = (FURIOUS_WFP_DRIVER_DATAGRAM_QUEUE_STATUS*)Irp->AssociatedIrp.SystemBuffer;
+            output = (FURIOUS_WFP_DATAGRAM_QUEUE_STATUS*)Irp->AssociatedIrp.SystemBuffer;
             RtlZeroMemory(output, sizeof(*output));
             KeAcquireSpinLock(&gQueueLock, &irql);
             output->Size = sizeof(*output);
