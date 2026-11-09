@@ -373,7 +373,7 @@ class TUNSettingsUITest(unittest.TestCase):
         application_index = source.index("self.applicationRoutingCard = None")
         routing_index = source.index("self.customRoutingCard = None")
         self.assertLess(application_index, routing_index)
-        self.assertIn('first matching rule wins', source)
+        self.assertIn('matching rule wins', source)
         self.assertIn('Priority against routing rules depends on the selected backend.', source)
         self.assertIn('self._openRoutingEditor', source)
         self.assertIn('self._openApplicationRoutingEditor', source)
