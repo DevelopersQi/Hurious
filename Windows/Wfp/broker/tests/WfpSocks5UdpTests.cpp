@@ -1792,6 +1792,182 @@ void TestRegistryRejectsPendingUdpQueueOverflow() {
     closesocket(listener);
 }
 
+
+namespace {
+struct FakeWfpUdpReceiveInput final {
+    sockaddr_storage source{};
+    int sourceLength = 0;
+    std::vector<std::uint8_t> payload;
+    std::vector<std::uint8_t> redirectRecord;
+    std::vector<std::uint8_t> redirectContext;
+    int controlLevel = IPPROTO_IP;
+    bool duplicateRecord = false;
+};
+
+FakeWfpUdpReceiveInput* g_fakeWfpUdpReceiveInput = nullptr;
+
+INT WSAAPI FakeWfpUdpReceiveMessage(
+    SOCKET, LPWSAMSG message, LPDWORD bytesReceived,
+    LPWSAOVERLAPPED, LPWSAOVERLAPPED_COMPLETION_ROUTINE) {
+    if (g_fakeWfpUdpReceiveInput == nullptr || message == nullptr ||
+        bytesReceived == nullptr || message->name == nullptr ||
+        message->lpBuffers == nullptr || message->dwBufferCount != 1 ||
+        message->Control.buf == nullptr) {
+        WSASetLastError(WSAEINVAL);
+        return SOCKET_ERROR;
+    }
+
+    const auto& input = *g_fakeWfpUdpReceiveInput;
+    const std::size_t recordCount = input.redirectRecord.empty()
+        ? 0 : (input.duplicateRecord ? 2 : 1);
+    const std::size_t contextCount = input.redirectContext.empty() ? 0 : 1;
+    const std::size_t requiredControl =
+        recordCount * WSA_CMSG_SPACE(input.redirectRecord.size()) +
+        contextCount * WSA_CMSG_SPACE(input.redirectContext.size());
+    if (input.payload.size() > message->lpBuffers[0].len ||
+        requiredControl > message->Control.len ||
+        input.sourceLength <= 0 ||
+        static_cast<std::size_t>(input.sourceLength) > sizeof(input.source)) {
+        WSASetLastError(WSAEMSGSIZE);
+        return SOCKET_ERROR;
+    }
+
+    std::memcpy(message->name, &input.source,
+        static_cast<std::size_t>(input.sourceLength));
+    message->namelen = input.sourceLength;
+    if (!input.payload.empty()) {
+        std::memcpy(message->lpBuffers[0].buf,
+            input.payload.data(), input.payload.size());
+    }
+    message->dwFlags = 0;
+    message->Control.len = static_cast<ULONG>(requiredControl);
+    if (requiredControl != 0) {
+        std::memset(message->Control.buf, 0, requiredControl);
+        WSACMSGHDR* control = WSA_CMSG_FIRSTHDR(message);
+        const auto append = [&](int type, const std::vector<std::uint8_t>& bytes) {
+            if (control == nullptr) return false;
+            control->cmsg_level = input.controlLevel;
+            control->cmsg_type = type;
+            control->cmsg_len = WSA_CMSG_LEN(bytes.size());
+            std::memcpy(WSA_CMSG_DATA(control), bytes.data(), bytes.size());
+            control = WSA_CMSG_NXTHDR(message, control);
+            return true;
+        };
+        if (!input.redirectRecord.empty()) {
+            if (!append(IP_WFP_REDIRECT_RECORDS, input.redirectRecord) ||
+                (input.duplicateRecord &&
+                 !append(IP_WFP_REDIRECT_RECORDS, input.redirectRecord))) {
+                WSASetLastError(WSAEINVAL);
+                return SOCKET_ERROR;
+            }
+        }
+        if (!input.redirectContext.empty() &&
+            !append(IP_WFP_REDIRECT_CONTEXT, input.redirectContext)) {
+            WSASetLastError(WSAEINVAL);
+            return SOCKET_ERROR;
+        }
+    }
+    *bytesReceived = static_cast<DWORD>(input.payload.size());
+    return 0;
+}
+} // namespace
+
+void TestReceiveWfpUdpMessageParsesRedirectAncillaryData() {
+    const auto context = MakeUdpRedirectContext(4242);
+    const auto* contextBytes = reinterpret_cast<const std::uint8_t*>(&context);
+    const std::vector<std::uint8_t> contextData(
+        contextBytes, contextBytes + sizeof(context));
+    const std::vector<std::uint8_t> record{0x11, 0x22, 0x33, 0x44};
+    const std::vector<std::uint8_t> payload{'u', 'd', 'p', '!'};
+
+    FakeWfpUdpReceiveInput input{};
+    auto source4 = FlowSource(53001);
+    std::memcpy(&input.source, &source4, sizeof(source4));
+    input.sourceLength = sizeof(source4);
+    input.payload = payload;
+    input.redirectRecord = record;
+    input.redirectContext = contextData;
+    input.controlLevel = IPPROTO_IP;
+    g_fakeWfpUdpReceiveInput = &input;
+
+    std::array<std::uint8_t, 128> receivedPayload{};
+    std::array<char, 512> control{};
+    WfpUdpReceivedMessage received{};
+    int error = 0;
+    const auto result = ReceiveWfpUdpMessage(
+        1, FakeWfpUdpReceiveMessage,
+        receivedPayload.data(), receivedPayload.size(),
+        control.data(), control.size(), received, &error);
+    assert(result == WfpUdpReceiveResult::Received);
+    assert(error == 0);
+    assert(received.sourceAddress.ss_family == AF_INET);
+    assert(received.sourceAddressLength == sizeof(source4));
+    assert(received.payloadLength == payload.size());
+    assert(std::equal(payload.begin(), payload.end(), receivedPayload.begin()));
+    assert(received.redirectRecord == record);
+    assert(received.redirectContext == contextData);
+
+    // The same parser must accept IPv6 ancillary metadata only at the IPv6
+    // protocol level and preserve the IPv6 source endpoint.
+    FakeWfpUdpReceiveInput input6{};
+    sockaddr_in6 source6{};
+    source6.sin6_family = AF_INET6;
+    source6.sin6_addr = in6addr_loopback;
+    source6.sin6_port = htons(53002);
+    std::memcpy(&input6.source, &source6, sizeof(source6));
+    input6.sourceLength = sizeof(source6);
+    input6.payload = payload;
+    input6.redirectRecord = record;
+    auto context6 = context;
+    context6.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    std::memcpy(context6.OriginalAddress, &source6.sin6_addr,
+        sizeof(source6.sin6_addr));
+    const auto* context6Bytes = reinterpret_cast<const std::uint8_t*>(&context6);
+    input6.redirectContext.assign(
+        context6Bytes, context6Bytes + sizeof(context6));
+    input6.controlLevel = IPPROTO_IPV6;
+    g_fakeWfpUdpReceiveInput = &input6;
+    received = WfpUdpReceivedMessage{};
+    const auto result6 = ReceiveWfpUdpMessage(
+        1, FakeWfpUdpReceiveMessage,
+        receivedPayload.data(), receivedPayload.size(),
+        control.data(), control.size(), received, &error);
+    assert(result6 == WfpUdpReceiveResult::Received);
+    assert(received.sourceAddress.ss_family == AF_INET6);
+    assert(received.sourceAddressLength == sizeof(source6));
+    assert(received.redirectRecord == record);
+    assert(received.redirectContext == input6.redirectContext);
+
+    // Duplicate WFP redirect records are ambiguous and must be rejected,
+    // rather than selecting one attacker-controlled metadata instance.
+    input.duplicateRecord = true;
+    g_fakeWfpUdpReceiveInput = &input;
+    received = WfpUdpReceivedMessage{};
+    const auto duplicateResult = ReceiveWfpUdpMessage(
+        1, FakeWfpUdpReceiveMessage,
+        receivedPayload.data(), receivedPayload.size(),
+        control.data(), control.size(), received, &error);
+    assert(duplicateResult == WfpUdpReceiveResult::InvalidRedirectMetadata);
+    assert(received.redirectRecord.empty());
+    assert(received.redirectContext.empty());
+
+    // A family mismatch between source endpoint and ancillary protocol level
+    // is invalid metadata and must never reach the flow registry.
+    input.duplicateRecord = false;
+    input.controlLevel = IPPROTO_IPV6;
+    g_fakeWfpUdpReceiveInput = &input;
+    received = WfpUdpReceivedMessage{};
+    const auto familyMismatchResult = ReceiveWfpUdpMessage(
+        1, FakeWfpUdpReceiveMessage,
+        receivedPayload.data(), receivedPayload.size(),
+        control.data(), control.size(), received, &error);
+    assert(familyMismatchResult == WfpUdpReceiveResult::InvalidRedirectMetadata);
+    assert(received.redirectRecord.empty());
+    assert(received.redirectContext.empty());
+
+    g_fakeWfpUdpReceiveInput = nullptr;
+}
+
 int main() {
     WSADATA winsockData{};
     assert(WSAStartup(MAKEWORD(2, 2), &winsockData) == 0);
@@ -1800,6 +1976,7 @@ int main() {
     TestDatagramRejectsMalformedInput();
     TestAssociateControlMessages();
     TestRedirectContextDecodeRequiresValidUdpMetadata();
+    TestReceiveWfpUdpMessageParsesRedirectAncillaryData();
     TestUdpFlowManagerIdentityLimitsAndExpiry();
     TestUdpFlowManagerIpv6ScopeIdentity();
     TestUdpFlowManagerRejectsIpv6FamilyAndUnsafeTargets();
