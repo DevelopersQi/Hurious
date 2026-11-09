@@ -11,7 +11,7 @@
 } } while (0)
 
 int main() {
-    static_assert(sizeof(FURIOUS_WFP_DATAGRAM_MESSAGE) == 108,
+    static_assert(sizeof(FURIOUS_WFP_DATAGRAM_MESSAGE) == 112,
                   "Datagram message ABI size changed");
     static_assert(FURIOUS_WFP_DATAGRAM_QUEUE_MAX_BYTES >=
                   FURIOUS_WFP_DATAGRAM_MAX_PAYLOAD,

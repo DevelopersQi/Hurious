@@ -12,7 +12,8 @@ inline bool IsValidStatus(const FURIOUS_WFP_DRIVER_STATUS& status) noexcept {
         status.Version == FURIOUS_WFP_DRIVER_ABI_VERSION &&
         status.Reserved == 0 &&
         (status.Flags & ~(FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED |
-         FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED)) == 0;
+         FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED |
+         FURIOUS_WFP_DRIVER_FLAG_DATAGRAM_QUEUE_READY)) == 0;
 }
 
 inline DWORD SetEndpointConfig(
