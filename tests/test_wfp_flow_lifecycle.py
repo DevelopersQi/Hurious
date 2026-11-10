@@ -48,6 +48,27 @@ class WfpFlowLifecycleContractTests(unittest.TestCase):
         self.assertIn("FwpsFlowAssociateContext0(", DRIVER)
         self.assertIn("FuriousFlowDelete", DRIVER)
 
+    def test_datagram_data_v4_v6_capture_callouts_are_registered(self):
+        self.assertIn("FURIOUS_WFP_DATAGRAM_DATA_V4_CALLOUT", DRIVER)
+        self.assertIn("FURIOUS_WFP_DATAGRAM_DATA_V6_CALLOUT", DRIVER)
+        self.assertIn("FuriousDatagramDataClassify", DRIVER)
+        self.assertIn("FuriousWfpDatagramQueuePushCaptured", DRIVER)
+        self.assertIn("NET_BUFFER_LIST_FIRST_NB", DRIVER)
+        self.assertIn("NdisGetDataBuffer", DRIVER)
+        self.assertIn("FWPS_FIELD_DATAGRAM_DATA_V4_DIRECTION", DRIVER)
+        self.assertIn("FWPS_FIELD_DATAGRAM_DATA_V6_DIRECTION", DRIVER)
+
+    def test_flow_context_is_associated_at_datagram_layer(self):
+        self.assertIn("context->LayerId = (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4)", DRIVER)
+        self.assertIn("FuriousGetCalloutId(calloutIndex == 2 ? 4 : 5)", DRIVER)
+
+    def test_datagram_capture_filters_are_udp_only_and_cleaned_up(self):
+        self.assertIn("FWPM_LAYER_DATAGRAM_DATA_V4", ENGINE)
+        self.assertIn("FWPM_LAYER_DATAGRAM_DATA_V6", ENGINE)
+        self.assertIn("AddDatagramCaptureFilter", ENGINE)
+        self.assertIn("kDatagramDataV4CalloutKey", ENGINE)
+        self.assertIn("kDatagramDataV6CalloutKey", ENGINE)
+
     def test_management_filters_cover_both_flow_established_layers(self):
         self.assertIn("FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4", ENGINE)
         self.assertIn("FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6", ENGINE)
@@ -56,6 +77,8 @@ class WfpFlowLifecycleContractTests(unittest.TestCase):
         self.assertIn("FWP_ACTION_CALLOUT_INSPECTION", ENGINE)
         self.assertIn("FWPM_CONDITION_ALE_ORIGINAL_APP_ID", ENGINE)
         self.assertIn("expectedAppCondition", ENGINE)
+        self.assertIn("FWPM_LAYER_DATAGRAM_DATA_V4", ENGINE)
+        self.assertIn("FWPM_LAYER_DATAGRAM_DATA_V6", ENGINE)
 
     def test_udp_proxy_rules_install_flow_filters_and_cleanup_recognizes_them(self):
         self.assertIn("protocol == 17 && rule.Action == FuriousWfpActionProxy", ENGINE)
