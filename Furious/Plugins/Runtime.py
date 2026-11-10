@@ -54,6 +54,23 @@ def serializeRuntimeConfiguration(configuration, runtimeName: str, **kwargs) -> 
             ) from ex
 
     if isinstance(result, str) and result:
+        try:
+            import ujson
+
+            ujson.loads(result)
+        except Exception as ex:
+            # Any non-exit exceptions
+
+            logger.error(
+                f'configuration serializer for {runtimeName} returned invalid JSON'
+            )
+
+            raise RuntimeStartError(
+                'Invalid server configuration',
+                reason=RuntimeExitReason.InvalidConfiguration,
+                details=str(ex),
+            ) from ex
+
         return result
 
     diagnostic = ''
