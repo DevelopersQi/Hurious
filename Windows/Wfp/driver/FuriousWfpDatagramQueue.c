@@ -64,7 +64,7 @@ static VOID NTAPI CsqCompleteCanceledIrp(PIO_CSQ Csq, PIRP Irp)
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 }
 
-static PFURIOUS_DGRAM_ENTRY PopCaptured(VOID)
+static PFURIOUS_DGRAM_ENTRY PopCaptured(BOOLEAN KeepQueueAccounting)
 {
     KIRQL irql;
     PFURIOUS_DGRAM_ENTRY entry = NULL;
@@ -72,8 +72,13 @@ static PFURIOUS_DGRAM_ENTRY PopCaptured(VOID)
     if (!IsListEmpty(&gCapturedQueue)) {
         PLIST_ENTRY link = RemoveHeadList(&gCapturedQueue);
         entry = CONTAINING_RECORD(link, FURIOUS_DGRAM_ENTRY, Link);
-        --gCapturedEntries;
-        gCapturedBytes -= entry->Size;
+        // A worker-owned entry remains charged against the bounded queue.
+        // Otherwise a concurrent producer could consume the freed slot and
+        // the worker's later reinsert would exceed the configured limits.
+        if (!KeepQueueAccounting) {
+            --gCapturedEntries;
+            gCapturedBytes -= entry->Size;
+        }
     }
     KeReleaseSpinLock(&gQueueLock, irql);
     return entry;
@@ -88,7 +93,7 @@ static VOID NTAPI DatagramReadWorker(PVOID Context)
             PsTerminateSystemThread(STATUS_SUCCESS);
 
         for (;;) {
-            PFURIOUS_DGRAM_ENTRY entry = PopCaptured();
+            PFURIOUS_DGRAM_ENTRY entry = PopCaptured(TRUE);
             PIRP irp;
             if (entry == NULL)
                 break;
@@ -102,8 +107,8 @@ static VOID NTAPI DatagramReadWorker(PVOID Context)
                 KIRQL irql;
                 KeAcquireSpinLock(&gQueueLock, &irql);
                 InsertHeadList(&gCapturedQueue, &entry->Link);
-                ++gCapturedEntries;
-                gCapturedBytes += entry->Size;
+                // Accounting was retained while this entry was owned
+                // by the worker, so reinsertion must not charge it twice.
                 KeReleaseSpinLock(&gQueueLock, irql);
                 break;
             }
@@ -113,8 +118,7 @@ static VOID NTAPI DatagramReadWorker(PVOID Context)
                 KIRQL irql;
                 KeAcquireSpinLock(&gQueueLock, &irql);
                 InsertHeadList(&gCapturedQueue, &entry->Link);
-                ++gCapturedEntries;
-                gCapturedBytes += entry->Size;
+                // Keep the original queue accounting for this retained entry.
                 KeReleaseSpinLock(&gQueueLock, irql);
                 irp->IoStatus.Status = STATUS_BUFFER_TOO_SMALL;
                 irp->IoStatus.Information = 0;
@@ -122,6 +126,13 @@ static VOID NTAPI DatagramReadWorker(PVOID Context)
                 RtlCopyMemory(irp->AssociatedIrp.SystemBuffer, entry->Data, entry->Size);
                 irp->IoStatus.Status = STATUS_SUCCESS;
                 irp->IoStatus.Information = entry->Size;
+                {
+                    KIRQL irql;
+                    KeAcquireSpinLock(&gQueueLock, &irql);
+                    --gCapturedEntries;
+                    gCapturedBytes -= entry->Size;
+                    KeReleaseSpinLock(&gQueueLock, irql);
+                }
                 ExFreePoolWithTag(entry, FURIOUS_DGRAM_POOL_TAG);
             }
             IoCompleteRequest(irp, IO_NO_INCREMENT);
@@ -187,7 +198,7 @@ VOID FuriousWfpDatagramQueueCleanup(VOID)
         irp->IoStatus.Information = 0;
         IoCompleteRequest(irp, IO_NO_INCREMENT);
     }
-    while ((entry = PopCaptured()) != NULL)
+    while ((entry = PopCaptured(FALSE)) != NULL)
         ExFreePoolWithTag(entry, FURIOUS_DGRAM_POOL_TAG);
 }
 
