@@ -497,8 +497,7 @@ class UserServersTableModel(QtCore.QAbstractTableModel):
             item.index = index
 
     def sort(
-        self,
-        column: int,
+        self,        column: int,
         order: QtCore.Qt.SortOrder = QtCore.Qt.SortOrder.AscendingOrder,
     ):
         """Sort the user servers table model."""
@@ -725,6 +724,18 @@ class ServerTableView(
     activeServerChanged = QtCore.Signal()
 
     RowHeight = 42
+    MinimumColumnWidth = 64
+    PreferredColumnWidths = {
+        'Remark': 112,
+        'Protocol': 92,
+        'Address': 220,
+        'Port': 78,
+        'Transport': 96,
+        'TLS': 64,
+        'Subscription': 132,
+        'Latency': 82,
+        'Speed': 82,
+    }
 
     Headers = [
         ServerTableColumn('Remark'),
@@ -737,6 +748,38 @@ class ServerTableView(
         ServerTableColumn('Latency'),
         ServerTableColumn('Speed'),
     ]
+
+    def _configureResponsiveColumns(self):
+        """Keep the server table full-width while assigning spare space to addresses."""
+        header = self.horizontalHeader()
+        header.setMinimumSectionSize(self.MinimumColumnWidth)
+        header.setStretchLastSection(False)
+
+        # Preserve user-resizable columns, but let the address column absorb
+        # remaining viewport width instead of leaving unused space at the right.
+        for index, column in enumerate(self.Headers):
+            header.setSectionResizeMode(
+                index,
+                QHeaderView.ResizeMode.Interactive,
+            )
+            preferredWidth = self.PreferredColumnWidths.get(str(column))
+            if preferredWidth is not None and header.sectionSize(index) < preferredWidth:
+                header.resizeSection(index, preferredWidth)
+
+        addressColumn = next(
+            index
+            for index, column in enumerate(self.Headers)
+            if str(column) == 'Address'
+        )
+        header.setSectionResizeMode(
+            addressColumn,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        self.setWordWrap(False)
+        self.setTextElideMode(QtCore.Qt.TextElideMode.ElideRight)
+        self.setHorizontalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
 
     def __init__(self, *args, **kwargs):
         """Initialize the server table view."""
@@ -789,8 +832,10 @@ class ServerTableView(
         self.setVerticalHeader(ServerTableVerticalHeader(self))
         self.setDefaultRowHeight(self.RowHeight)
 
-        self.horizontalHeader().setCustomSectionResizeMode()
-        self.horizontalHeader().restoreSectionSize()
+        header = self.horizontalHeader()
+        header.setCustomSectionResizeMode()
+        header.restoreSectionSize()
+        self._configureResponsiveColumns()
 
         self.proxyModel.sortSuspended = True
         self.setSortingEnabled(True)
@@ -997,8 +1042,7 @@ class ServerTableView(
         self.doubleClickedFlag = False
 
         # Signals
-        self.selectionModel().selectionChanged.connect(self.handleItemSelectionChanged)
-        self.activated.connect(self.handleItemActivated)
+        self.selectionModel().selectionChanged.connect(self.handleItemSelectionChanged)        self.activated.connect(self.handleItemActivated)
         self.doubleClicked.connect(self.handleItemDoubleClicked)
 
         self.flushAll()
@@ -1497,8 +1541,7 @@ class ServerTableView(
                 currentRow = next(
                     (
                         row
-                        for row in rows
-                        if Storage.UserServers()[row].metadata.profileId
+                        for row in rows                        if Storage.UserServers()[row].metadata.profileId
                         == currentProfileId
                     ),
                     rows[0],
@@ -1997,7 +2040,6 @@ class ServerTableView(
 
         profiles = Storage.UserServers()
         first = len(profiles)
-
         for index, factory in enumerate(factories, first):
             factory.index = index
 
