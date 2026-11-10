@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "../include/WfpDriverProtocol.h"
@@ -30,11 +31,12 @@ public:
 
     DWORD Start(MessageHandler handler) noexcept {
         if (!handler) return ERROR_INVALID_PARAMETER;
-        if (running_.load(std::memory_order_acquire)) return ERROR_ALREADY_EXISTS;
+        if (stopEvent_ != nullptr || running_.load(std::memory_order_acquire))
+            return ERROR_ALREADY_EXISTS;
 
         HANDLE device = CreateFileW(
             L"\\\\.\\FuriousWfpCallout",
-            GENERIC_READ,
+            GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             nullptr,
             OPEN_EXISTING,
