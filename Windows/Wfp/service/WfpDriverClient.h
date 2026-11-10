@@ -4,6 +4,7 @@
 
 #include "../include/WfpDriverProtocol.h"
 #include "../include/WfpRedirectProtocol.h"
+#include "WfpDatagramReadClient.h"
 
 namespace furious::wfp::driver {
 
