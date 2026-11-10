@@ -164,6 +164,14 @@ class XrayApplicationRoutingRulesTest(TestCase):
                             {'process': process, 'outboundTag': 'proxy'},
                         ])
 
+    def test_application_routing_table_sizes_rows_for_embedded_controls(self):
+        from pathlib import Path
+
+        source = Path('Furious/Backends/Xray/RoutingWindow.py').read_text(encoding='utf-8')
+        self.assertIn('def _fitRowToCellWidgets(self, row):', source)
+        self.assertIn('self.table.setRowHeight(row, max(34, max(heights) + 6))', source)
+        self.assertEqual(source.count('self._fitRowToCellWidgets(row)'), 2)
+
     def test_invalid_persisted_json_falls_back_to_empty_policy(self):
         self.saved = '{invalid'
         get_patch, _set_patch = self.settings()

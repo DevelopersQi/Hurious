@@ -1324,6 +1324,17 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         enabledCheck.setChecked(bool(enabled))
         enabledCheck.setToolTip(_('Enable or disable this application rule'))
         self.table.setCellWidget(row, 3, enabledCheck)
+        self._fitRowToCellWidgets(row)
+
+    def _fitRowToCellWidgets(self, row):
+        """Keep embedded controls fully inside their table row."""
+        heights = [
+            self.table.cellWidget(row, column).sizeHint().height()
+            for column in (2, 3)
+            if self.table.cellWidget(row, column) is not None
+        ]
+        if heights:
+            self.table.setRowHeight(row, max(34, max(heights) + 6))
 
     def _processImagePath(self, pid):
         """Resolve a process ID to its full executable path using Win32 APIs."""
@@ -1467,6 +1478,7 @@ class ApplicationRoutingDialog(AppQTransientDialog):
         enabledCheck.setChecked(enabled)
         enabledCheck.setToolTip(_('Enable or disable this application rule'))
         self.table.setCellWidget(row, 3, enabledCheck)
+        self._fitRowToCellWidgets(row)
 
     def save(self):
         """Persist validated rules in visual priority order."""
