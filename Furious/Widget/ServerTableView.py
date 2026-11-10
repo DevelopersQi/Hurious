@@ -1042,7 +1042,8 @@ class ServerTableView(
         self.doubleClickedFlag = False
 
         # Signals
-        self.selectionModel().selectionChanged.connect(self.handleItemSelectionChanged)        self.activated.connect(self.handleItemActivated)
+        self.selectionModel().selectionChanged.connect(self.handleItemSelectionChanged)
+        self.activated.connect(self.handleItemActivated)
         self.doubleClicked.connect(self.handleItemDoubleClicked)
 
         self.flushAll()
