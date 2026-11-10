@@ -148,7 +148,13 @@ static NTSTATUS FuriousInsertPendingRedirectRecord(UINT64 handle, ULONG pid, UIN
         if (old->PolicyGeneration != generation) {
             RemoveEntryList(&old->Link); --gPendingRedirectRecordCount;
             ExFreePoolWithTag(old, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
-        } else if (old->TransportEndpointHandle == handle) {
+        } else if (old->TransportEndpointHandle == handle &&
+                   old->ProcessId == pid && old->Protocol == protocol &&
+                   old->AddressFamily == family &&
+                   old->OriginalPortNetworkOrder == originalPort &&
+                   RtlCompareMemory(old->OriginalAddress, original, 16) == 16) {
+            // The same UDP socket may own multiple ALE flows (one per peer).
+            // Reject only a duplicate peer record, not another peer on this endpoint.
             KeReleaseSpinLock(&gPendingRedirectLock, irql); ExFreePoolWithTag(r, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
             return STATUS_OBJECT_NAME_COLLISION;
         }
@@ -168,19 +174,31 @@ static NTSTATUS FuriousTakePendingRedirectRecord(UINT64 handle, ULONG pid, UINT8
     PFURIOUS_WFP_PENDING_REDIRECT_RECORD output)
 {
     PLIST_ENTRY e; PFURIOUS_WFP_PENDING_REDIRECT_RECORD found = NULL; KIRQL irql;
+    ULONG matchCount = 0;
     NTSTATUS result = STATUS_NOT_FOUND;
     if (!handle || !redirected || !output) return STATUS_INVALID_PARAMETER;
     KeAcquireSpinLock(&gPendingRedirectLock, &irql); FuriousPrunePendingRedirectRecordsLocked(KeQueryInterruptTime());
     for (e = gPendingRedirectRecords.Flink; e != &gPendingRedirectRecords; e = e->Flink) {
         PFURIOUS_WFP_PENDING_REDIRECT_RECORD r = CONTAINING_RECORD(e, FURIOUS_WFP_PENDING_REDIRECT_RECORD, Link);
-        if (r->TransportEndpointHandle == handle) { found = r; RemoveEntryList(&r->Link); --gPendingRedirectRecordCount; break; }
+        BOOLEAN originalPeerMatch, redirectedPeerMatch;
+        if (r->TransportEndpointHandle != handle || r->ProcessId != pid ||
+            r->Protocol != protocol || r->AddressFamily != family ||
+            r->PolicyGeneration != generation) continue;
+        originalPeerMatch = (RtlUshortByteSwap(r->OriginalPortNetworkOrder) == redirectedPort &&
+            RtlCompareMemory(r->OriginalAddress, redirected, 16) == 16);
+        redirectedPeerMatch = (r->RedirectPortHostOrder == redirectedPort &&
+            RtlCompareMemory(r->RedirectAddress, redirected, 16) == 16);
+        if (originalPeerMatch || redirectedPeerMatch) { found = r; ++matchCount; }
     }
-    if (found) {
-        if (found->ProcessId == pid && found->Protocol == protocol && found->AddressFamily == family &&
-            found->PolicyGeneration == generation && found->RedirectPortHostOrder == redirectedPort &&
-            RtlCompareMemory(found->RedirectAddress, redirected, 16) == 16) {
-            RtlCopyMemory(output, found, sizeof(*output)); result = STATUS_SUCCESS;
-        } else result = STATUS_DATA_ERROR;
+    if (matchCount == 1 && found != NULL) {
+        RemoveEntryList(&found->Link); --gPendingRedirectRecordCount;
+        RtlCopyMemory(output, found, sizeof(*output)); result = STATUS_SUCCESS;
+    } else if (matchCount > 1) {
+        // A shared proxy endpoint can collapse multiple UDP peers to the same
+        // redirected tuple. Never guess which original destination belongs to
+        // this ALE flow; leave the records to expire or be matched by peer tuple.
+        result = STATUS_OBJECT_NAME_COLLISION;
+        found = NULL;
     }
     KeReleaseSpinLock(&gPendingRedirectLock, irql);
     if (found) ExFreePoolWithTag(found, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);

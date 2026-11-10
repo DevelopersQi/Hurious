@@ -59,47 +59,47 @@ class PendingRedirectTableModel:
     def __init__(self):
         import threading
         self._lock = threading.Lock()
-        self._records = {}
+        self._records = []
 
     def insert(self, handle, pid, protocol, family, generation, target, redirected, now):
         with self._lock:
             self._expire(now)
-            self._records = {
-                key: value for key, value in self._records.items()
-                if value["generation"] == generation
-            }
-            if handle in self._records or len(self._records) >= self.LIMIT:
+            self._records = [r for r in self._records if r["generation"] == generation]
+            duplicate = any(
+                (r["handle"], r["pid"], r["protocol"], r["family"], r["generation"], r["target"])
+                == (handle, pid, protocol, family, generation, target)
+                for r in self._records
+            )
+            if duplicate or len(self._records) >= self.LIMIT:
                 return False
-            self._records[handle] = {
-                "pid": pid, "protocol": protocol, "family": family,
+            self._records.append({
+                "handle": handle, "pid": pid, "protocol": protocol, "family": family,
                 "generation": generation, "target": target,
                 "redirected": redirected, "created": now,
-            }
+            })
             return True
 
     def _expire(self, now):
-        self._records = {
-            key: value for key, value in self._records.items()
-            if 0 <= now - value["created"] <= self.TTL
-        }
+        self._records = [r for r in self._records
+                         if 0 <= now - r["created"] <= self.TTL]
 
-    def take(self, handle, pid, protocol, family, generation, redirected, now):
+    def take(self, handle, pid, protocol, family, generation, peer, now):
         with self._lock:
             self._expire(now)
-            record = self._records.pop(handle, None)
-            if record is None:
+            matches = [
+                r for r in self._records
+                if (r["handle"], r["pid"], r["protocol"], r["family"], r["generation"])
+                == (handle, pid, protocol, family, generation)
+                and peer in (r["target"], r["redirected"])
+            ]
+            if len(matches) != 1:
                 return None
-            expected = (pid, protocol, family, generation, redirected)
-            actual = (record["pid"], record["protocol"], record["family"],
-                      record["generation"], record["redirected"])
-            return record if actual == expected else None
+            self._records.remove(matches[0])
+            return matches[0]
 
     def process_exit(self, pid):
         with self._lock:
-            self._records = {
-                key: value for key, value in self._records.items()
-                if value["pid"] != pid
-            }
+            self._records = [r for r in self._records if r["pid"] != pid]
 
 
 class WfpPendingRedirectRecordTests(unittest.TestCase):
@@ -169,6 +169,23 @@ class WfpPendingRedirectRecordTests(unittest.TestCase):
         first = table.take(11, 77, 17, 4, 3, ("127.0.0.1", 45001), 1)
         self.assertEqual(second["target"], ("203.0.113.2", 443))
         self.assertEqual(first["target"], ("203.0.113.1", 53))
+
+    def test_multiple_udp_peers_on_one_socket_match_by_original_peer_tuple(self):
+        table = PendingRedirectTableModel()
+        proxy = ("127.0.0.1", 45000)
+        self.assertTrue(table.insert(21, 88, 17, 4, 5, ("198.51.100.10", 53), proxy, 0))
+        self.assertTrue(table.insert(21, 88, 17, 4, 5, ("198.51.100.20", 443), proxy, 0))
+        peer_b = table.take(21, 88, 17, 4, 5, ("198.51.100.20", 443), 1)
+        peer_a = table.take(21, 88, 17, 4, 5, ("198.51.100.10", 53), 1)
+        self.assertEqual(peer_b["target"], ("198.51.100.20", 443))
+        self.assertEqual(peer_a["target"], ("198.51.100.10", 53))
+
+    def test_shared_redirect_tuple_is_rejected_when_peer_is_ambiguous(self):
+        table = PendingRedirectTableModel()
+        proxy = ("127.0.0.1", 45000)
+        for address in ("198.51.100.10", "198.51.100.20"):
+            self.assertTrue(table.insert(22, 89, 17, 4, 5, (address, 53), proxy, 0))
+        self.assertIsNone(table.take(22, 89, 17, 4, 5, proxy, 1))
 
     def test_duplicate_endpoint_handle_is_rejected_and_consumed_once(self):
         table = PendingRedirectTableModel()
