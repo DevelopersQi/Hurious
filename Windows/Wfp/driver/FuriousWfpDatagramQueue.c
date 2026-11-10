@@ -88,17 +88,26 @@ static VOID NTAPI DatagramReadWorker(PVOID Context)
             PsTerminateSystemThread(STATUS_SUCCESS);
 
         for (;;) {
-            PIRP irp = IoCsqRemoveNextIrp(&gReadCsq, NULL);
-            PFURIOUS_DGRAM_ENTRY entry;
-            if (irp == NULL)
+            PFURIOUS_DGRAM_ENTRY entry = PopCaptured();
+            PIRP irp;
+            if (entry == NULL)
                 break;
-            entry = PopCaptured();
-            if (entry == NULL) {
-                // A producer may have raced the dequeue. Requeue the read;
-                // the synchronization event remains signaled if data arrived.
-                IoCsqInsertIrp(&gReadCsq, irp, NULL);
+
+            // Never remove a pending IRP until a datagram is already owned by
+            // this worker. This avoids the old remove-then-reinsert window:
+            // cleanup/cancel could run after removal but before reinsertion,
+            // leaving an IRP queued after its file object had been cleaned up.
+            irp = IoCsqRemoveNextIrp(&gReadCsq, NULL);
+            if (irp == NULL) {
+                KIRQL irql;
+                KeAcquireSpinLock(&gQueueLock, &irql);
+                InsertHeadList(&gCapturedQueue, &entry->Link);
+                ++gCapturedEntries;
+                gCapturedBytes += entry->Size;
+                KeReleaseSpinLock(&gQueueLock, irql);
                 break;
             }
+
             if (irp->AssociatedIrp.SystemBuffer == NULL ||
                 IoGetCurrentIrpStackLocation(irp)->Parameters.DeviceIoControl.OutputBufferLength < entry->Size) {
                 KIRQL irql;
