@@ -364,7 +364,9 @@ class RuntimeLifecycleTest(TestCase):
             runtime = _ProcessRuntime(
                 exitCallback=lambda current, event: events.append(event)
             )
-            runtime._output.putMessage('hysteria2: invalid client configuration')
+            runtime._output.drainPendingMessages = mock.Mock(
+                return_value='hysteria2: invalid client configuration'
+            )
 
             with self.assertRaises(RuntimeStartError) as raised:
                 runtime.start()
@@ -414,6 +416,9 @@ class RuntimeLifecycleTest(TestCase):
         releaseStart = Event()
         process = mock.Mock()
         process.is_alive.return_value = True
+        process.terminate.side_effect = lambda: setattr(
+            process.is_alive, 'return_value', False
+        )
         process.start.side_effect = lambda: (
             enteredStart.set(),
             releaseStart.wait(2),
