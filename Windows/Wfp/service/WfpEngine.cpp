@@ -124,7 +124,10 @@ bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
     if (!connectV4 && !connectV6 && !flowV4 && !flowV6) return false;
     const auto& app = filter->filterCondition[0];
     const auto& protocol = filter->filterCondition[1];
-    if (std::memcmp(&app.fieldKey, &FWPM_CONDITION_ALE_APP_ID, sizeof(GUID)) != 0 ||
+    const bool flowLayer = flowV4 || flowV6;
+    const GUID& expectedAppCondition = flowLayer
+        ? FWPM_CONDITION_ALE_ORIGINAL_APP_ID : FWPM_CONDITION_ALE_APP_ID;
+    if (std::memcmp(&app.fieldKey, &expectedAppCondition, sizeof(GUID)) != 0 ||
         app.matchType != FWP_MATCH_EQUAL || app.conditionValue.type != FWP_BYTE_BLOB_TYPE ||
         app.conditionValue.byteBlob == nullptr || app.conditionValue.byteBlob->size == 0 ||
         std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) != 0 ||
@@ -206,9 +209,6 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     filter.weight.uint64 = &weight;
     filter.rawContext = static_cast<UINT64>(rule.Priority);
     if (rule.Action == FuriousWfpActionProxy) {
-        const bool flowEstablished =
-            std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0 ||
-            std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
         filter.action.type = flowEstablished
             ? FWP_ACTION_CALLOUT_INSPECTION
             : FWP_ACTION_CALLOUT_TERMINATING;
@@ -220,7 +220,12 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     appId.size = static_cast<UINT32>(rule.AppId.size());
     appId.data = const_cast<UINT8*>(rule.AppId.data());
     FWPM_FILTER_CONDITION0 conditions[2] = {};
-    conditions[0].fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    const bool flowEstablished =
+        std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0 ||
+        std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
+    conditions[0].fieldKey = flowEstablished
+        ? FWPM_CONDITION_ALE_ORIGINAL_APP_ID
+        : FWPM_CONDITION_ALE_APP_ID;
     conditions[0].matchType = FWP_MATCH_EQUAL;
     conditions[0].conditionValue.type = FWP_BYTE_BLOB_TYPE;
     conditions[0].conditionValue.byteBlob = &appId;

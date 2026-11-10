@@ -54,6 +54,8 @@ class WfpFlowLifecycleContractTests(unittest.TestCase):
         self.assertIn("kFlowEstablishedV4CalloutKey", ENGINE)
         self.assertIn("kFlowEstablishedV6CalloutKey", ENGINE)
         self.assertIn("FWP_ACTION_CALLOUT_INSPECTION", ENGINE)
+        self.assertIn("FWPM_CONDITION_ALE_ORIGINAL_APP_ID", ENGINE)
+        self.assertIn("expectedAppCondition", ENGINE)
 
     def test_udp_proxy_rules_install_flow_filters_and_cleanup_recognizes_them(self):
         self.assertIn("protocol == 17 && rule.Action == FuriousWfpActionProxy", ENGINE)
