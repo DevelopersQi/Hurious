@@ -79,7 +79,24 @@ typedef struct _FURIOUS_WFP_FLOW_CONTEXT {
     UINT16 LayerId;
     UINT16 AddressFamily;
     UINT32 Direction;
+    UINT64 TransportEndpointHandle;
+    UCHAR OriginalAddress[16];
+    UINT16 OriginalPortHostOrder;
 } FURIOUS_WFP_FLOW_CONTEXT, *PFURIOUS_WFP_FLOW_CONTEXT;
+#define FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG 'rWrF'
+#define FURIOUS_WFP_PENDING_REDIRECT_TTL_100NS (30ULL * 1000ULL * 1000ULL * 10ULL)
+typedef struct _FURIOUS_WFP_PENDING_REDIRECT_RECORD {
+    LIST_ENTRY Link;
+    UINT64 TransportEndpointHandle, CreatedAt, PolicyGeneration;
+    ULONG ProcessId;
+    UINT8 Protocol;
+    UINT16 AddressFamily, OriginalPortNetworkOrder, RedirectPortHostOrder;
+    UCHAR OriginalAddress[16], RedirectAddress[16];
+} FURIOUS_WFP_PENDING_REDIRECT_RECORD, *PFURIOUS_WFP_PENDING_REDIRECT_RECORD;
+static LIST_ENTRY gPendingRedirectRecords;
+static KSPIN_LOCK gPendingRedirectLock;
+static LONG gPendingRedirectRecordCount = 0;
+#define FURIOUS_WFP_PENDING_REDIRECT_MAX_RECORDS 1024
 
 static BOOLEAN gCalloutsRegistered[FURIOUS_WFP_CALLOUT_COUNT] =
     { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE };
@@ -92,6 +109,104 @@ static KSPIN_LOCK gEndpointConfigLock;
 static FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG gEndpointConfig;
 static BOOLEAN gEndpointConfigValid = FALSE;
 static BOOLEAN gProcessNotifyRegistered = FALSE;
+static VOID FuriousPrunePendingRedirectRecordsLocked(UINT64 now)
+{
+    PLIST_ENTRY e = gPendingRedirectRecords.Flink;
+    while (e != &gPendingRedirectRecords) {
+        PLIST_ENTRY next = e->Flink;
+        PFURIOUS_WFP_PENDING_REDIRECT_RECORD r = CONTAINING_RECORD(e, FURIOUS_WFP_PENDING_REDIRECT_RECORD, Link);
+        if (now < r->CreatedAt || now - r->CreatedAt > FURIOUS_WFP_PENDING_REDIRECT_TTL_100NS) {
+            RemoveEntryList(&r->Link); --gPendingRedirectRecordCount; ExFreePoolWithTag(r, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+        }
+        e = next;
+    }
+}
+static NTSTATUS FuriousInsertPendingRedirectRecord(UINT64 handle, ULONG pid, UINT8 protocol,
+    UINT16 family, UINT64 generation, const UCHAR* original, UINT16 originalPort,
+    const UCHAR* redirected, UINT16 redirectedPort)
+{
+    PFURIOUS_WFP_PENDING_REDIRECT_RECORD r; PLIST_ENTRY e; KIRQL irql;
+    if (!handle || !pid || !generation || protocol != FURIOUS_WFP_REDIRECT_PROTOCOL_UDP ||
+        (family != FURIOUS_WFP_REDIRECT_FAMILY_V4 && family != FURIOUS_WFP_REDIRECT_FAMILY_V6) ||
+        !original || !redirected || !originalPort || !redirectedPort) return STATUS_INVALID_PARAMETER;
+#if (NTDDI_VERSION >= NTDDI_WIN10_VB)
+    r = (PFURIOUS_WFP_PENDING_REDIRECT_RECORD)ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(*r), FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+#else
+#pragma warning(suppress: 4996)
+    r = (PFURIOUS_WFP_PENDING_REDIRECT_RECORD)ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(*r), FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+#endif
+    if (!r) return STATUS_INSUFFICIENT_RESOURCES;
+    RtlZeroMemory(r, sizeof(*r)); r->TransportEndpointHandle = handle; r->CreatedAt = KeQueryInterruptTime();
+    r->PolicyGeneration = generation; r->ProcessId = pid; r->Protocol = protocol; r->AddressFamily = family;
+    r->OriginalPortNetworkOrder = originalPort; r->RedirectPortHostOrder = redirectedPort;
+    RtlCopyMemory(r->OriginalAddress, original, 16); RtlCopyMemory(r->RedirectAddress, redirected, 16);
+    KeAcquireSpinLock(&gPendingRedirectLock, &irql); FuriousPrunePendingRedirectRecordsLocked(r->CreatedAt);
+    e = gPendingRedirectRecords.Flink;
+    while (e != &gPendingRedirectRecords) {
+        PLIST_ENTRY next = e->Flink;
+        PFURIOUS_WFP_PENDING_REDIRECT_RECORD old = CONTAINING_RECORD(e, FURIOUS_WFP_PENDING_REDIRECT_RECORD, Link);
+        if (old->PolicyGeneration != generation) {
+            RemoveEntryList(&old->Link); --gPendingRedirectRecordCount;
+            ExFreePoolWithTag(old, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+        } else if (old->TransportEndpointHandle == handle) {
+            KeReleaseSpinLock(&gPendingRedirectLock, irql); ExFreePoolWithTag(r, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+            return STATUS_OBJECT_NAME_COLLISION;
+        }
+        e = next;
+    }
+    if (gPendingRedirectRecordCount >= FURIOUS_WFP_PENDING_REDIRECT_MAX_RECORDS) {
+        KeReleaseSpinLock(&gPendingRedirectLock, irql);
+        ExFreePoolWithTag(r, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+        return STATUS_QUOTA_EXCEEDED;
+    }
+    InsertTailList(&gPendingRedirectRecords, &r->Link); ++gPendingRedirectRecordCount;
+    KeReleaseSpinLock(&gPendingRedirectLock, irql);
+    return STATUS_SUCCESS;
+}
+static NTSTATUS FuriousTakePendingRedirectRecord(UINT64 handle, ULONG pid, UINT8 protocol,
+    UINT16 family, UINT64 generation, const UCHAR* redirected, UINT16 redirectedPort,
+    PFURIOUS_WFP_PENDING_REDIRECT_RECORD output)
+{
+    PLIST_ENTRY e; PFURIOUS_WFP_PENDING_REDIRECT_RECORD found = NULL; KIRQL irql;
+    NTSTATUS result = STATUS_NOT_FOUND;
+    if (!handle || !redirected || !output) return STATUS_INVALID_PARAMETER;
+    KeAcquireSpinLock(&gPendingRedirectLock, &irql); FuriousPrunePendingRedirectRecordsLocked(KeQueryInterruptTime());
+    for (e = gPendingRedirectRecords.Flink; e != &gPendingRedirectRecords; e = e->Flink) {
+        PFURIOUS_WFP_PENDING_REDIRECT_RECORD r = CONTAINING_RECORD(e, FURIOUS_WFP_PENDING_REDIRECT_RECORD, Link);
+        if (r->TransportEndpointHandle == handle) { found = r; RemoveEntryList(&r->Link); --gPendingRedirectRecordCount; break; }
+    }
+    if (found) {
+        if (found->ProcessId == pid && found->Protocol == protocol && found->AddressFamily == family &&
+            found->PolicyGeneration == generation && found->RedirectPortHostOrder == redirectedPort &&
+            RtlCompareMemory(found->RedirectAddress, redirected, 16) == 16) {
+            RtlCopyMemory(output, found, sizeof(*output)); result = STATUS_SUCCESS;
+        } else result = STATUS_DATA_ERROR;
+    }
+    KeReleaseSpinLock(&gPendingRedirectLock, irql);
+    if (found) ExFreePoolWithTag(found, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+    return result;
+}
+static VOID FuriousRemovePendingRedirectRecordsForProcess(ULONG pid)
+{
+    PLIST_ENTRY e; KIRQL irql; KeAcquireSpinLock(&gPendingRedirectLock, &irql); e = gPendingRedirectRecords.Flink;
+    while (e != &gPendingRedirectRecords) {
+        PLIST_ENTRY next = e->Flink;
+        PFURIOUS_WFP_PENDING_REDIRECT_RECORD r = CONTAINING_RECORD(e, FURIOUS_WFP_PENDING_REDIRECT_RECORD, Link);
+        if (r->ProcessId == pid) { RemoveEntryList(&r->Link); --gPendingRedirectRecordCount; ExFreePoolWithTag(r, FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG); }
+        e = next;
+    }
+    KeReleaseSpinLock(&gPendingRedirectLock, irql);
+}
+static VOID FuriousClearPendingRedirectRecords(VOID)
+{
+    KIRQL irql; KeAcquireSpinLock(&gPendingRedirectLock, &irql);
+    while (!IsListEmpty(&gPendingRedirectRecords)) {
+        PLIST_ENTRY e = RemoveHeadList(&gPendingRedirectRecords);
+        ExFreePoolWithTag(CONTAINING_RECORD(e, FURIOUS_WFP_PENDING_REDIRECT_RECORD, Link), FURIOUS_WFP_PENDING_REDIRECT_POOL_TAG);
+        --gPendingRedirectRecordCount;
+    }
+    KeReleaseSpinLock(&gPendingRedirectLock, irql);
+}
 
 static BOOLEAN FuriousValidateEndpointConfig(
     const FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG* value)
@@ -218,6 +333,7 @@ static VOID NTAPI FuriousProcessNotify(
             &gEndpointConfig, processIdValue);
     }
     KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+    FuriousRemovePendingRedirectRecordsForProcess(processIdValue);
 }
 
 static ULONG FuriousGetDriverFlags(void)
@@ -294,6 +410,7 @@ static NTSTATUS NTAPI FuriousDeviceControl(
             RtlCopyMemory(&gEndpointConfig, input, sizeof(gEndpointConfig));
             gEndpointConfigValid = TRUE;
             KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+            FuriousClearPendingRedirectRecords();
             status = STATUS_SUCCESS;
         }
     } else if (stack->Parameters.DeviceIoControl.IoControlCode ==
@@ -306,6 +423,7 @@ static NTSTATUS NTAPI FuriousDeviceControl(
             RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
             gEndpointConfigValid = FALSE;
             KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+            FuriousClearPendingRedirectRecords();
             status = STATUS_SUCCESS;
         }
     } else if (stack->Parameters.DeviceIoControl.IoControlCode ==
@@ -385,6 +503,8 @@ static VOID NTAPI FuriousClassify(
     NTSTATUS status;
     KIRQL oldIrql;
     BOOLEAN isV4;
+    UINT64 transportEndpointHandle = 0;
+    UCHAR redirectedAddress[16] = { 0 };
 
     UNREFERENCED_PARAMETER(layerData);
     UNREFERENCED_PARAMETER(flowContext);
@@ -444,6 +564,11 @@ static VOID NTAPI FuriousClassify(
         addressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
     }
 
+    if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
+        if (!FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_TRANSPORT_ENDPOINT_HANDLE) ||
+            inMetaValues->transportEndpointHandle == 0) { FuriousBlock(classifyOut); return; }
+        transportEndpointHandle = inMetaValues->transportEndpointHandle;
+    }
     if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_TCP) {
         if ((endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_TCP) == 0) {
             FuriousBlock(classifyOut);
@@ -551,6 +676,7 @@ static VOID NTAPI FuriousClassify(
             remote->sin_addr.S_un.S_addr = RtlUlongByteSwap(0x7F000001u);
         }
         remote->sin_port = RtlUshortByteSwap(targetPort);
+        RtlCopyMemory(redirectedAddress, &remote->sin_addr, sizeof(ULONG));
     } else {
         SOCKADDR_IN6* remote = (SOCKADDR_IN6*)&connectRequest->remoteAddressAndPort;
         SOCKADDR_IN6* local = (SOCKADDR_IN6*)&connectRequest->localAddressAndPort;
@@ -614,6 +740,20 @@ static VOID NTAPI FuriousClassify(
             remote->sin6_addr.u.Byte[15] = 1;
         }
         remote->sin6_port = RtlUshortByteSwap(targetPort);
+        RtlCopyMemory(redirectedAddress, &remote->sin6_addr, sizeof(redirectedAddress));
+    }
+
+    if (protocol == FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
+        status = FuriousInsertPendingRedirectRecord(transportEndpointHandle,
+            (ULONG)inMetaValues->processId, protocol, addressFamily, endpoint.PolicyGeneration,
+            redirectContext->OriginalAddress, redirectContext->OriginalPortNetworkOrder,
+            redirectedAddress, targetPort);
+        if (!NT_SUCCESS(status)) {
+            FwpsApplyModifiedLayerData0(classifyHandle, connectRequest, 0);
+            FwpsReleaseClassifyHandle0(classifyHandle);
+            ExFreePoolWithTag(redirectContext, FURIOUS_WFP_REDIRECT_POOL_TAG);
+            FuriousBlock(classifyOut); return;
+        }
     }
 
     connectRequest->localRedirectTargetPID = endpoint.ProxyProcessId;
@@ -667,6 +807,9 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
     UINT16 addressFamily;
     UINT32 calloutIndex;
     UINT8 protocol;
+    UCHAR redirectedAddress[16] = { 0 };
+    UINT16 redirectedPortHostOrder = 0;
+    FURIOUS_WFP_PENDING_REDIRECT_RECORD redirectRecord;
     KIRQL oldIrql;
     NTSTATUS status;
 
@@ -697,10 +840,26 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
         return;
     }
 
-    // FLOW_HANDLE and PROCESS_ID are mandatory for an attributable flow.
+    if (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4) {
+        RtlCopyMemory(redirectedAddress, &inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_REMOTE_ADDRESS].value.uint32, sizeof(ULONG));
+        redirectedPortHostOrder = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_REMOTE_PORT].value.uint16;
+    } else {
+        const FWP_BYTE_ARRAY16* remote = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_REMOTE_ADDRESS].value.byteArray16;
+        if (!remote) { classifyOut->actionType = FWP_ACTION_CONTINUE; return; }
+        RtlCopyMemory(redirectedAddress, remote->byteArray16, sizeof(redirectedAddress));
+        redirectedPortHostOrder = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_REMOTE_PORT].value.uint16;
+    }
+
+    // FLOW_HANDLE, PROCESS_ID and TRANSPORT_ENDPOINT_HANDLE are mandatory.
     // Missing metadata is a safe observation miss, never a fabricated ID.
     if (!FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_FLOW_HANDLE) ||
         !FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID) ||
+        !FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_TRANSPORT_ENDPOINT_HANDLE) ||
+        inMetaValues->transportEndpointHandle == 0 ||
         inMetaValues->flowHandle == 0 || inMetaValues->processId == 0 ||
         protocol != FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
         classifyOut->actionType = FWP_ACTION_CONTINUE;
@@ -735,6 +894,11 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
         }
     }
 
+    status = FuriousTakePendingRedirectRecord(inMetaValues->transportEndpointHandle,
+        (ULONG)inMetaValues->processId, protocol, addressFamily, endpoint.PolicyGeneration,
+        redirectedAddress, redirectedPortHostOrder, &redirectRecord);
+    if (!NT_SUCCESS(status)) { classifyOut->actionType = FWP_ACTION_CONTINUE; return; }
+
     context = FuriousAllocateFlowContext();
     if (context == NULL) {
         // Flow tracking is observational in this stage. Do not block traffic
@@ -746,12 +910,15 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
     context->Magic = FURIOUS_WFP_FLOW_CONTEXT_MAGIC;
     context->Size = sizeof(*context);
     context->FlowId = inMetaValues->flowHandle;
+    context->TransportEndpointHandle = inMetaValues->transportEndpointHandle;
     context->ProcessId = (ULONG)inMetaValues->processId;
     context->Protocol = protocol;
     context->PolicyGeneration = endpoint.PolicyGeneration;
     context->LayerId = (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4)
         ? FWPS_LAYER_DATAGRAM_DATA_V4 : FWPS_LAYER_DATAGRAM_DATA_V6;
     context->AddressFamily = addressFamily;
+    RtlCopyMemory(context->OriginalAddress, redirectRecord.OriginalAddress, sizeof(context->OriginalAddress));
+    context->OriginalPortHostOrder = RtlUshortByteSwap(redirectRecord.OriginalPortNetworkOrder);
     if (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4) {
         context->Direction = inFixedValues->incomingValue[
             FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_DIRECTION].value.uint32;
@@ -935,6 +1102,8 @@ static VOID NTAPI FuriousDatagramDataClassify(
         message->Direction = direction == FWP_DIRECTION_OUTBOUND
             ? FURIOUS_WFP_DATAGRAM_DIRECTION_OUTBOUND
             : FURIOUS_WFP_DATAGRAM_DIRECTION_INBOUND;
+        RtlCopyMemory(remoteAddress, context->OriginalAddress, sizeof(remoteAddress));
+        remotePort = context->OriginalPortHostOrder;
         if (direction == FWP_DIRECTION_OUTBOUND) {
             RtlCopyMemory(message->SourceAddress, localAddress, sizeof(localAddress));
             RtlCopyMemory(message->DestinationAddress, remoteAddress, sizeof(remoteAddress));
@@ -1029,6 +1198,7 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
     }
     // No WFP classify callback can reach the queue after callout unregister.
     // It is now safe to stop the worker, drain pending reads, and free entries.
+    FuriousClearPendingRedirectRecords();
     FuriousWfpDatagramQueueCleanup();
 
     if (gRedirectHandle != NULL) {
@@ -1056,6 +1226,8 @@ NTSTATUS DriverEntry(
     UNREFERENCED_PARAMETER(registryPath);
 
     KeInitializeSpinLock(&gEndpointConfigLock);
+    KeInitializeSpinLock(&gPendingRedirectLock);
+    InitializeListHead(&gPendingRedirectRecords);
     RtlZeroMemory(&gEndpointConfig, sizeof(gEndpointConfig));
     gEndpointConfigValid = FALSE;
 
