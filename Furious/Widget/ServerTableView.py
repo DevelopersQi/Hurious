@@ -750,35 +750,21 @@ class ServerTableView(
     ]
 
     def _configureResponsiveColumns(self):
-        """Keep the server table full-width while assigning spare space to addresses."""
+        """Size columns to their contents and scroll instead of eliding text."""
         header = self.horizontalHeader()
         header.setMinimumSectionSize(self.MinimumColumnWidth)
-        header.setStretchLastSection(False)
+        header.setStretchLastSection(True)
 
-        # Preserve user-resizable columns, but let the address column absorb
-        # remaining viewport width instead of leaving unused space at the right.
-        for index, column in enumerate(self.Headers):
-            header.setSectionResizeMode(
-                index,
-                QHeaderView.ResizeMode.Interactive,
-            )
-            preferredWidth = self.PreferredColumnWidths.get(str(column))
-            if preferredWidth is not None and header.sectionSize(index) < preferredWidth:
-                header.resizeSection(index, preferredWidth)
-
-        addressColumn = next(
-            index
-            for index, column in enumerate(self.Headers)
-            if str(column) == 'Address'
-        )
-        header.setSectionResizeMode(
-            addressColumn,
-            QHeaderView.ResizeMode.Stretch,
-        )
+        # Every column follows its content width. If the total width exceeds
+        # the viewport, the table scrolls horizontally rather than hiding text.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.setWordWrap(False)
-        self.setTextElideMode(QtCore.Qt.TextElideMode.ElideRight)
+        self.setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
         self.setHorizontalScrollMode(
             QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
 
     def __init__(self, *args, **kwargs):
