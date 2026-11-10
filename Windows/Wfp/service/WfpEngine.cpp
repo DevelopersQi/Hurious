@@ -21,6 +21,10 @@ const GUID kConnectRedirectV4CalloutKey =
 { 0x7c0f8c33, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x03 } };
 const GUID kConnectRedirectV6CalloutKey =
 { 0x7c0f8c35, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x05 } };
+const GUID kFlowEstablishedV4CalloutKey =
+{ 0x7c0f8c38, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x08 } };
+const GUID kFlowEstablishedV6CalloutKey =
+{ 0x7c0f8c39, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x09 } };
 const GUID kConnectRedirectV4FilterKey =
 { 0x7c0f8c36, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x06 } };
 const GUID kConnectRedirectV6FilterKey =
@@ -113,9 +117,11 @@ bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
         std::memcmp(&filter->subLayerKey, &kSublayerKey, sizeof(kSublayerKey)) != 0 ||
         !IsExpectedText(filter->displayData.name, L"Furious application route rule") ||
         filter->numFilterConditions != 2 || filter->filterCondition == nullptr) return false;
-    const bool v4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, sizeof(GUID)) == 0;
-    const bool v6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, sizeof(GUID)) == 0;
-    if (!v4 && !v6) return false;
+    const bool connectV4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, sizeof(GUID)) == 0;
+    const bool connectV6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, sizeof(GUID)) == 0;
+    const bool flowV4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0;
+    const bool flowV6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
+    if (!connectV4 && !connectV6 && !flowV4 && !flowV6) return false;
     const auto& app = filter->filterCondition[0];
     const auto& protocol = filter->filterCondition[1];
     if (std::memcmp(&app.fieldKey, &FWPM_CONDITION_ALE_APP_ID, sizeof(GUID)) != 0 ||
@@ -124,9 +130,17 @@ bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
         std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) != 0 ||
         protocol.matchType != FWP_MATCH_EQUAL || protocol.conditionValue.type != FWP_UINT8 ||
         (protocol.conditionValue.uint8 != 6 && protocol.conditionValue.uint8 != 17)) return false;
-    if (filter->action.type == FWP_ACTION_PERMIT) return true;
+    if (filter->action.type == FWP_ACTION_PERMIT) {
+        return connectV4 || connectV6;
+    }
+    if (flowV4 || flowV6) {
+        if (filter->action.type != FWP_ACTION_CALLOUT_INSPECTION) return false;
+        const GUID& callout = flowV4 ? kFlowEstablishedV4CalloutKey : kFlowEstablishedV6CalloutKey;
+        return std::memcmp(&filter->action.calloutKey, &callout, sizeof(GUID)) == 0 &&
+            protocol.conditionValue.uint8 == 17;
+    }
     if (filter->action.type != FWP_ACTION_CALLOUT_TERMINATING) return false;
-    const GUID& callout = v4 ? kConnectRedirectV4CalloutKey : kConnectRedirectV6CalloutKey;
+    const GUID& callout = connectV4 ? kConnectRedirectV4CalloutKey : kConnectRedirectV6CalloutKey;
     return std::memcmp(&filter->action.calloutKey, &callout, sizeof(GUID)) == 0;
 }
 
@@ -192,7 +206,12 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     filter.weight.uint64 = &weight;
     filter.rawContext = static_cast<UINT64>(rule.Priority);
     if (rule.Action == FuriousWfpActionProxy) {
-        filter.action.type = FWP_ACTION_CALLOUT_TERMINATING;
+        const bool flowEstablished =
+            std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0 ||
+            std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
+        filter.action.type = flowEstablished
+            ? FWP_ACTION_CALLOUT_INSPECTION
+            : FWP_ACTION_CALLOUT_TERMINATING;
         filter.action.calloutKey = calloutKey;
     } else if (rule.Action == FuriousWfpActionDirect) {
         filter.action.type = FWP_ACTION_PERMIT;
@@ -356,6 +375,14 @@ DWORD Engine::InstallRedirectFilters() {
         status = EnsureCallout(handle_, kConnectRedirectV6CalloutKey,
             FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, L"Furious IPv6 connect redirect");
     }
+    if (status == ERROR_SUCCESS) {
+        status = EnsureCallout(handle_, kFlowEstablishedV4CalloutKey,
+            FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, L"Furious IPv4 flow established");
+    }
+    if (status == ERROR_SUCCESS) {
+        status = EnsureCallout(handle_, kFlowEstablishedV6CalloutKey,
+            FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, L"Furious IPv6 flow established");
+    }
     return CommitOrAbort(handle_, status);
 }
 
@@ -401,6 +428,20 @@ DWORD Engine::ApplyApplicationPolicy(
                 FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, kConnectRedirectV6CalloutKey,
                 protocol, &key);
             if (status != ERROR_SUCCESS) break;
+
+            // Flow Established is a tracking/inspection layer, not a redirect
+            // layer. Install it only for proxied UDP rules, after the UDP
+            // broker is enabled by the caller.
+            if (protocol == 17 && rule.Action == FuriousWfpActionProxy) {
+                status = AddApplicationRuleFilter(handle_, rule,
+                    FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, kFlowEstablishedV4CalloutKey,
+                    protocol, &key);
+                if (status != ERROR_SUCCESS) break;
+                status = AddApplicationRuleFilter(handle_, rule,
+                    FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, kFlowEstablishedV6CalloutKey,
+                    protocol, &key);
+                if (status != ERROR_SUCCESS) break;
+            }
         }
     }
 
@@ -426,17 +467,28 @@ DWORD Engine::RemoveRedirectFilters() {
         status = DeleteLegacyRedirectFilter(handle_, kConnectRedirectV6FilterKey,
             kConnectRedirectV6CalloutKey, FWPM_LAYER_ALE_CONNECT_REDIRECT_V6);
     }
-    const GUID* calloutKeys[] = { &kConnectRedirectV4CalloutKey, &kConnectRedirectV6CalloutKey };
+    const GUID* calloutKeys[] = {
+        &kConnectRedirectV4CalloutKey, &kConnectRedirectV6CalloutKey,
+        &kFlowEstablishedV4CalloutKey, &kFlowEstablishedV6CalloutKey
+    };
     if (status == ERROR_SUCCESS) {
         for (const GUID* key : calloutKeys) {
             FWPM_CALLOUT0* existing = nullptr;
             DWORD current = FwpmCalloutGetByKey0(handle_, key, &existing);
             if (current == FWP_E_CALLOUT_NOT_FOUND) current = ERROR_SUCCESS;
             else if (current == ERROR_SUCCESS) {
-                const bool isV4 = std::memcmp(key, &kConnectRedirectV4CalloutKey, sizeof(GUID)) == 0;
-                const GUID& layer = isV4 ? FWPM_LAYER_ALE_CONNECT_REDIRECT_V4
-                                         : FWPM_LAYER_ALE_CONNECT_REDIRECT_V6;
-                if (!IsOwnedCallout(existing, *key, layer)) current = ERROR_INVALID_DATA;
+                const GUID* layer = nullptr;
+                if (std::memcmp(key, &kConnectRedirectV4CalloutKey, sizeof(GUID)) == 0)
+                    layer = &FWPM_LAYER_ALE_CONNECT_REDIRECT_V4;
+                else if (std::memcmp(key, &kConnectRedirectV6CalloutKey, sizeof(GUID)) == 0)
+                    layer = &FWPM_LAYER_ALE_CONNECT_REDIRECT_V6;
+                else if (std::memcmp(key, &kFlowEstablishedV4CalloutKey, sizeof(GUID)) == 0)
+                    layer = &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4;
+                else if (std::memcmp(key, &kFlowEstablishedV6CalloutKey, sizeof(GUID)) == 0)
+                    layer = &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6;
+                if (layer == nullptr) current = ERROR_INVALID_DATA;
+                if (layer != nullptr && !IsOwnedCallout(existing, *key, *layer))
+                    current = ERROR_INVALID_DATA;
             }
             if (existing != nullptr) FwpmFreeMemory0(reinterpret_cast<void**>(&existing));
             if (current == ERROR_SUCCESS) {

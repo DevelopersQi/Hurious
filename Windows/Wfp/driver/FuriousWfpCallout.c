@@ -29,6 +29,16 @@ DEFINE_GUID(
     0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x05);
 
 DEFINE_GUID(
+    FURIOUS_WFP_ALE_FLOW_ESTABLISHED_V4_CALLOUT,
+    0x7c0f8c38, 0x3f1b, 0x4e83,
+    0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x08);
+
+DEFINE_GUID(
+    FURIOUS_WFP_ALE_FLOW_ESTABLISHED_V6_CALLOUT,
+    0x7c0f8c39, 0x3f1b, 0x4e83,
+    0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x09);
+
+DEFINE_GUID(
     FURIOUS_WFP_PROVIDER_KEY,
     0x7c0f8c31, 0x3f1b, 0x4e83,
     0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x01);
@@ -45,11 +55,26 @@ static const UNICODE_STRING gSymbolicLink =
 static const UNICODE_STRING gDeviceSddl =
     RTL_CONSTANT_STRING(L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
 
-#define FURIOUS_WFP_CALLOUT_COUNT 2
+#define FURIOUS_WFP_CALLOUT_COUNT 4
+#define FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG 'fWwF'
+#define FURIOUS_WFP_FLOW_CONTEXT_MAGIC 0x46574643u /* "FWFC" */
 
-static BOOLEAN gCalloutsRegistered[FURIOUS_WFP_CALLOUT_COUNT] = { FALSE, FALSE };
+typedef struct _FURIOUS_WFP_FLOW_CONTEXT {
+    ULONG Magic;
+    ULONG Size;
+    UINT64 FlowId;
+    ULONG ProcessId;
+    ULONG Protocol;
+    UINT64 PolicyGeneration;
+    UINT16 LayerId;
+    UINT16 AddressFamily;
+    UINT32 Direction;
+} FURIOUS_WFP_FLOW_CONTEXT, *PFURIOUS_WFP_FLOW_CONTEXT;
+
+static BOOLEAN gCalloutsRegistered[FURIOUS_WFP_CALLOUT_COUNT] =
+    { FALSE, FALSE, FALSE, FALSE };
 static BOOLEAN gSymbolicLinkCreated = FALSE;
-static UINT32 gCalloutIds[FURIOUS_WFP_CALLOUT_COUNT] = { 0, 0 };
+static UINT32 gCalloutIds[FURIOUS_WFP_CALLOUT_COUNT] = { 0, 0, 0, 0 };
 static HANDLE gRedirectHandle = NULL;
 static PDEVICE_OBJECT gDeviceObject = NULL;
 static KSPIN_LOCK gEndpointConfigLock;
@@ -190,7 +215,8 @@ static ULONG FuriousGetDriverFlags(void)
     ULONG flags = 0;
 
     KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
-    if (gCalloutsRegistered[0] && gCalloutsRegistered[1]) {
+    if (gCalloutsRegistered[0] && gCalloutsRegistered[1] &&
+        gCalloutsRegistered[2] && gCalloutsRegistered[3]) {
         flags |= FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED;
     }
     if (gEndpointConfigValid) {
@@ -600,14 +626,166 @@ static NTSTATUS NTAPI FuriousNotify(
     return STATUS_SUCCESS;
 }
 
+static PFURIOUS_WFP_FLOW_CONTEXT FuriousAllocateFlowContext(VOID)
+{
+#if (NTDDI_VERSION >= NTDDI_WIN10_VB)
+    return (PFURIOUS_WFP_FLOW_CONTEXT)ExAllocatePool2(
+        POOL_FLAG_NON_PAGED, sizeof(FURIOUS_WFP_FLOW_CONTEXT),
+        FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
+#else
+#pragma warning(suppress: 4996)
+    return (PFURIOUS_WFP_FLOW_CONTEXT)ExAllocatePoolWithTag(
+        NonPagedPoolNx, sizeof(FURIOUS_WFP_FLOW_CONTEXT),
+        FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
+#endif
+}
+
+static VOID NTAPI FuriousFlowEstablishedClassify(
+    const FWPS_INCOMING_VALUES0* inFixedValues,
+    const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
+    VOID* layerData,
+    const VOID* classifyContext,
+    const FWPS_FILTER1* filter,
+    UINT64 flowContext,
+    FWPS_CLASSIFY_OUT0* classifyOut)
+{
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG endpoint;
+    PFURIOUS_WFP_FLOW_CONTEXT context;
+    UINT16 layerId;
+    UINT16 addressFamily;
+    UINT32 calloutIndex;
+    UINT8 protocol;
+    KIRQL oldIrql;
+    NTSTATUS status;
+
+    UNREFERENCED_PARAMETER(layerData);
+    UNREFERENCED_PARAMETER(classifyContext);
+    UNREFERENCED_PARAMETER(filter);
+    UNREFERENCED_PARAMETER(flowContext);
+
+    if (classifyOut == NULL ||
+        (classifyOut->rights & FWPS_RIGHT_ACTION_WRITE) == 0 ||
+        inFixedValues == NULL || inMetaValues == NULL) {
+        return;
+    }
+
+    layerId = inFixedValues->layerId;
+    if (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4) {
+        addressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+        calloutIndex = 2;
+        protocol = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_PROTOCOL].value.uint8;
+    } else if (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V6) {
+        addressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+        calloutIndex = 3;
+        protocol = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_PROTOCOL].value.uint8;
+    } else {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    // FLOW_HANDLE and PROCESS_ID are mandatory for an attributable flow.
+    // Missing metadata is a safe observation miss, never a fabricated ID.
+    if (!FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_FLOW_HANDLE) ||
+        !FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_PROCESS_ID) ||
+        inMetaValues->flowHandle == 0 || inMetaValues->processId == 0 ||
+        protocol != FURIOUS_WFP_REDIRECT_PROTOCOL_UDP) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+
+    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
+    if (!gEndpointConfigValid) {
+        KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+    RtlCopyMemory(&endpoint, &gEndpointConfig, sizeof(endpoint));
+    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
+
+    if ((endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) == 0 ||
+        (addressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V4 &&
+         (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV4) == 0) ||
+        (addressFamily == FURIOUS_WFP_REDIRECT_FAMILY_V6 &&
+         (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_IPV6) == 0) ||
+        inMetaValues->processId == endpoint.ProxyProcessId) {
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+    {
+        ULONG index;
+        for (index = 0; index < endpoint.ExcludedProcessCount; ++index) {
+            if (inMetaValues->processId == endpoint.ExcludedProcessIds[index]) {
+                classifyOut->actionType = FWP_ACTION_CONTINUE;
+                return;
+            }
+        }
+    }
+
+    context = FuriousAllocateFlowContext();
+    if (context == NULL) {
+        // Flow tracking is observational in this stage. Do not block traffic
+        // merely because telemetry/context allocation is under pressure.
+        classifyOut->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+    RtlZeroMemory(context, sizeof(*context));
+    context->Magic = FURIOUS_WFP_FLOW_CONTEXT_MAGIC;
+    context->Size = sizeof(*context);
+    context->FlowId = inMetaValues->flowHandle;
+    context->ProcessId = (ULONG)inMetaValues->processId;
+    context->Protocol = protocol;
+    context->PolicyGeneration = endpoint.PolicyGeneration;
+    context->LayerId = layerId;
+    context->AddressFamily = addressFamily;
+    if (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4) {
+        context->Direction = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_DIRECTION].value.uint32;
+    } else {
+        context->Direction = inFixedValues->incomingValue[
+            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_DIRECTION].value.uint32;
+    }
+
+    status = FwpsFlowAssociateContext0(
+        inMetaValues->flowHandle, layerId,
+        FuriousGetCalloutId(calloutIndex), (UINT64)(ULONG_PTR)context);
+    if (status == STATUS_OBJECT_NAME_EXISTS) {
+        // Another instance of this callout already owns the flow context.
+        // Never remove or overwrite a context we did not create.
+        ExFreePoolWithTag(context, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
+    } else if (!NT_SUCCESS(status)) {
+        ExFreePoolWithTag(context, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+            "FuriousWfpCallout: flow context association failed, status=0x%08X\\n",
+            status);
+    }
+    classifyOut->actionType = FWP_ACTION_CONTINUE;
+}
+
 static VOID NTAPI FuriousFlowDelete(
     UINT16 layerId,
     UINT32 calloutId,
     UINT64 flowContext)
 {
-    UNREFERENCED_PARAMETER(layerId);
+    PFURIOUS_WFP_FLOW_CONTEXT context =
+        (PFURIOUS_WFP_FLOW_CONTEXT)(ULONG_PTR)flowContext;
     UNREFERENCED_PARAMETER(calloutId);
-    UNREFERENCED_PARAMETER(flowContext);
+
+    if (context == NULL ||
+        (layerId != FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4 &&
+         layerId != FWPS_LAYER_ALE_FLOW_ESTABLISHED_V6)) {
+        return;
+    }
+    if (context->Magic != FURIOUS_WFP_FLOW_CONTEXT_MAGIC ||
+        context->Size != sizeof(*context) ||
+        context->LayerId != layerId) {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+            "FuriousWfpCallout: invalid flow context during delete\\n");
+        return;
+    }
+    context->Magic = 0;
+    ExFreePoolWithTag(context, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
 }
 
 static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
@@ -747,22 +925,37 @@ NTSTATUS DriverEntry(
         status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
         if (NT_SUCCESS(status)) {
             FuriousSetCalloutRegistered(1, TRUE, calloutId);
-            status = PsSetCreateProcessNotifyRoutineEx(FuriousProcessNotify, FALSE);
+
+            callout.classifyFn = FuriousFlowEstablishedClassify;
+            callout.calloutKey = FURIOUS_WFP_ALE_FLOW_ESTABLISHED_V4_CALLOUT;
+            calloutId = 0;
+            status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
             if (NT_SUCCESS(status)) {
-                gProcessNotifyRegistered = TRUE;
-                gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-                return STATUS_SUCCESS;
+                FuriousSetCalloutRegistered(2, TRUE, calloutId);
+                callout.calloutKey = FURIOUS_WFP_ALE_FLOW_ESTABLISHED_V6_CALLOUT;
+                calloutId = 0;
+                status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
+                if (NT_SUCCESS(status)) {
+                    FuriousSetCalloutRegistered(3, TRUE, calloutId);
+                    status = PsSetCreateProcessNotifyRoutineEx(FuriousProcessNotify, FALSE);
+                    if (NT_SUCCESS(status)) {
+                        gProcessNotifyRegistered = TRUE;
+                        gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
+                        return STATUS_SUCCESS;
+                    }
+                }
             }
         }
     }
 
-    if (FuriousIsCalloutRegistered(1)) {
-        FwpsCalloutUnregisterById0(FuriousGetCalloutId(1));
-        FuriousSetCalloutRegistered(1, FALSE, 0);
-    }
-    if (FuriousIsCalloutRegistered(0)) {
-        FwpsCalloutUnregisterById0(FuriousGetCalloutId(0));
-        FuriousSetCalloutRegistered(0, FALSE, 0);
+    {
+        ULONG index;
+        for (index = 0; index < FURIOUS_WFP_CALLOUT_COUNT; ++index) {
+            if (FuriousIsCalloutRegistered(index)) {
+                FwpsCalloutUnregisterById0(FuriousGetCalloutId(index));
+                FuriousSetCalloutRegistered(index, FALSE, 0);
+            }
+        }
     }
     if (gRedirectHandle != NULL) {
         FwpsRedirectHandleDestroy0(gRedirectHandle);
