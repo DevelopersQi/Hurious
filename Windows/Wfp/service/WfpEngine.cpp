@@ -25,10 +25,6 @@ const GUID kFlowEstablishedV4CalloutKey =
 { 0x7c0f8c38, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x08 } };
 const GUID kFlowEstablishedV6CalloutKey =
 { 0x7c0f8c39, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x09 } };
-const GUID kDatagramDataV4CalloutKey =
-{ 0x7c0f8c3a, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x0a } };
-const GUID kDatagramDataV6CalloutKey =
-{ 0x7c0f8c3b, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x0b } };
 const GUID kConnectRedirectV4FilterKey =
 { 0x7c0f8c36, 0x3f1b, 0x4e83, { 0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x06 } };
 const GUID kConnectRedirectV6FilterKey =
@@ -119,40 +115,25 @@ bool IsOwnedApplicationFilter(const FWPM_FILTER0* filter) {
     if (filter == nullptr || filter->providerKey == nullptr ||
         std::memcmp(filter->providerKey, &kProviderKey, sizeof(kProviderKey)) != 0 ||
         std::memcmp(&filter->subLayerKey, &kSublayerKey, sizeof(kSublayerKey)) != 0 ||
-        filter->filterCondition == nullptr) return false;
+        !IsExpectedText(filter->displayData.name, L"Furious application route rule") ||
+        filter->numFilterConditions != 2 || filter->filterCondition == nullptr) return false;
     const bool connectV4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V4, sizeof(GUID)) == 0;
     const bool connectV6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_CONNECT_REDIRECT_V6, sizeof(GUID)) == 0;
     const bool flowV4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0;
     const bool flowV6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
-    const bool datagramV4 = std::memcmp(&filter->layerKey, &FWPM_LAYER_DATAGRAM_DATA_V4, sizeof(GUID)) == 0;
-    const bool datagramV6 = std::memcmp(&filter->layerKey, &FWPM_LAYER_DATAGRAM_DATA_V6, sizeof(GUID)) == 0;
-    if (datagramV4 || datagramV6) {
-        if (!IsExpectedText(filter->displayData.name, L"Furious UDP datagram capture") ||
-            filter->numFilterConditions != 1) return false;
-        const auto& protocol = filter->filterCondition[0];
-        const GUID& callout = datagramV4 ? kDatagramDataV4CalloutKey : kDatagramDataV6CalloutKey;
-        return std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) == 0 &&
-            protocol.matchType == FWP_MATCH_EQUAL && protocol.conditionValue.type == FWP_UINT8 &&
-            protocol.conditionValue.uint8 == 17 &&
-            filter->action.type == FWP_ACTION_CALLOUT_INSPECTION &&
-            std::memcmp(&filter->action.calloutKey, &callout, sizeof(GUID)) == 0;
-    }
-    if ((!connectV4 && !connectV6 && !flowV4 && !flowV6) ||
-        !IsExpectedText(filter->displayData.name, L"Furious application route rule") ||
-        filter->numFilterConditions != 2) return false;
+    if (!connectV4 && !connectV6 && !flowV4 && !flowV6) return false;
     const auto& app = filter->filterCondition[0];
     const auto& protocol = filter->filterCondition[1];
-    const bool flowLayer = flowV4 || flowV6;
-    const GUID& expectedAppCondition = flowLayer
-        ? FWPM_CONDITION_ALE_ORIGINAL_APP_ID : FWPM_CONDITION_ALE_APP_ID;
-    if (std::memcmp(&app.fieldKey, &expectedAppCondition, sizeof(GUID)) != 0 ||
+    if (std::memcmp(&app.fieldKey, &FWPM_CONDITION_ALE_APP_ID, sizeof(GUID)) != 0 ||
         app.matchType != FWP_MATCH_EQUAL || app.conditionValue.type != FWP_BYTE_BLOB_TYPE ||
         app.conditionValue.byteBlob == nullptr || app.conditionValue.byteBlob->size == 0 ||
         std::memcmp(&protocol.fieldKey, &FWPM_CONDITION_IP_PROTOCOL, sizeof(GUID)) != 0 ||
         protocol.matchType != FWP_MATCH_EQUAL || protocol.conditionValue.type != FWP_UINT8 ||
         (protocol.conditionValue.uint8 != 6 && protocol.conditionValue.uint8 != 17)) return false;
-    if (filter->action.type == FWP_ACTION_PERMIT) return connectV4 || connectV6;
-    if (flowLayer) {
+    if (filter->action.type == FWP_ACTION_PERMIT) {
+        return connectV4 || connectV6;
+    }
+    if (flowV4 || flowV6) {
         if (filter->action.type != FWP_ACTION_CALLOUT_INSPECTION) return false;
         const GUID& callout = flowV4 ? kFlowEstablishedV4CalloutKey : kFlowEstablishedV6CalloutKey;
         return std::memcmp(&filter->action.calloutKey, &callout, sizeof(GUID)) == 0 &&
@@ -224,10 +205,10 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     filter.weight.type = FWP_UINT64;
     filter.weight.uint64 = &weight;
     filter.rawContext = static_cast<UINT64>(rule.Priority);
-    const bool flowEstablished =
-        std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0 ||
-        std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
     if (rule.Action == FuriousWfpActionProxy) {
+        const bool flowEstablished =
+            std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4, sizeof(GUID)) == 0 ||
+            std::memcmp(&layer, &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, sizeof(GUID)) == 0;
         filter.action.type = flowEstablished
             ? FWP_ACTION_CALLOUT_INSPECTION
             : FWP_ACTION_CALLOUT_TERMINATING;
@@ -239,9 +220,7 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     appId.size = static_cast<UINT32>(rule.AppId.size());
     appId.data = const_cast<UINT8*>(rule.AppId.data());
     FWPM_FILTER_CONDITION0 conditions[2] = {};
-    conditions[0].fieldKey = flowEstablished
-        ? FWPM_CONDITION_ALE_ORIGINAL_APP_ID
-        : FWPM_CONDITION_ALE_APP_ID;
+    conditions[0].fieldKey = FWPM_CONDITION_ALE_APP_ID;
     conditions[0].matchType = FWP_MATCH_EQUAL;
     conditions[0].conditionValue.type = FWP_BYTE_BLOB_TYPE;
     conditions[0].conditionValue.byteBlob = &appId;
@@ -255,34 +234,6 @@ DWORD AddApplicationRuleFilter(HANDLE engine,
     if (status == ERROR_SUCCESS) *createdKey = filter.filterKey;
     return status;
 }
-DWORD AddDatagramCaptureFilter(HANDLE engine, const GUID& layer,
-    const GUID& calloutKey, GUID* createdKey) {
-    if (createdKey == nullptr) return ERROR_INVALID_PARAMETER;
-    FWPM_FILTER0 filter = {};
-    const RPC_STATUS uuidStatus = UuidCreate(&filter.filterKey);
-    if (uuidStatus != RPC_S_OK && uuidStatus != RPC_S_UUID_LOCAL_ONLY) return uuidStatus;
-    filter.displayData.name = const_cast<wchar_t*>(L"Furious UDP datagram capture");
-    filter.displayData.description = const_cast<wchar_t*>(L"Flow-context-gated UDP datagram observation");
-    filter.providerKey = const_cast<GUID*>(&kProviderKey);
-    filter.layerKey = layer;
-    filter.subLayerKey = kSublayerKey;
-    filter.action.type = FWP_ACTION_CALLOUT_INSPECTION;
-    filter.action.calloutKey = calloutKey;
-    UINT64 weight = 0x100000000ULL;
-    filter.weight.type = FWP_UINT64;
-    filter.weight.uint64 = &weight;
-    FWPM_FILTER_CONDITION0 condition = {};
-    condition.fieldKey = FWPM_CONDITION_IP_PROTOCOL;
-    condition.matchType = FWP_MATCH_EQUAL;
-    condition.conditionValue.type = FWP_UINT8;
-    condition.conditionValue.uint8 = 17;
-    filter.numFilterConditions = 1;
-    filter.filterCondition = &condition;
-    const DWORD status = FwpmFilterAdd0(engine, &filter, nullptr, nullptr);
-    if (status == ERROR_SUCCESS) *createdKey = filter.filterKey;
-    return status;
-}
-
 DWORD CommitOrAbort(HANDLE engine, DWORD operationStatus) {
     if (operationStatus == ERROR_SUCCESS) {
         const DWORD commitStatus = FwpmTransactionCommit0(engine);
@@ -432,14 +383,6 @@ DWORD Engine::InstallRedirectFilters() {
         status = EnsureCallout(handle_, kFlowEstablishedV6CalloutKey,
             FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, L"Furious IPv6 flow established");
     }
-    if (status == ERROR_SUCCESS) {
-        status = EnsureCallout(handle_, kDatagramDataV4CalloutKey,
-            FWPM_LAYER_DATAGRAM_DATA_V4, L"Furious IPv4 datagram data");
-    }
-    if (status == ERROR_SUCCESS) {
-        status = EnsureCallout(handle_, kDatagramDataV6CalloutKey,
-            FWPM_LAYER_DATAGRAM_DATA_V6, L"Furious IPv6 datagram data");
-    }
     return CommitOrAbort(handle_, status);
 }
 
@@ -472,7 +415,6 @@ DWORD Engine::ApplyApplicationPolicy(
     // running and its actual listener ports have been validated.
     const UINT8 protocols[] = { 6, 17 };
     const size_t protocolCount = includeUdp ? 2u : 1u;
-    bool datagramCaptureFiltersAdded = false;
     for (const auto& rule : rules) {
         if (status != ERROR_SUCCESS) break;
         for (size_t protocolIndex = 0; protocolIndex < protocolCount; ++protocolIndex) {
@@ -499,15 +441,6 @@ DWORD Engine::ApplyApplicationPolicy(
                     FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6, kFlowEstablishedV6CalloutKey,
                     protocol, &key);
                 if (status != ERROR_SUCCESS) break;
-                if (!datagramCaptureFiltersAdded) {
-                    status = AddDatagramCaptureFilter(handle_,
-                        FWPM_LAYER_DATAGRAM_DATA_V4, kDatagramDataV4CalloutKey, &key);
-                    if (status != ERROR_SUCCESS) break;
-                    status = AddDatagramCaptureFilter(handle_,
-                        FWPM_LAYER_DATAGRAM_DATA_V6, kDatagramDataV6CalloutKey, &key);
-                    if (status != ERROR_SUCCESS) break;
-                    datagramCaptureFiltersAdded = true;
-                }
             }
         }
     }
@@ -536,8 +469,7 @@ DWORD Engine::RemoveRedirectFilters() {
     }
     const GUID* calloutKeys[] = {
         &kConnectRedirectV4CalloutKey, &kConnectRedirectV6CalloutKey,
-        &kFlowEstablishedV4CalloutKey, &kFlowEstablishedV6CalloutKey,
-        &kDatagramDataV4CalloutKey, &kDatagramDataV6CalloutKey
+        &kFlowEstablishedV4CalloutKey, &kFlowEstablishedV6CalloutKey
     };
     if (status == ERROR_SUCCESS) {
         for (const GUID* key : calloutKeys) {
@@ -554,10 +486,6 @@ DWORD Engine::RemoveRedirectFilters() {
                     layer = &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4;
                 else if (std::memcmp(key, &kFlowEstablishedV6CalloutKey, sizeof(GUID)) == 0)
                     layer = &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6;
-                else if (std::memcmp(key, &kDatagramDataV4CalloutKey, sizeof(GUID)) == 0)
-                    layer = &FWPM_LAYER_DATAGRAM_DATA_V4;
-                else if (std::memcmp(key, &kDatagramDataV6CalloutKey, sizeof(GUID)) == 0)
-                    layer = &FWPM_LAYER_DATAGRAM_DATA_V6;
                 if (layer == nullptr) current = ERROR_INVALID_DATA;
                 if (layer != nullptr && !IsOwnedCallout(existing, *key, *layer))
                     current = ERROR_INVALID_DATA;

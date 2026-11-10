@@ -28,7 +28,7 @@
       <WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError>
       <PreprocessorDefinitions>FURIOUS_WFP_KERNEL_MODE=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <Link><AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions><AdditionalDependencies>Fwpkclnt.lib;Wdmsec.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions><AdditionalDependencies>Fwpkclnt.lib;Wdmsec.lib;Ndis.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <DriverSign><SignMode>TestSign</SignMode><FileDigestAlgorithm>SHA256</FileDigestAlgorithm></DriverSign>
   </ItemDefinitionGroup>
   <ItemGroup>

@@ -39,16 +39,6 @@ DEFINE_GUID(
     0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x09);
 
 DEFINE_GUID(
-    FURIOUS_WFP_DATAGRAM_DATA_V4_CALLOUT,
-    0x7c0f8c3a, 0x3f1b, 0x4e83,
-    0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x0a);
-
-DEFINE_GUID(
-    FURIOUS_WFP_DATAGRAM_DATA_V6_CALLOUT,
-    0x7c0f8c3b, 0x3f1b, 0x4e83,
-    0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x0b);
-
-DEFINE_GUID(
     FURIOUS_WFP_PROVIDER_KEY,
     0x7c0f8c31, 0x3f1b, 0x4e83,
     0x9d, 0x7a, 0x62, 0x45, 0x11, 0x90, 0x2a, 0x01);
@@ -65,7 +55,7 @@ static const UNICODE_STRING gSymbolicLink =
 static const UNICODE_STRING gDeviceSddl =
     RTL_CONSTANT_STRING(L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
 
-#define FURIOUS_WFP_CALLOUT_COUNT 6
+#define FURIOUS_WFP_CALLOUT_COUNT 4
 #define FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG 'fWwF'
 #define FURIOUS_WFP_FLOW_CONTEXT_MAGIC 0x46574643u /* "FWFC" */
 
@@ -82,10 +72,9 @@ typedef struct _FURIOUS_WFP_FLOW_CONTEXT {
 } FURIOUS_WFP_FLOW_CONTEXT, *PFURIOUS_WFP_FLOW_CONTEXT;
 
 static BOOLEAN gCalloutsRegistered[FURIOUS_WFP_CALLOUT_COUNT] =
-    { FALSE, FALSE, FALSE, FALSE, FALSE, FALSE };
+    { FALSE, FALSE, FALSE, FALSE };
 static BOOLEAN gSymbolicLinkCreated = FALSE;
-static UINT32 gCalloutIds[FURIOUS_WFP_CALLOUT_COUNT] = { 0, 0, 0, 0, 0, 0 };
-static volatile LONG64 gDatagramSequence = 0;
+static UINT32 gCalloutIds[FURIOUS_WFP_CALLOUT_COUNT] = { 0, 0, 0, 0 };
 static HANDLE gRedirectHandle = NULL;
 static PDEVICE_OBJECT gDeviceObject = NULL;
 static KSPIN_LOCK gEndpointConfigLock;
@@ -227,8 +216,7 @@ static ULONG FuriousGetDriverFlags(void)
 
     KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
     if (gCalloutsRegistered[0] && gCalloutsRegistered[1] &&
-        gCalloutsRegistered[2] && gCalloutsRegistered[3] &&
-        gCalloutsRegistered[4] && gCalloutsRegistered[5]) {
+        gCalloutsRegistered[2] && gCalloutsRegistered[3]) {
         flags |= FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED;
     }
     if (gEndpointConfigValid) {
@@ -749,8 +737,7 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
     context->ProcessId = (ULONG)inMetaValues->processId;
     context->Protocol = protocol;
     context->PolicyGeneration = endpoint.PolicyGeneration;
-    context->LayerId = (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4)
-        ? FWPS_LAYER_DATAGRAM_DATA_V4 : FWPS_LAYER_DATAGRAM_DATA_V6;
+    context->LayerId = layerId;
     context->AddressFamily = addressFamily;
     if (layerId == FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4) {
         context->Direction = inFixedValues->incomingValue[
@@ -761,9 +748,8 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
     }
 
     status = FwpsFlowAssociateContext0(
-        inMetaValues->flowHandle, context->LayerId,
-        FuriousGetCalloutId(calloutIndex == 2 ? 4 : 5),
-        (UINT64)(ULONG_PTR)context);
+        inMetaValues->flowHandle, layerId,
+        FuriousGetCalloutId(calloutIndex), (UINT64)(ULONG_PTR)context);
     if (status == STATUS_OBJECT_NAME_EXISTS) {
         // Another instance of this callout already owns the flow context.
         // Never remove or overwrite a context we did not create.
@@ -777,190 +763,6 @@ static VOID NTAPI FuriousFlowEstablishedClassify(
     classifyOut->actionType = FWP_ACTION_CONTINUE;
 }
 
-static VOID NTAPI FuriousDatagramDataClassify(
-    const FWPS_INCOMING_VALUES0* inFixedValues,
-    const FWPS_INCOMING_METADATA_VALUES0* inMetaValues,
-    VOID* layerData,
-    const VOID* classifyContext,
-    const FWPS_FILTER1* filter,
-    UINT64 flowContext,
-    FWPS_CLASSIFY_OUT0* classifyOut)
-{
-    PFURIOUS_WFP_FLOW_CONTEXT context =
-        (PFURIOUS_WFP_FLOW_CONTEXT)(ULONG_PTR)flowContext;
-    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG endpoint;
-    NET_BUFFER_LIST* nbl = (NET_BUFFER_LIST*)layerData;
-    UINT16 layerId;
-    UINT16 addressFamily;
-    UINT32 direction, localPort, remotePort;
-    UINT32 interfaceIndex, subInterfaceIndex, compartmentId;
-    UINT8 protocol;
-    UCHAR localAddress[16] = { 0 }, remoteAddress[16] = { 0 };
-    KIRQL oldIrql;
-    NET_BUFFER* nb;
-
-    UNREFERENCED_PARAMETER(classifyContext);
-    UNREFERENCED_PARAMETER(filter);
-    if (classifyOut == NULL ||
-        (classifyOut->rights & FWPS_RIGHT_ACTION_WRITE) == 0) return;
-    classifyOut->actionType = FWP_ACTION_CONTINUE;
-
-    if (context == NULL || context->Magic != FURIOUS_WFP_FLOW_CONTEXT_MAGIC ||
-        context->Size != sizeof(*context) || nbl == NULL ||
-        inFixedValues == NULL || inMetaValues == NULL) return;
-
-    layerId = inFixedValues->layerId;
-    if (layerId == FWPS_LAYER_DATAGRAM_DATA_V4) {
-        addressFamily = FURIOUS_WFP_DATAGRAM_FAMILY_IPV4;
-        protocol = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_IP_PROTOCOL].value.uint8;
-        direction = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_DIRECTION].value.uint32;
-        localPort = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_IP_LOCAL_PORT].value.uint16;
-        remotePort = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_IP_REMOTE_PORT].value.uint16;
-        RtlCopyMemory(localAddress, &inFixedValues->incomingValue[
-            FWPS_FIELD_DATAGRAM_DATA_V4_IP_LOCAL_ADDRESS].value.uint32, sizeof(ULONG));
-        RtlCopyMemory(remoteAddress, &inFixedValues->incomingValue[
-            FWPS_FIELD_DATAGRAM_DATA_V4_IP_REMOTE_ADDRESS].value.uint32, sizeof(ULONG));
-        interfaceIndex = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_INTERFACE_INDEX].value.uint32;
-        subInterfaceIndex = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_SUB_INTERFACE_INDEX].value.uint32;
-        compartmentId = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V4_COMPARTMENT_ID].value.uint32;
-    } else if (layerId == FWPS_LAYER_DATAGRAM_DATA_V6) {
-        const FWP_BYTE_ARRAY16* local = inFixedValues->incomingValue[
-            FWPS_FIELD_DATAGRAM_DATA_V6_IP_LOCAL_ADDRESS].value.byteArray16;
-        const FWP_BYTE_ARRAY16* remote = inFixedValues->incomingValue[
-            FWPS_FIELD_DATAGRAM_DATA_V6_IP_REMOTE_ADDRESS].value.byteArray16;
-        addressFamily = FURIOUS_WFP_DATAGRAM_FAMILY_IPV6;
-        protocol = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_IP_PROTOCOL].value.uint8;
-        direction = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_DIRECTION].value.uint32;
-        localPort = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_IP_LOCAL_PORT].value.uint16;
-        remotePort = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_IP_REMOTE_PORT].value.uint16;
-        if (local == NULL || remote == NULL) return;
-        RtlCopyMemory(localAddress, local->byteArray16, sizeof(localAddress));
-        RtlCopyMemory(remoteAddress, remote->byteArray16, sizeof(remoteAddress));
-        interfaceIndex = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_INTERFACE_INDEX].value.uint32;
-        subInterfaceIndex = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_SUB_INTERFACE_INDEX].value.uint32;
-        compartmentId = inFixedValues->incomingValue[FWPS_FIELD_DATAGRAM_DATA_V6_COMPARTMENT_ID].value.uint32;
-    } else return;
-
-    if (context->LayerId != layerId || context->AddressFamily != addressFamily ||
-        context->Protocol != FURIOUS_WFP_DATAGRAM_PROTOCOL_UDP ||
-        protocol != FURIOUS_WFP_DATAGRAM_PROTOCOL_UDP ||
-        context->FlowId == 0 || context->ProcessId == 0 ||
-        (direction != FWP_DIRECTION_INBOUND && direction != FWP_DIRECTION_OUTBOUND)) return;
-
-    // Raw sockets can expose an IP header instead of the ordinary UDP header.
-    // Keep this first capture implementation scoped to regular UDP sockets.
-    if (FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_IP_HEADER_SIZE) &&
-        inMetaValues->ipHeaderSize != 0) return;
-
-    KeAcquireSpinLock(&gEndpointConfigLock, &oldIrql);
-    if (!gEndpointConfigValid) {
-        KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
-        return;
-    }
-    RtlCopyMemory(&endpoint, &gEndpointConfig, sizeof(endpoint));
-    KeReleaseSpinLock(&gEndpointConfigLock, oldIrql);
-
-    if (endpoint.PolicyGeneration != context->PolicyGeneration ||
-        (endpoint.Flags & FURIOUS_WFP_REDIRECT_FLAG_UDP) == 0 ||
-        context->ProcessId == endpoint.ProxyProcessId) return;
-    {
-        ULONG index;
-        for (index = 0; index < endpoint.ExcludedProcessCount; ++index)
-            if (context->ProcessId == endpoint.ExcludedProcessIds[index]) return;
-    }
-
-    for (nb = NET_BUFFER_LIST_FIRST_NB(nbl); nb != NULL; nb = NET_BUFFER_NEXT_NB(nb)) {
-        ULONG dataLength = NET_BUFFER_DATA_LENGTH(nb);
-        ULONG storageBytes;
-        ULONG payloadSize;
-        ULONG payloadOffset = direction == FWP_DIRECTION_OUTBOUND ? 8u : 0u;
-        FURIOUS_WFP_DATAGRAM_MESSAGE* message;
-        PUCHAR scratch;
-        PUCHAR packetData = NULL;
-
-        if (direction == FWP_DIRECTION_OUTBOUND && dataLength < 8u) continue;
-        storageBytes = sizeof(*message) + dataLength;
-        if (storageBytes > sizeof(*message) + FURIOUS_WFP_DATAGRAM_MAX_PAYLOAD + 8u) continue;
-#if (NTDDI_VERSION >= NTDDI_WIN10_VB)
-        message = (FURIOUS_WFP_DATAGRAM_MESSAGE*)ExAllocatePool2(
-            POOL_FLAG_NON_PAGED, storageBytes, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
-#else
-#pragma warning(suppress: 4996)
-        message = (FURIOUS_WFP_DATAGRAM_MESSAGE*)ExAllocatePoolWithTag(
-            NonPagedPoolNx, storageBytes, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
-#endif
-        if (message == NULL) continue;
-        scratch = (PUCHAR)(message + 1);
-        if (dataLength != 0) {
-            packetData = (PUCHAR)NdisGetDataBuffer(nb, dataLength, scratch, 1, 0);
-            if (packetData == NULL) {
-                ExFreePoolWithTag(message, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
-                continue;
-            }
-        }
-
-        if (direction == FWP_DIRECTION_OUTBOUND) {
-            USHORT udpLengthNetworkOrder, udpLength;
-            RtlCopyMemory(&udpLengthNetworkOrder, packetData + 4, sizeof(udpLengthNetworkOrder));
-            udpLength = RtlUshortByteSwap(udpLengthNetworkOrder);
-            if (udpLength < 8u || udpLength > dataLength) {
-                ExFreePoolWithTag(message, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
-                continue;
-            }
-            payloadSize = udpLength - 8u;
-        } else {
-            payloadSize = dataLength;
-        }
-        if (payloadSize > FURIOUS_WFP_DATAGRAM_MAX_PAYLOAD) {
-            ExFreePoolWithTag(message, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
-            continue;
-        }
-
-        RtlZeroMemory(message, sizeof(*message));
-        message->Magic = FURIOUS_WFP_DATAGRAM_MAGIC;
-        message->Version = FURIOUS_WFP_DATAGRAM_ABI_VERSION;
-        message->HeaderSize = sizeof(*message);
-        message->PayloadSize = payloadSize;
-        message->TotalSize = sizeof(*message) + payloadSize;
-        message->MessageType = FURIOUS_WFP_DATAGRAM_MESSAGE_CAPTURED;
-        message->Sequence = (UINT64)InterlockedIncrement64(&gDatagramSequence);
-        if (message->Sequence == 0)
-            message->Sequence = (UINT64)InterlockedIncrement64(&gDatagramSequence);
-        message->PolicyGeneration = context->PolicyGeneration;
-        message->FlowId = context->FlowId;
-        message->ProcessId = context->ProcessId;
-        message->CompartmentId = compartmentId;
-        message->InterfaceIndex = interfaceIndex;
-        message->SubInterfaceIndex = subInterfaceIndex;
-        message->AddressFamily = addressFamily;
-        message->Protocol = FURIOUS_WFP_DATAGRAM_PROTOCOL_UDP;
-        message->Direction = direction == FWP_DIRECTION_OUTBOUND
-            ? FURIOUS_WFP_DATAGRAM_DIRECTION_OUTBOUND
-            : FURIOUS_WFP_DATAGRAM_DIRECTION_INBOUND;
-
-        if (direction == FWP_DIRECTION_OUTBOUND) {
-            RtlCopyMemory(message->SourceAddress, localAddress, sizeof(localAddress));
-            RtlCopyMemory(message->DestinationAddress, remoteAddress, sizeof(remoteAddress));
-            message->SourcePortNetworkOrder[0] = (UCHAR)(localPort >> 8);
-            message->SourcePortNetworkOrder[1] = (UCHAR)localPort;
-            message->DestinationPortNetworkOrder[0] = (UCHAR)(remotePort >> 8);
-            message->DestinationPortNetworkOrder[1] = (UCHAR)remotePort;
-        } else {
-            RtlCopyMemory(message->SourceAddress, remoteAddress, sizeof(remoteAddress));
-            RtlCopyMemory(message->DestinationAddress, localAddress, sizeof(localAddress));
-            message->SourcePortNetworkOrder[0] = (UCHAR)(remotePort >> 8);
-            message->SourcePortNetworkOrder[1] = (UCHAR)remotePort;
-            message->DestinationPortNetworkOrder[0] = (UCHAR)(localPort >> 8);
-            message->DestinationPortNetworkOrder[1] = (UCHAR)localPort;
-        }
-        if (payloadSize != 0)
-            RtlCopyMemory((PUCHAR)(message + 1), packetData + payloadOffset, payloadSize);
-
-        (void)FuriousWfpDatagramQueuePushCaptured(message, message->TotalSize);
-        ExFreePoolWithTag(message, FURIOUS_WFP_FLOW_CONTEXT_POOL_TAG);
-    }
-}
-
 static VOID NTAPI FuriousFlowDelete(
     UINT16 layerId,
     UINT32 calloutId,
@@ -971,8 +773,8 @@ static VOID NTAPI FuriousFlowDelete(
     UNREFERENCED_PARAMETER(calloutId);
 
     if (context == NULL ||
-        (layerId != FWPS_LAYER_DATAGRAM_DATA_V4 &&
-         layerId != FWPS_LAYER_DATAGRAM_DATA_V6)) {
+        (layerId != FWPS_LAYER_ALE_FLOW_ESTABLISHED_V4 &&
+         layerId != FWPS_LAYER_ALE_FLOW_ESTABLISHED_V6)) {
         return;
     }
     if (context->Magic != FURIOUS_WFP_FLOW_CONTEXT_MAGIC ||
@@ -1135,25 +937,11 @@ NTSTATUS DriverEntry(
                 status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
                 if (NT_SUCCESS(status)) {
                     FuriousSetCalloutRegistered(3, TRUE, calloutId);
-                    callout.classifyFn = FuriousDatagramDataClassify;
-                    callout.flowDeleteFn = FuriousFlowDelete;
-                    callout.calloutKey = FURIOUS_WFP_DATAGRAM_DATA_V4_CALLOUT;
-                    calloutId = 0;
-                    status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
+                    status = PsSetCreateProcessNotifyRoutineEx(FuriousProcessNotify, FALSE);
                     if (NT_SUCCESS(status)) {
-                        FuriousSetCalloutRegistered(4, TRUE, calloutId);
-                        callout.calloutKey = FURIOUS_WFP_DATAGRAM_DATA_V6_CALLOUT;
-                        calloutId = 0;
-                        status = FwpsCalloutRegister1(gDeviceObject, &callout, &calloutId);
-                        if (NT_SUCCESS(status)) {
-                            FuriousSetCalloutRegistered(5, TRUE, calloutId);
-                            status = PsSetCreateProcessNotifyRoutineEx(FuriousProcessNotify, FALSE);
-                            if (NT_SUCCESS(status)) {
-                                gProcessNotifyRegistered = TRUE;
-                                gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-                                return STATUS_SUCCESS;
-                            }
-                        }
+                        gProcessNotifyRegistered = TRUE;
+                        gDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
+                        return STATUS_SUCCESS;
                     }
                 }
             }
