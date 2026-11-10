@@ -20,6 +20,8 @@ namespace furious::wfp::driver {
 // reached a completion state, including ERROR_OPERATION_ABORTED.
 class WfpDatagramReadClient final {
 public:
+    // The message pointer is valid only for the duration of the callback.
+    // Consumers that enqueue work must copy the message bytes first.
     using MessageHandler =
         std::function<void(const FURIOUS_WFP_DATAGRAM_MESSAGE*, std::size_t)>;
 
@@ -149,7 +151,14 @@ private:
                     GetOverlappedResult(device_, &overlapped, &bytesReturned, FALSE);
                     break;
                 }
-                if (waitResult != WAIT_OBJECT_0 + 1) break;
+                if (waitResult != WAIT_OBJECT_0 + 1) {
+                    // Even an unexpected wait failure must not let the
+                    // OVERLAPPED or its buffer leave scope while I/O is live.
+                    CancelIoEx(device_, &overlapped);
+                    WaitForSingleObject(ioEvent, INFINITE);
+                    GetOverlappedResult(device_, &overlapped, &bytesReturned, FALSE);
+                    break;
+                }
 
                 if (!GetOverlappedResult(
                         device_, &overlapped, &bytesReturned, FALSE)) {
