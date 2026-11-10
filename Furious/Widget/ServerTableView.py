@@ -750,14 +750,14 @@ class ServerTableView(
     ]
 
     def _configureResponsiveColumns(self):
-        """Size columns to their contents and scroll instead of eliding text."""
+        """Distribute available viewport width across every table column."""
         header = self.horizontalHeader()
         header.setMinimumSectionSize(self.MinimumColumnWidth)
-        header.setStretchLastSection(True)
+        header.setStretchLastSection(False)
 
-        # Every column follows its content width. If the total width exceeds
-        # the viewport, the table scrolls horizontally rather than hiding text.
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        # Stretch all sections equally so the whole table width is shared
+        # across every column, rather than assigning spare space to the last.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.setWordWrap(False)
         self.setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
         self.setHorizontalScrollMode(
