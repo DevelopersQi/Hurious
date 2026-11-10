@@ -235,11 +235,26 @@ class TrayIcon(
             else:
                 self.setIcon(bootstrapIcon('rocket-takeoff-connected.svg'))
 
+    def _showMainWindow(self):
+        """Restore the main window and bring it to the foreground."""
+        window = AppMainWindow()
+        window.showNormal()
+        window.raise_()
+        window.activateWindow()
+
     @QtCore.Slot(QSystemTrayIcon.ActivationReason)
     def handleActivated(self, reason):
-        """Handle activated."""
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            AppMainWindow().show()
+        """Toggle the main window on a single tray-icon click."""
+        window = AppMainWindow()
+
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if window.isVisible() and not window.isMinimized():
+                window.hide()
+            else:
+                self._showMainWindow()
+        elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            # Preserve the existing double-click behavior.
+            self._showMainWindow()
 
     def setCustomToolTip(self):
         """Set custom tool tip."""
