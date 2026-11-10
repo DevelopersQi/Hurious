@@ -160,7 +160,7 @@ class MsgQueue(multiprocessing.queues.Queue):
         if not messages:
             return ''
 
-        details = '\\n'.join(messages)
+        details = '\n'.join(messages)
         if len(details) > self.MAXIMUM_MESSAGE_CHARACTERS:
             details = details[-self.MAXIMUM_MESSAGE_CHARACTERS:]
 
