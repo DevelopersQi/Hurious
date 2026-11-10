@@ -41,7 +41,7 @@ __all__ = ['MsgQueue', 'ProcessOutputRedirector']
 class MsgQueue(multiprocessing.queues.Queue):
     """Continuously drain a bounded child-process log queue into a callback."""
 
-    MSG_PRODUCE_THRESHOLD = 1024
+    MSG_PRODUCE_THRESHOLD = 50
     ACTIVE_DRAIN_INTERVAL = 16
     MAXIMUM_IDLE_DRAIN_INTERVAL = 256
     DRAIN_INTERVAL = ACTIVE_DRAIN_INTERVAL
