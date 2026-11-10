@@ -17,7 +17,7 @@
 
 name: Daily matrix build
 
-# A newer WFP packaging commit supersedes a stuck older build.
+# A newer packaging or version-bump commit supersedes a stuck older build.
 concurrency:
   group: furious-wfp-package-${{ github.ref }}
   cancel-in-progress: true
