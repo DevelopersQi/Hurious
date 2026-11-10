@@ -350,6 +350,111 @@ class RuntimeLifecycleTest(TestCase):
         self.assertIsNone(runtime._output._timerConnection)
 
 
+    def testImmediateChildExitRaisesWithCapturedDiagnostics(self):
+        """Preserve stderr when a child exits before the first monitor tick."""
+        process = mock.Mock()
+        process.is_alive.return_value = False
+        process.exitcode = 1
+        events = []
+
+        with mock.patch(
+            'Furious.Core.MultiprocessingRuntime.multiprocessing.Process',
+            return_value=process,
+        ):
+            runtime = _ProcessRuntime(
+                exitCallback=lambda current, event: events.append(event)
+            )
+            runtime._output.putMessage('hysteria2: invalid client configuration')
+
+            with self.assertRaises(RuntimeStartError) as raised:
+                runtime.start()
+
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn('invalid client configuration', raised.exception.details)
+        self.assertIsNone(runtime.process)
+        self.assertFalse(events)
+
+        runtime.dispose()
+
+    def testUnexpectedExitCanBeFollowedByRepeatedReconnects(self):
+        """Reap each failed child before constructing the next connection."""
+        processes = []
+        for code in (1, 1, 0):
+            process = mock.Mock()
+            process.pid = 7000 + len(processes)
+            process.exitcode = code
+            process.is_alive.side_effect = [True, False, True, False, True]
+            processes.append(process)
+
+        events = []
+        with mock.patch(
+            'Furious.Core.MultiprocessingRuntime.multiprocessing.Process',
+            side_effect=processes,
+        ) as processFactory:
+            runtime = _ProcessRuntime(
+                exitCallback=lambda current, event: events.append(event)
+            )
+
+            for index in range(3):
+                runtime.start()
+                runtime._pollProcess()
+                if index < 2:
+                    self.assertIsNone(runtime.process)
+
+            self.assertEqual(processFactory.call_count, 3)
+
+        self.assertEqual(len(events), 3)
+        self.assertEqual([event.code for event in events], [1, 1, 0])
+
+        runtime.dispose()
+
+    def testConcurrentStartsCreateOnlyOneChildProcess(self):
+        """Serialize concurrent callers so one runtime cannot own two children."""
+        enteredStart = Event()
+        releaseStart = Event()
+        process = mock.Mock()
+        process.is_alive.return_value = True
+        process.start.side_effect = lambda: (
+            enteredStart.set(),
+            releaseStart.wait(2),
+        )
+        errors = []
+
+        with mock.patch(
+            'Furious.Core.MultiprocessingRuntime.multiprocessing.Process',
+            return_value=process,
+        ) as processFactory:
+            runtime = _ProcessRuntime()
+            runtime._output.startTimer = mock.Mock()
+            runtime._monitor.start = mock.Mock()
+
+            def startRuntime():
+                try:
+                    runtime.start()
+                except RuntimeStartError as error:
+                    errors.append(error)
+
+            first = threading.Thread(target=startRuntime)
+            second = threading.Thread(target=startRuntime)
+
+            first.start()
+            self.assertTrue(enteredStart.wait(2))
+            second.start()
+            releaseStart.set()
+
+            first.join(2)
+            second.join(2)
+
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertEqual(processFactory.call_count, 1)
+            self.assertEqual(len(errors), 1)
+            self.assertIn('already running', str(errors[0]))
+
+            runtime.stop()
+            runtime.dispose()
+
+
 if __name__ == '__main__':
     import unittest
 
