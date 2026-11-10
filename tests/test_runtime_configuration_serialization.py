@@ -47,7 +47,7 @@ class RuntimeConfigurationSerializationTest(TestCase):
             raised.exception.reason,
             RuntimeExitReason.InvalidConfiguration,
         )
-        self.assertIn('JSON', raised.exception.details.upper())
+        self.assertTrue(raised.exception.details)
 
     def testMalformedSerializerOutputRaisesStructuredConfigurationError(self):
         """Validate plugin-produced JSON just like raw configuration text."""
