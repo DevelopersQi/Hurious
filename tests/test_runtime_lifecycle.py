@@ -407,6 +407,8 @@ class RuntimeLifecycleTest(TestCase):
 
         self.assertEqual(len(events), 3)
         self.assertEqual([event.code for event in events], [1, 1, 0])
+        for process in processes:
+            process.close.assert_called_once_with()
 
         runtime.dispose()
 
