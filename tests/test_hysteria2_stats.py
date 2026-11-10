@@ -122,6 +122,16 @@ class Hysteria2LocalTrafficStatsTest(unittest.TestCase):
 
         self.assertFalse(os.path.exists(path))
 
+    def testDisposeRemovesPrivateCounterFileIdempotently(self):
+        runtime = Hysteria2(json.dumps({'server': '127.0.0.1:443'}))
+        path = runtime.hysteria2StatsFile
+        self.assertTrue(os.path.isfile(path))
+
+        runtime.dispose()
+        runtime.dispose()
+
+        self.assertFalse(os.path.exists(path))
+
     def testProbeRuntimeDoesNotCreateStatisticsFile(self):
         runtime = Hysteria2(
             json.dumps({'server': '127.0.0.1:443'}),

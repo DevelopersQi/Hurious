@@ -161,6 +161,15 @@ class Hysteria2(MultiprocessingRuntime):
         super().stop()
         self._removeTrafficStatsFile()
 
+    def dispose(self):
+        """Dispose the runtime and always release its private stats file."""
+        try:
+            # MultiprocessingRuntime.dispose() calls its internal _stopLocked()
+            # directly, so the public stop() override is not dispatched here.
+            super().dispose()
+        finally:
+            self._removeTrafficStatsFile()
+
     @staticmethod
     def name() -> str:
         """Return the process implementation name."""
