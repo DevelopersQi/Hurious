@@ -613,7 +613,10 @@ static VOID NTAPI FuriousFlowDelete(
 static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
 {
     UNREFERENCED_PARAMETER(driverObject);
-    FuriousWfpDatagramQueueCleanup();
+    // Stop process notifications and unregister every WFP callout before
+    // tearing down the datagram queue. Classify callbacks may still publish
+    // captured datagrams until the callouts are unregistered; draining the
+    // queue first would permit a late callback to enqueue after cleanup.
     if (gProcessNotifyRegistered) {
         NTSTATUS status = PsSetCreateProcessNotifyRoutineEx(
             FuriousProcessNotify, TRUE);
@@ -652,6 +655,10 @@ static VOID FuriousUnload(_In_ PDRIVER_OBJECT driverObject)
             }
         }
     }
+    // No WFP classify callback can reach the queue after callout unregister.
+    // It is now safe to stop the worker, drain pending reads, and free entries.
+    FuriousWfpDatagramQueueCleanup();
+
     if (gRedirectHandle != NULL) {
         FwpsRedirectHandleDestroy0(gRedirectHandle);
         gRedirectHandle = NULL;
