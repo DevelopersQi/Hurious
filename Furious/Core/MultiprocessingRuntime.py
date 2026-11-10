@@ -38,6 +38,7 @@ from typing import Any, Callable, Mapping, Tuple
 
 import logging
 import multiprocessing
+import threading
 
 __all__ = ['MultiprocessingRuntime', 'ProcessLaunchSpec']
 
@@ -80,6 +81,7 @@ class MultiprocessingRuntime(CoreRuntime):
         """Prepare an immutable launch specification around an owned queue."""
         super().__init__(exitCallback)
 
+        self._lifecycleLock = threading.RLock()
         self._process = None
         self._lastExit = None
         self._stopRequested = False
@@ -141,11 +143,17 @@ class MultiprocessingRuntime(CoreRuntime):
 
     def isRunning(self) -> bool:
         """Passively inspect the child without consuming its exit."""
-        process = self._process
+        with self._lifecycleLock:
+            process = self._process
 
-        return process is not None and process.is_alive()
+            return process is not None and process.is_alive()
 
     def start(self):
+        """Serialize child acquisition and reject concurrent duplicate starts."""
+        with self._lifecycleLock:
+            self._startLocked()
+
+    def _startLocked(self):
         """Spawn execution resources or raise a structured startup failure."""
         if self.state is RuntimeState.Disposed:
             raise RuntimeStartError('Runtime has already been disposed')
@@ -189,6 +197,11 @@ class MultiprocessingRuntime(CoreRuntime):
         logger.info(f'{self.name()} {self.version()} started')
 
     def _consumeExit(self) -> RuntimeExit:
+        """Serialize exit consumption with start, stop, and disposal."""
+        with self._lifecycleLock:
+            return self._consumeExitLocked()
+
+    def _consumeExitLocked(self) -> RuntimeExit:
         """Reap and interpret one transition exactly once."""
         if self._lastExit is not None:
             return self._lastExit
@@ -221,43 +234,50 @@ class MultiprocessingRuntime(CoreRuntime):
 
     def _pollProcess(self):
         """Detect a terminal transition without exposing polling to owners."""
-        if self._process is None or self._process.is_alive():
-            return
+        with self._lifecycleLock:
+            if self._process is None or self._process.is_alive():
+                return
 
-        event = self._consumeExit()
+            event = self._consumeExit()
 
-        if self._exitPublished:
-            return
+            if self._exitPublished:
+                return
 
-        self._exitPublished = True
+            self._exitPublished = True
 
-        level = logger.error if event.unexpected else logger.info
+            level = logger.error if event.unexpected else logger.info
 
-        level(
-            f'{self.name()} exited with code {event.code}; '
-            f'reason={event.reason.value}'
-        )
+            level(
+                f'{self.name()} exited with code {event.code}; '
+                f'reason={event.reason.value}'
+            )
 
-        self.publishExit(event)
+            self.publishExit(event)
 
     def _closeProcess(self):
         """Close and forget the exact inactive multiprocessing handle."""
-        process = self._process
+        with self._lifecycleLock:
+            process = self._process
 
-        if process is not None:
-            try:
-                process.join(0)
-            except (AssertionError, OSError, ValueError):
-                pass
+            if process is not None:
+                try:
+                    process.join(0)
+                except (AssertionError, OSError, ValueError):
+                    pass
 
-            try:
-                process.close()
-            except (OSError, ValueError):
-                pass
+                try:
+                    process.close()
+                except (OSError, ValueError):
+                    pass
 
-        self._process = None
+            self._process = None
 
     def stop(self):
+        """Serialize shutdown with startup and terminal-exit consumption."""
+        with self._lifecycleLock:
+            self._stopLocked()
+
+    def _stopLocked(self):
         """Idempotently terminate execution without disposing this object."""
         self._stopRequested = True
         self._monitor.stop()
@@ -290,21 +310,22 @@ class MultiprocessingRuntime(CoreRuntime):
         logger.info(f'{self.name()} stopped with exitcode {event.code}')
 
     def dispose(self):
-        """Idempotently release process, timer, queue, and event ownership."""
-        if self.state is RuntimeState.Disposed:
-            return
+        """Serialize and idempotently release all owned process resources."""
+        with self._lifecycleLock:
+            if self.state is RuntimeState.Disposed:
+                return
 
-        self.stop()
+            self._stopLocked()
 
-        if self._monitorConnection is not None:
-            try:
-                QtCore.QObject.disconnect(self._monitorConnection)
-            except (RuntimeError, TypeError):
-                pass
+            if self._monitorConnection is not None:
+                try:
+                    QtCore.QObject.disconnect(self._monitorConnection)
+                except (RuntimeError, TypeError):
+                    pass
 
-            self._monitorConnection = None
+                self._monitorConnection = None
 
-        self._monitor.deleteLater()
-        self._output.dispose()
+            self._monitor.deleteLater()
+            self._output.dispose()
 
-        super().dispose()
+            super().dispose()
