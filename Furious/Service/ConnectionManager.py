@@ -605,10 +605,13 @@ class ConnectionStartOperation(QtCore.QObject):
         runtime = probe._runtime
 
         if not runtime.isRunning():
-            # The runtime owns process-exit interpretation. Its typed event may
-            # already be queued behind this direct readiness signal, so never
-            # replace that semantic failure with a generic endpoint timeout.
-            return
+            # A failed start() may leave no typed exit event to publish. Do not
+            # wait indefinitely for a callback that may never arrive: readiness
+            # already proved that this exact runtime is not alive.
+            message = (
+                'core process exited before readiness: '
+                + probe._runtimeExitDetails()
+            )
 
         self._readinessProbe = None
         self._conditionContinuation = ''
