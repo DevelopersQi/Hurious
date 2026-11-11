@@ -36,7 +36,7 @@ __all__ = [
 
 
 class RuntimeState(str, Enum):
-    """Describe execution-resource state without implying service readiness."""
+    """Describe execution-resource state without implying connection readiness."""
 
     Created = 'created'
     Starting = 'starting'
@@ -150,11 +150,17 @@ class CoreRuntime(ABC):
         self._exitCallback = exitCallback
         self._state = RuntimeState.Created
         self._disposed = False
+        self._lastExit = None
 
     @property
     def state(self) -> RuntimeState:
-        """Return execution-resource state, never connection readiness."""
+        """Return execution state, never connection readiness."""
         return self._state
+
+    @property
+    def lastExit(self) -> Union[RuntimeExit, None]:
+        """Return the first typed terminal event, even before queued delivery."""
+        return self._lastExit
 
     def setState(self, state: RuntimeState):
         """Move to one explicit execution-resource state."""
@@ -189,9 +195,14 @@ class CoreRuntime(ABC):
         return RuntimeExit(exitcode, reason)
 
     def publishExit(self, event: RuntimeExit):
-        """Publish one already interpreted exit through the stable event sink."""
+        """Record and publish one interpreted exit through the stable event sink."""
         if not isinstance(event, RuntimeExit):
             raise TypeError('runtime exits must be RuntimeExit values')
+
+        # Store before handing off: the owner may observe the stopped runtime
+        # before its queued Qt callback is delivered.
+        if self._lastExit is None:
+            self._lastExit = event
 
         if callable(self._exitCallback):
             self._exitCallback(self, event)
@@ -214,7 +225,7 @@ class CoreRuntime(ABC):
 
     @abstractmethod
     def start(self):
-        """Acquire execution resources or raise ``RuntimeStartError``."""
+        """Acquire execution resources or raise RuntimeStartError."""
         raise NotImplementedError
 
     @abstractmethod
