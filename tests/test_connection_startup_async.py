@@ -381,6 +381,39 @@ class ConnectionStartupAsyncTest(TestCase):
         self.assertEqual(manager.runtimes, [runtime])
         self.assertEqual(runtime.startOptions[0], {})
 
+    def testStaleLocalEndpointCannotSatisfyDeadRuntimeReadiness(self):
+        """Do not accept another process's listener for a dead core attempt."""
+        server = self._server()
+        endpoint = f'127.0.0.1:{server.serverPort()}'
+
+        class _DeadRuntime(_Runtime):
+            def start(self, _configuration=None, *_args, **kwargs):
+                self.startOptions.append(dict(kwargs))
+                # Simulate a core that failed to bind while an unrelated process
+                # already owns the configured local proxy port.
+                return False
+
+        runtime = _DeadRuntime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(endpoint=endpoint, timeout=500),
+            ),
+        )
+        succeeded = []
+        failures = []
+        operation.succeeded.connect(succeeded.append)
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        self.assertEqual(succeeded, [])
+        self.assertIn('core process exited before readiness', failures[0][2])
+        self.assertEqual(manager.runtimes, [])
+        self.assertEqual(runtime.stopCount, 1)
+        self.assertEqual(runtime.disposeCount, 1)
+
     def testReadinessTimeoutRollsBackTheExactRuntime(self):
         """Fail a live process whose promised local endpoint never appears."""
         server = self._server()
