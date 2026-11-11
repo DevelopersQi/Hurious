@@ -604,15 +604,15 @@ class ConnectionStartOperation(QtCore.QObject):
         probe = self._readinessProbe
         runtime = probe._runtime
 
-        if not runtime.isRunning():
-            # Prefer an already-published typed exit over the generic readiness
-            # failure. Runtime exit delivery can be queued behind the probe
-            # signal, and its code/reason must remain the authoritative error.
-            event = getattr(runtime, 'lastExit', None)
-            if event is not None:
-                self.runtimeExited(runtime, event)
-                return
+        # A typed exit is authoritative even if a runtime's liveness probe
+        # briefly reports a stale state while its terminal event is queued.
+        # Check it before deciding whether this is merely a readiness failure.
+        event = getattr(runtime, 'lastExit', None)
+        if event is not None:
+            self.runtimeExited(runtime, event)
+            return
 
+        if not runtime.isRunning():
             # Some launch failures do not publish an exit event. In that case
             # fail immediately rather than waiting for a callback that may
             # never arrive.
