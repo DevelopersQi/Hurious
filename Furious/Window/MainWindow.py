@@ -236,30 +236,44 @@ class MainWindow(AppQMainWindow):
     @QtCore.Slot(object)
     def _handleConnectionError(self, error):
         """Offer direct navigation when the selected TUN backend is incompatible."""
-        message = str(getattr(error, 'message', '') or '')
+        message = str(getattr(error, 'message', '') or error or '')
         isBackendMismatch = (
-            '不能选择' in message and '原生 TUN' in message
-        ) or (
-            'Native TUN is not supported' in message
+            ('不能选择' in message and '原生 TUN' in message)
+            or 'Native TUN is not supported' in message
         )
         if not isBackendMismatch:
             return
 
-        dialog = QMessageBox(self)
-        dialog.setIcon(QMessageBox.Icon.Warning)
-        dialog.setWindowTitle(_('TUN backend mismatch'))
-        dialog.setText(message)
-        dialog.setInformativeText(
-            _('Open Settings and select Auto or the native TUN backend supported by this server.')
-        )
-        dialog.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        dialog.button(QMessageBox.StandardButton.Yes).setText(_('Go to Settings'))
-        dialog.button(QMessageBox.StandardButton.No).setText(_('Cancel'))
+        # Use the application's exported message-box wrapper.  QMessageBox is
+        # intentionally not exported by Furious.Qt, while AppQMessageBox is
+        # theme-aware, translated, and owns its transient Qt lifetime.
+        try:
+            dialog = AppQMessageBox(parent=self)
+            dialog.setIcon(AppQMessageBox.Icon.Warning)
+            dialog.setWindowTitle(_('TUN backend mismatch'))
+            dialog.setText(message)
+            dialog.setInformativeText(
+                _('Open Settings and select Auto or the native TUN backend supported by this server.')
+            )
+            dialog.setStandardButtons(
+                AppQMessageBox.StandardButton.Yes | AppQMessageBox.StandardButton.No
+            )
+            yesButton = dialog.button(AppQMessageBox.StandardButton.Yes)
+            noButton = dialog.button(AppQMessageBox.StandardButton.No)
+            if yesButton is not None:
+                yesButton.setText(_('Go to Settings'))
+            if noButton is not None:
+                noButton.setText(_('Cancel'))
 
-        if dialog.exec() == QMessageBox.StandardButton.Yes:
-            self.showSettingsPage()
+            if dialog.exec() == AppQMessageBox.StandardButton.Yes:
+                self.showSettingsPage()
+        except Exception:
+            # A presentation failure must never replace the original
+            # connection error with a second exception from the GUI handler.
+            logger.exception(
+                'failed to display TUN backend mismatch dialog; original error: %s',
+                message,
+            )
 
     def showPage(self, pageId: str):
         """Navigate to a registered application page."""
