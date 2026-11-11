@@ -454,7 +454,36 @@ class ConnectionController(QtCore.QObject):
         return self._finishConnection(configuration, httpProxy)
 
     def _finishConnection(self, configuration, httpProxy) -> bool:
-        """Commit system integration after manager runtime ownership commits."""
+        """Commit system integration only while every owned core is alive."""
+        try:
+            runtimes = tuple(self._coreManager.runtimes)
+            stoppedRuntimes = [
+                runtime for runtime in runtimes
+                if not runtime.isRunning()
+            ]
+        except Exception as ex:
+            logger.exception('failed to verify core runtime before connection commit')
+            return self._failConnection(
+                f'{configuration.coreName()}: ' + _('Unknown error'),
+                str(ex),
+            )
+
+        # The local proxy endpoint may have been opened by a stale/unrelated
+        # process. Never publish Connected or update the tray until the exact
+        # runtimes committed by ConnectionManager are confirmed alive.
+        if not runtimes or stoppedRuntimes:
+            names = ', '.join(
+                runtime.name() for runtime in stoppedRuntimes
+            )
+            details = (
+                f'core runtime is not alive before connection commit'
+                + (f': {names}' if names else '')
+            )
+            return self._failConnection(
+                f'{configuration.coreName()}: ' + _('Unknown error'),
+                details,
+            )
+
         settings = AppSettings.get('CustomProxyBypass')
 
         proxyServerBypass = (
