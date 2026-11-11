@@ -230,9 +230,38 @@ class _RuntimeReadinessProbe(QtCore.QObject):
         self._timer.start()
         self._poll()
 
+    def _runtimeIsRunning(self):
+        """Require the exact runtime owned by this attempt to remain alive."""
+        try:
+            return bool(self._runtime.isRunning())
+        except Exception:
+            # A broken liveness probe must never be interpreted as readiness.
+            logger.exception('failed to inspect core runtime liveness')
+            return False
+
+    def _runtimeExitDetails(self):
+        """Return the runtime's terminal diagnostic when startup exits early."""
+        event = getattr(self._runtime, 'lastExit', None)
+        if event is None:
+            return 'core process is not running'
+        details = str(getattr(event, 'details', '') or '')
+        message = str(getattr(event, 'message', '') or '')
+        diagnostic = '; '.join(value for value in (message, details) if value)
+        return diagnostic or 'core process is not running'
+
     def _poll(self):
         """Retry endpoint connection and enforce the startup deadline."""
         if self._terminal:
+            return
+
+        # A listening local port is not proof that this attempt's core started:
+        # it may belong to another process left on the same configured port.
+        # Check the exact runtime before accepting any endpoint response.
+        if not self._runtimeIsRunning():
+            self._finishFailed(
+                'core process exited before readiness: '
+                + self._runtimeExitDetails()
+            )
             return
 
         timeout = max(int(self._startup.timeout), 1)
@@ -253,7 +282,13 @@ class _RuntimeReadinessProbe(QtCore.QObject):
             self._socket.connectToHost(self._host, self._port)
 
     def _connected(self):
-        """Accept the first successful local endpoint connection."""
+        """Accept the endpoint only while this attempt's core is still alive."""
+        if not self._runtimeIsRunning():
+            self._finishFailed(
+                'core process exited before readiness: '
+                + self._runtimeExitDetails()
+            )
+            return
         self._finishReady()
 
     def _finishReady(self):
