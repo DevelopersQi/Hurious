@@ -248,22 +248,25 @@ class MainWindow(AppQMainWindow):
         # intentionally not exported by Furious.Qt, while AppQMessageBox is
         # theme-aware, translated, and owns its transient Qt lifetime.
         try:
+            isChinese = str(AppSettings.get('Language') or '').upper() == 'ZH'
+
             dialog = AppQMessageBox(parent=self)
             dialog.setIcon(AppQMessageBox.Icon.Warning)
-            dialog.setWindowTitle(_('TUN backend mismatch'))
-            dialog.setText(message)
-            dialog.setInformativeText(
-                _('Open Settings and select Auto or the native TUN backend supported by this server.')
+            dialog.setWindowTitle(
+                'TUN 后端不兼容' if isChinese else _('TUN backend mismatch')
             )
+            dialog.setText(message)
+            # The error message already explains the supported choices. Do
+            # not repeat the same instruction in a second explanatory label.
             dialog.setStandardButtons(
                 AppQMessageBox.StandardButton.Yes | AppQMessageBox.StandardButton.No
             )
             yesButton = dialog.button(AppQMessageBox.StandardButton.Yes)
             noButton = dialog.button(AppQMessageBox.StandardButton.No)
             if yesButton is not None:
-                yesButton.setText(_('Go to Settings'))
+                yesButton.setText('前往设置' if isChinese else _('Go to Settings'))
             if noButton is not None:
-                noButton.setText(_('Cancel'))
+                noButton.setText('取消' if isChinese else _('Cancel'))
 
             if dialog.exec() == AppQMessageBox.StandardButton.Yes:
                 self.showSettingsPage()
