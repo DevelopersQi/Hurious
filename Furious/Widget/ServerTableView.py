@@ -750,14 +750,17 @@ class ServerTableView(
     ]
 
     def _configureResponsiveColumns(self):
-        """Distribute available viewport width across every table column."""
+        """Size columns from their contents, then share any spare viewport width."""
         header = self.horizontalHeader()
         header.setMinimumSectionSize(self.MinimumColumnWidth)
         header.setStretchLastSection(False)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # Inspect every model row so a long value is not hidden merely because
+        # it falls beyond Qt's default resize-content sampling limit.
+        header.setResizeContentsPrecision(-1)
 
-        # Stretch all sections equally so the whole table width is shared
-        # across every column, rather than assigning spare space to the last.
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # Never elide cell text. If content is wider than the viewport, retain
+        # its natural width and let the horizontal scrollbar expose it.
         self.setWordWrap(False)
         self.setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
         self.setHorizontalScrollMode(
@@ -766,6 +769,72 @@ class ServerTableView(
         self.setHorizontalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
+
+    def _scheduleContentColumnResize(self, *_args):
+        """Coalesce model and viewport changes into one content measurement."""
+        if getattr(self, '_columnResizePending', False):
+            return
+
+        self._columnResizePending = True
+        QtCore.QTimer.singleShot(0, self._resizeContentColumns)
+
+    @QtCore.Slot()
+    def _resizeContentColumns(self):
+        """Fit columns to all cell contents and proportionally use spare width."""
+        self._columnResizePending = False
+
+        model = self.model()
+        header = self.horizontalHeader()
+
+        if model is None or model.columnCount() <= 0:
+            return
+
+        # Start from the actual header and cell contents, not equal-width
+        # stretching. This also resets widths after the window is enlarged.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.resizeColumnsToContents()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
+        widths = [
+            max(self.MinimumColumnWidth, header.sectionSize(column))
+            for column in range(model.columnCount())
+        ]
+        contentWidth = sum(widths)
+        availableWidth = max(0, self.viewport().width())
+
+        if contentWidth >= availableWidth or not widths:
+            return
+
+        # Distribute spare space in proportion to each column's measured
+        # content width. No single trailing column absorbs all remaining room.
+        extraWidth = availableWidth - contentWidth
+        weightTotal = sum(widths)
+
+        allocations = [
+            (extraWidth * width) // weightTotal
+            for width in widths
+        ]
+        remainder = extraWidth - sum(allocations)
+
+        fractionalOrder = sorted(
+            range(len(widths)),
+            key=lambda index: (
+                (extraWidth * widths[index]) % weightTotal,
+                widths[index],
+            ),
+            reverse=True,
+        )
+
+        for index in fractionalOrder[:remainder]:
+            allocations[index] += 1
+
+        for column, (width, extra) in enumerate(zip(widths, allocations)):
+            header.resizeSection(column, width + extra)
+
+    def resizeEvent(self, event):
+        """Re-evaluate content widths when the available window size changes."""
+        super().resizeEvent(event)
+        self._scheduleContentColumnResize()
 
     def __init__(self, *args, **kwargs):
         """Initialize the server table view."""
@@ -782,6 +851,20 @@ class ServerTableView(
         self.proxyModel = UserServersSortFilterProxyModel(parent=self)
         self.proxyModel.setSourceModel(self.sourceModel)
         self.setModel(self.proxyModel)
+        self._columnResizePending = False
+
+        # Re-measure after content changes, filtering, sorting, or profile
+        # insertion/removal. The queued slot coalesces bursts of model signals.
+        for signal in (
+            self.sourceModel.dataChanged,
+            self.sourceModel.rowsInserted,
+            self.sourceModel.rowsRemoved,
+            self.proxyModel.rowsInserted,
+            self.proxyModel.rowsRemoved,
+            self.proxyModel.modelReset,
+            self.proxyModel.layoutChanged,
+        ):
+            signal.connect(self._scheduleContentColumnResize)
 
         self._sortSelectionSnapshot = None
         self.proxyModel.sortAboutToStart.connect(self._captureSortSelection)
