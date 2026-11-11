@@ -127,6 +127,17 @@ class ConnectAction(AppQAction):
         if not isinstance(error, ConnectionError):
             return
 
+        # MainWindow owns the actionable backend-mismatch dialog. Suppress the
+        # generic tray error box for this same failure so users see one prompt,
+        # not a second "Unable to connect" dialog after choosing Settings.
+        message = str(error.message or '')
+        isBackendMismatch = (
+            ('不能选择' in message and '原生 TUN' in message)
+            or 'Native TUN is not supported' in message
+        )
+        if isBackendMismatch:
+            return
+
         mbox = AppQMessageBox(icon=AppQMessageBox.Icon.Critical)
         mbox.setHeading(error.title)
         mbox.setText(error.message)
