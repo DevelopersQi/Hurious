@@ -23,8 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  # Run one Windows 10 packaging build when this workflow is deliberately
-  # changed on the feature branch; ordinary source commits stay lightweight.
+  # Refresh the Windows 10 package for the verified connection-readiness fix.
+  # Ordinary source commits stay lightweight.
   push:
     branches:
       - feat/auto-detect-tun-network
