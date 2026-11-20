@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from Furious.Frozenlib import *
+from Furious.Frozenlib.SystemNetwork import getPrimaryAdapterInfo
 
 import copy
 import json
@@ -152,6 +153,9 @@ def buildXrayTUNInbound(settings=None) -> dict:
     settings = _normalizedXrayTUNSettings(
         getXrayTUNSettings() if settings is None else settings
     )
+    # Resolve the automatic physical outbound interface at connection time so
+    # a network change between application launches cannot leave a stale NIC.
+    settings = applyXrayTUNAutoNetworkSettings(settings, getPrimaryAdapterInfo())
     settings = {
         key: value for key, value in settings.items() if value != '' and value != []
     }
