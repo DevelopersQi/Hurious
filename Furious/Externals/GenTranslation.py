@@ -4,9 +4,9 @@ TRANSLATION = {
         "ZH": "Xray 的 Gateway 是虚拟 TUN 地址；检测到的物理网卡将用于出站接口。",
         "isReviewed": "True"
     },
-    "The physical adapter IPv4 and default gateway are automatically excluded from Hysteria 2 TUN routes.": {
+    "Hysteria2 address.ipv4/ipv6 are virtual TUN addresses, not the physical adapter IP. The physical adapter IPv4 and default gateway are automatically excluded from Hysteria 2 TUN routes.": {
         "source": ["Furious.Backends.Hysteria2.TunSettingsDialog"],
-        "ZH": "物理网卡 IPv4 地址和默认网关会自动加入 Hysteria 2 TUN 排除路由。",
+        "ZH": "Hysteria 2 的 IPv4/IPv6 地址属于虚拟 TUN 网卡，并非物理网卡 IP；物理网卡 IPv4 地址和默认网关会自动加入 TUN 排除路由。",
         "isReviewed": "True"
     },
 
