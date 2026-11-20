@@ -347,7 +347,11 @@ class SystemRoutingTable:
                 result = runExternalCommand(
                     'networksetup -setdnsservers'.split()
                     + [service]
-                    + dnsserver.split('\n'),
+                    + [
+                        item.strip()
+                        for item in str(dnsserver).replace(';', '\n').replace(',', '\n').splitlines()
+                        if item.strip()
+                    ],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     check=True,

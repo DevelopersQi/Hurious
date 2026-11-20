@@ -359,6 +359,11 @@ TRANSLATION = {
         "ZH": "TUN 后端异常：{error}",
         "isReviewed": "True"
     },
+    "No compatible TUN backend is available for the selected core. Native TUN and application Tun2socks are both unavailable.": {
+        "source": ["Furious.Controllers.ConnectionController"],
+        "ZH": "当前核心既无法使用原生 TUN，也无法使用 Tun2socks。请检查 TUN 后端配置及虚拟网卡组件。",
+        "isReviewed": "True"
+    },
     "Actual TUN backend: {backend}": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "实际 TUN 后端：{backend}",
