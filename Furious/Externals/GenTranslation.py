@@ -354,6 +354,11 @@ TRANSLATION = {
         "ZH": "实际 TUN 后端：未连接",
         "isReviewed": "True"
     },
+    "TUN backend error: {error}": {
+        "source": ["Furious.Window.SettingsPage"],
+        "ZH": "TUN 后端异常：{error}",
+        "isReviewed": "True"
+    },
     "Actual TUN backend: {backend}": {
         "source": ["Furious.Window.SettingsPage"],
         "ZH": "实际 TUN 后端：{backend}",

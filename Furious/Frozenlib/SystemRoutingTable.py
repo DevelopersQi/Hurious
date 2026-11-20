@@ -24,6 +24,7 @@ from Furious.Frozenlib.Utility import *
 from Furious.Frozenlib.SystemRuntime import *
 
 import re
+import ipaddress
 import logging
 import subprocess
 
@@ -182,6 +183,8 @@ class SystemRoutingTable:
                 ]
                 if not addresses:
                     raise ValueError('at least one DNS server is required')
+                for dnsAddress in addresses:
+                    ipaddress.ip_address(dnsAddress)
 
                 result = runExternalCommand(
                     f'netsh interface ip set dns name=\"{name}\" static {addresses[0]}',

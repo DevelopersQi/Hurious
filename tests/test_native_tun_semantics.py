@@ -309,6 +309,38 @@ class XrayNativeTUNTest(unittest.TestCase):
         registry.usesApplicationTun2socks.assert_not_called()
 
 
+    def testAutomaticBackendFailsWhenNeitherNativeNorTun2socksIsAvailable(self):
+        """Do not commit a TUN-mode connection without an active TUN owner."""
+        registry = mock.Mock()
+        registry.factoryForConfig.return_value.factoryId = 'official.xray'
+        registry.prepareTUN.return_value = False
+        registry.usesApplicationTun2socks.return_value = False
+        manager = _RecordingConnectionManager()
+
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.SystemRuntime.isTUNMode',
+                return_value=True,
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.AppSettings.get',
+                return_value='auto',
+            ),
+            mock.patch(
+                'Furious.Service.ConnectionManager.getPluginRegistry',
+                return_value=registry,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                TUNPreparationError,
+                'No compatible TUN backend is available',
+            ):
+                manager._prepareTUNPolicy(self.configuration(nativeTUN=False), False)
+
+        registry.prepareTUN.assert_called_once()
+        registry.usesApplicationTun2socks.assert_called_once()
+        self.assertIsNone(manager.activeTUNBackend)
+
     def testManagedTUNPreparationFailureDoesNotFallBackToTun2socks(self):
         """Fail an unavailable managed TUN instead of changing networking mode."""
         original = self.configuration(nativeTUN=True)

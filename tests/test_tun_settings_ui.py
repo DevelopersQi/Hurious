@@ -175,6 +175,7 @@ class TUNSettingsUITest(unittest.TestCase):
             'Actual TUN backend: connecting…',
             'Actual TUN backend: not connected',
             'Actual TUN backend: {backend}',
+            'TUN backend error: {error}',
             'TUN is not active',
             'Gateway (separated by commas)',
             'DNS (separated by commas)',
@@ -191,6 +192,7 @@ class TUNSettingsUITest(unittest.TestCase):
             'Configure Xray routing by domain, IP, port, protocol, or process. Rules follow their configured order within the selected routing profile. Priority against application rules depends on the selected backend.',
             'Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.',
             'Xray-core Native TUN is not supported by the selected Hysteria 2 configuration. Open Settings > TUN Backend and select Auto or Hysteria 2 Native TUN.',
+            'No compatible TUN backend is available for the selected core. Native TUN and application Tun2socks are both unavailable.',
         )
 
         for key in required:
@@ -217,6 +219,22 @@ class TUNSettingsUITest(unittest.TestCase):
             'pluginTUN = registry.prepareTUN(config, automaticBackend)',
             source,
         )
+        self.assertIn('if not useAppTun2socks and tunBackend == \'auto\':', source)
+        self.assertIn('raise TUNPreparationError(', source)
+
+    def test_tun2socks_defaults_are_initialized_before_first_connection(self):
+        source = read_source('Furious/Application/DesktopApplication.py')
+        self.assertIn("'tunAdapterInterfaceDNS': '1.1.1.1,8.8.8.8'", source)
+        self.assertIn("'tcpAutoTuning': 'True'", source)
+        self.assertIn("'tcpReceiveBufferSize': 1", source)
+        self.assertIn('getPrimaryAdapterInfo()', source)
+        self.assertIn('Storage.persistUserTUNSettings()', source)
+
+    def test_windows_tun_dns_supports_primary_and_secondary_resolvers(self):
+        source = read_source('Furious/Frozenlib/SystemRoutingTable.py')
+        self.assertIn('netsh interface ip set dns', source)
+        self.assertIn('netsh interface ip add dnsservers', source)
+        self.assertIn('enumerate(addresses[1:], start=2)', source)
 
     def test_settings_categories_separate_tun_dns_from_system_proxy(self):
         source = read_source('Furious/Window/SettingsPage.py')
