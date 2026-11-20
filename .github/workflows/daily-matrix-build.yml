@@ -35,6 +35,15 @@ on:
       - Furious/Frozenlib/Version.py
       - Furious/Widget/ServerTableView.py
       - Windows/Wfp/**
+      - Furious/Application/DesktopApplication.py
+      - Furious/Repository/Storage.py
+      - Furious/Service/ConnectionManager.py
+      - Furious/Controllers/ConnectionController.py
+      - Furious/Window/SettingsPage.py
+      - Furious/Window/TunSettingsDialog.py
+      - Furious/Frozenlib/SystemRoutingTable.py
+      - Furious/Frozenlib/Constants.py
+      - Furious/Externals/GenTranslation.py
   schedule:
     # Daily at 02:17 UTC (10:17 Asia/Shanghai).
     - cron: '17 2 * * *'
