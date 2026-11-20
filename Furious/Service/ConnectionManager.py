@@ -158,7 +158,7 @@ def getUserTUNSettings(*args, **kwargs):
     functools.partial(getUserTUNSettings, 'disablePrimaryAdapterInterfaceDNS', 'True'),
     functools.partial(getUserTUNSettings, 'tcpSendBufferSize', 1),
     functools.partial(getUserTUNSettings, 'tcpReceiveBufferSize', 1),
-    functools.partial(getUserTUNSettings, 'tcpAutoTuning', 'False'),
+    functools.partial(getUserTUNSettings, 'tcpAutoTuning', 'True'),
 )
 
 

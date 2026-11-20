@@ -336,7 +336,7 @@ class GuiTUNSettingsGroupBoxMemory(GuiEditorWidgetQGroupBox):
             GuiTUNSettingsItemSwitchXXX(
                 title=_('TCP Receive Buffer Auto-tuning'),
                 key='tcpAutoTuning',
-                default='False',
+                default='True',
             ),
         ]
 
