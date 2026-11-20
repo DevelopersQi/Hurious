@@ -70,6 +70,34 @@ class Hysteria2TUNAutoNetworkSettingsTest(unittest.TestCase):
         )
         self.assertEqual(result['route']['ipv4Exclude'], [])
 
+    def testAutomaticallyDetectedRoutesAreReplacedAfterNetworkChange(self):
+        first = applyHysteria2TUNAutoNetworkSettings(
+            DEFAULT_HYSTERIA2_TUN_SETTINGS,
+            {'ip': '192.168.1.20', 'gateway': '192.168.1.1'},
+        )
+        second = applyHysteria2TUNAutoNetworkSettings(
+            first,
+            {'ip': '10.0.0.20', 'gateway': '10.0.0.1'},
+        )
+        self.assertEqual(second['route']['ipv4Exclude'], [
+            '10.0.0.20/32', '10.0.0.1/32'
+        ])
+
+    def testUserDefinedExclusionsSurviveAutomaticNetworkRefresh(self):
+        settings = copy.deepcopy(DEFAULT_HYSTERIA2_TUN_SETTINGS)
+        settings['route']['ipv4Exclude'] = ['172.16.0.0/12']
+        first = applyHysteria2TUNAutoNetworkSettings(
+            settings,
+            {'ip': '192.168.1.20', 'gateway': '192.168.1.1'},
+        )
+        second = applyHysteria2TUNAutoNetworkSettings(
+            first,
+            {'ip': '10.0.0.20', 'gateway': '10.0.0.1'},
+        )
+        self.assertEqual(second['route']['ipv4Exclude'], [
+            '172.16.0.0/12', '10.0.0.20/32', '10.0.0.1/32'
+        ])
+
 
 if __name__ == '__main__':
     unittest.main()
