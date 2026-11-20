@@ -141,10 +141,19 @@ def getXrayTUNSettings() -> dict:
 
 
 def saveXrayTUNSettings(settings: dict):
-    """Validate and persist Xray TUN settings."""
+    """Persist user preferences, not the currently detected physical adapter."""
+    result = _normalizedXrayTUNSettings(settings)
+    detectedInterface = getPrimaryAdapterInfo().get('name', '')
+    if (
+        isinstance(detectedInterface, str)
+        and detectedInterface.strip()
+        and result['autoOutboundsInterface'] == detectedInterface.strip()
+    ):
+        result['autoOutboundsInterface'] = 'auto'
+
     AppSettings.set(
         'XrayTUNSettings',
-        json.dumps(_normalizedXrayTUNSettings(settings), ensure_ascii=False),
+        json.dumps(result, ensure_ascii=False),
     )
 
 
