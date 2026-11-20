@@ -27,7 +27,11 @@ from Furious.Backends.Xray.TUN import (
     applyXrayTUNAutoNetworkSettings,
     buildXrayTUNInbound,
 )
-from Furious.Backends.Hysteria2.TUN import DEFAULT_HYSTERIA2_TUN_SETTINGS, applyHysteria2TUNAutoNetworkSettings
+from Furious.Backends.Hysteria2.TUN import (
+    DEFAULT_HYSTERIA2_TUN_SETTINGS,
+    applyHysteria2TUNAutoNetworkSettings,
+    buildHysteria2TUNConfig,
+)
 
 
 class XrayTUNAutoNetworkSettingsTest(unittest.TestCase):
@@ -122,6 +126,24 @@ class Hysteria2TUNAutoNetworkSettingsTest(unittest.TestCase):
         )
         self.assertEqual(second['route']['ipv4Exclude'], [
             '172.16.0.0/12', '10.0.0.20/32', '10.0.0.1/32'
+        ])
+
+    def testRuntimeConfigUsesCurrentNetworkInsteadOfSavedDetectedRoutes(self):
+        from unittest import mock
+
+        stale = copy.deepcopy(DEFAULT_HYSTERIA2_TUN_SETTINGS)
+        stale['route']['ipv4Exclude'] = ['192.168.1.20/32', '192.168.1.1/32']
+        stale['_autoDetectedIPv4Exclude'] = [
+            '192.168.1.20/32', '192.168.1.1/32'
+        ]
+        with mock.patch(
+            'Furious.Backends.Hysteria2.TUN.getPrimaryAdapterInfo',
+            return_value={'ip': '10.0.0.20', 'gateway': '10.0.0.1'},
+        ):
+            config = buildHysteria2TUNConfig(stale)
+
+        self.assertEqual(config['route']['ipv4Exclude'], [
+            '10.0.0.20/32', '10.0.0.1/32'
         ])
 
 
