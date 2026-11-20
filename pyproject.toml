@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Furious-GUI"
+dynamic = ["version"]
+description = "A GUI proxy client based on PySide6. Support Xray-core & hysteria"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "Loren Eteval", email = "loren.eteval@proton.me" },
+]
+dependencies = [
+    "PySide6-Essentials",
+    "PySide6-Addons",
+    "ujson",
+    "pybase64",
+    "segno",
+    "icmplib",
+    "mss",
+    "zxing-cpp",
+    "pillow",
+    "Xray-core @ git+https://github.com/DevelopersQi/Xray-core-python.git@5b1573f217e57161fecd9d36ecd710164c529282",
+    "hysteria @ git+https://github.com/DevelopersQi/hysteria-python.git@99d4f04f4a475532e70c4f6a353bd6b47e83f86a",
+    "hysteria2 @ git+https://github.com/DevelopersQi/hysteria2-python.git@a0ad2e419e22b810da43bddc48a4e84249a6fd48",
+    "tun2socks @ git+https://github.com/DevelopersQi/tun2socks-python.git@6b90d77f3ddc64746bc0b5970f44d150ea4d795e",
+    "sysproxy; sys_platform == 'win32'",
+    "darkdetect; sys_platform != 'darwin'",
+    "darkdetect[macos-listener]; sys_platform == 'darwin'",
+    "pyobjc-core; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Operating System :: OS Independent",
+    "Topic :: Internet",
+    "Topic :: Internet :: Proxy Servers",
+]
+
+[project.urls]
+Homepage = "https://github.com/LorenEteval/Furious"
+
+[project.gui-scripts]
+Furious = "Furious.__main__:main"
+
+[tool.setuptools]
+packages = { find = { include = ["Furious", "Furious.*"] } }
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "Furious.Version.__version__" }
+
+[tool.setuptools.package-data]
+Furious = ["Data/**"]
+
+[tool.setuptools.exclude-package-data]
+Furious = ["Data/*.md", "Data/**/*.md"]
+
+[tool.uv.extra-build-dependencies]
+Furious-GUI = ["PySide6-Essentials", "PySide6-Addons"]
+
+[tool.black]
+skip-string-normalization = true

@@ -1,0 +1,187 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors
+# Licensed under the GNU General Public License v3.0 or later.
+
+name: WFP hosted Windows driver-load probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wfp-hosted-driver-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hosted-windows-driver-probe:
+    # Deliberately refuse to run this privileged probe from any other ref.
+    if: github.ref == 'refs/heads/feat/auto-detect-tun-network'
+    name: Probe hosted Windows kernel-driver loading
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Inspect hosted runner capabilities
+        id: environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $report = Join-Path $env:RUNNER_TEMP 'wfp-hosted-runner-probe'
+          New-Item -ItemType Directory -Force -Path $report | Out-Null
+          Start-Transcript -Path (Join-Path $report 'environment.txt') -Force
+
+          Write-Host '=== OS ==='
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, OsArchitecture
+          Write-Host '=== Identity ==='
+          whoami.exe
+          Write-Host '=== Administrator ==='
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          Write-Host "IsAdministrator=$isAdmin"
+          "is_admin=$($isAdmin.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+          Write-Host '=== Secure Boot ==='
+          try { Write-Host "SecureBoot=$(Confirm-SecureBootUEFI -ErrorAction Stop)" }
+          catch { Write-Host "SecureBoot=Unavailable: $($_.Exception.Message)" }
+
+          Write-Host '=== Boot configuration (read-only) ==='
+          bcdedit.exe /enum '{current}'
+          if ($LASTEXITCODE -ne 0) { Write-Warning "bcdedit query exit code: $LASTEXITCODE" }
+
+          Write-Host '=== Device Guard / VBS ==='
+          try {
+            Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard |
+              Format-List *
+          } catch { Write-Host "DeviceGuard query unavailable: $($_.Exception.Message)" }
+
+          Stop-Transcript
+
+      - name: Restore pinned Windows SDK and WDK packages
+        run: nuget restore packages.config -PackagesDirectory packages
+
+      - name: Build WFP callout driver for Windows 10 x64
+        run: |
+          msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
+
+      - name: Sign driver with an ephemeral CI test certificate
+        id: signing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse |
+            Select-Object -First 1
+          if ($null -eq $driver) { throw 'FuriousWfpCallout.sys was not produced.' }
+
+          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $signTool = Get-ChildItem -LiteralPath $sdkRoot -Filter signtool.exe -Recurse |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $signTool) { throw "Windows SDK SignTool was not found below $sdkRoot" }
+
+          $report = Join-Path $env:RUNNER_TEMP 'wfp-hosted-runner-probe'
+          New-Item -ItemType Directory -Force -Path $report | Out-Null
+          $certificatePath = Join-Path $report 'FuriousWfpCallout-TestCertificate.cer'
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'FuriousWfpCallout-TestCertificate.pfx'
+          $passwordText = [Guid]::NewGuid().ToString('N')
+          $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+          $certificate = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Furious WFP Hosted Runner Probe' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -NotAfter (Get-Date).AddDays(2)
+
+          try {
+            Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
+            Export-Certificate -Cert $certificate -FilePath $certificatePath | Out-Null
+            & $signTool.FullName sign /v /fd SHA256 /f $pfxPath /p $passwordText $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "SignTool failed: $LASTEXITCODE" }
+            & certutil.exe -f -addstore Root $certificatePath
+            if ($LASTEXITCODE -ne 0) { throw "Root certificate import failed: $LASTEXITCODE" }
+            & certutil.exe -f -addstore TrustedPublisher $certificatePath
+            if ($LASTEXITCODE -ne 0) { throw "Publisher certificate import failed: $LASTEXITCODE" }
+            & $signTool.FullName verify /pa /v $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed: $LASTEXITCODE" }
+            $signature = Get-AuthenticodeSignature -FilePath $driver.FullName
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+              throw 'Signed driver does not validate against the ephemeral CI certificate.'
+            }
+            Copy-Item $driver.FullName (Join-Path $report 'FuriousWfpCallout.sys')
+            Write-Host "DriverSignature=Valid; Thumbprint=$($certificate.Thumbprint)"
+          }
+          finally {
+            Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Attempt real kernel driver service load (no boot-policy changes)
+        id: load
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $report = Join-Path $env:RUNNER_TEMP 'wfp-hosted-runner-probe'
+          $driver = Join-Path $report 'FuriousWfpCallout.sys'
+          $serviceName = 'FuriousWfpHostedProbe'
+          Start-Transcript -Path (Join-Path $report 'driver-load.txt') -Force
+
+          $boot = (bcdedit.exe /enum '{current}' 2>&1 | Out-String)
+          $testSigningEnabled = $boot -match '(?im)^\s*testsigning\s+Yes\s*$'
+          Write-Host "TestSigningEnabled=$testSigningEnabled"
+          "test_signing=$($testSigningEnabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+          $existing = sc.exe query $serviceName 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            sc.exe stop $serviceName
+            Start-Sleep -Seconds 2
+            sc.exe delete $serviceName
+          }
+
+          sc.exe create $serviceName type= kernel start= demand binPath= $driver
+          $createCode = $LASTEXITCODE
+          Write-Host "ServiceCreateExitCode=$createCode"
+          if ($createCode -eq 0) {
+            sc.exe start $serviceName
+            $startCode = $LASTEXITCODE
+            Write-Host "ServiceStartExitCode=$startCode"
+            sc.exe query $serviceName
+            if ($startCode -eq 0) {
+              "driver_load=loaded" >> $env:GITHUB_OUTPUT
+              sc.exe stop $serviceName
+              Start-Sleep -Seconds 2
+            } else {
+              "driver_load=blocked" >> $env:GITHUB_OUTPUT
+            }
+            sc.exe delete $serviceName
+          } else {
+            "driver_load=service-create-failed" >> $env:GITHUB_OUTPUT
+          }
+
+          Stop-Transcript
+
+      - name: Write probe summary
+        if: always()
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'wfp-hosted-runner-probe'
+          New-Item -ItemType Directory -Force -Path $report | Out-Null
+          @(
+            '# WFP hosted Windows driver-load probe'
+            ''
+            "- Ref: $env:GITHUB_REF"
+            "- Commit: $env:GITHUB_SHA"
+            "- Runner: $env:RUNNER_NAME"
+            '- This probe does not change BCD, Secure Boot, or reboot the runner.'
+            '- A successful Authenticode signature is not proof of kernel acceptance.'
+            '- Driver load is considered successful only if the SCM start operation succeeds.'
+            ''
+          ) | Set-Content (Join-Path $report 'README.txt')
+          Get-ChildItem $report | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Upload diagnostic logs and signed test driver
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wfp-hosted-windows-driver-probe
+          path: ${{ runner.temp }}/wfp-hosted-runner-probe/
+          if-no-files-found: warn
+          retention-days: 7

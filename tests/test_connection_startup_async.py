@@ -1,0 +1,1200 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors <loren.eteval@proton.me>
+#
+# This file is part of Furious.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Exercise event-driven connection startup with real Qt event delivery."""
+
+from __future__ import annotations
+
+from Furious.Interface import CoreRuntime, RuntimeExit, RuntimeState
+from Furious.Plugins import PreparedRuntime, CoreRuntimeStartup
+from Furious.Qt.Signals import singleShotWeakly
+from Furious.Service.ConnectionManager import (
+    ConnectionManager,
+    ConnectionStartStage,
+)
+from Furious.Service.DnsResolver import DnsResolutionOperation, DnsResolver
+
+from PySide6 import QtCore, QtNetwork
+
+from tests.support import application, processQtEvents, waitFor
+
+import importlib
+import unittest
+
+from unittest import TestCase, mock
+
+
+class _Configuration:
+    """Provide the endpoint values used by manager-only tests."""
+
+    def httpProxy(self):
+        """Return a deterministic local proxy endpoint."""
+        return '127.0.0.1:18080'
+
+    def socksProxy(self):
+        """Return a deterministic local SOCKS endpoint."""
+        return '127.0.0.1:18081'
+
+    def remoteAddress(self):
+        """Avoid DNS during mocked TUN tests."""
+        return '192.0.2.1'
+
+
+class _Runtime(CoreRuntime):
+    """Provide an observable in-process stand-in for a core runtime."""
+
+    def __init__(self, exitCallback=None):
+        """Initialize an idle runtime and lifecycle counters."""
+        super().__init__(exitCallback)
+
+        self.alive = False
+        self.startOptions = []
+        self.stopCount = 0
+        self.disposeCount = 0
+
+    @staticmethod
+    def name():
+        """Return the fixture runtime name."""
+        return 'Async Fixture'
+
+    @staticmethod
+    def version():
+        """Return a fixture version."""
+        return '1.0'
+
+    def start(self, _configuration=None, *_args, **kwargs):
+        """Become live and retain launch options."""
+        self.startOptions.append(dict(kwargs))
+        self.alive = True
+        self.setState(RuntimeState.Alive)
+
+        return True
+
+    def stop(self):
+        """Stop this exact runtime."""
+        self.stopCount += 1
+        self.alive = False
+        self.setState(RuntimeState.Exited)
+
+    def dispose(self):
+        """Record final resource disposal."""
+        self.disposeCount += 1
+        self._exitCallback = None
+
+    def isRunning(self):
+        """Return the controlled process-survival state."""
+        return self.alive
+
+    def fail(self, exitcode=61, *, report=True):
+        """Simulate an early child exit through the runtime event authority."""
+        self.alive = False
+        self.setState(RuntimeState.Failed)
+
+        if report:
+            self.publishExit(self.interpretExit(exitcode))
+
+
+class _Registry:
+    """Return prepared launches in deterministic order."""
+
+    def __init__(self, launches):
+        """Retain a launch queue."""
+        self.launches = list(launches)
+
+    def createCoreRuntime(self, *_args, **_kwargs):
+        """Return the next prepared runtime launch."""
+        launch = self.launches.pop(0)
+        launch.runtime.bindExitCallback(_kwargs.get('exitCallback'))
+
+        return launch
+
+
+class _ResolverFixture(QtCore.QObject):
+    """Complete one recursive-resolution state through a real Qt timer."""
+
+    def __init__(self):
+        """Initialize without a pending result."""
+        super().__init__()
+
+        self.resultMap = None
+
+    @staticmethod
+    def _newResultMap(domain):
+        """Return the minimum state required by the observer."""
+        return {
+            'domain': domain,
+            'depth': 0,
+            'error': False,
+            'reference': [],
+            'result': {},
+        }
+
+    def _beginResolve(self, resultMap):
+        """Schedule asynchronous completion."""
+        self.resultMap = resultMap
+        resultMap['depth'] = 1
+        singleShotWeakly(0, self, '_complete')
+
+    def _complete(self):
+        """Publish one deterministic address through shared state."""
+        self.resultMap['result']['192.0.2.10'] = True
+        self.resultMap['depth'] = 0
+
+
+class ConnectionStartupAsyncTest(TestCase):
+    """Verify readiness, cancellation, rollback, and compatibility."""
+
+    def setUp(self):
+        """Ensure a Qt application exists for real timer/socket delivery."""
+        self.app = application()
+        self.servers = []
+        self.managers = []
+
+    def tearDown(self):
+        """Release every exact manager and local listener."""
+        for manager in self.managers:
+            manager.cleanup()
+
+        for server in self.servers:
+            server.close()
+            server.deleteLater()
+
+        processQtEvents()
+
+    def _manager(self):
+        """Return a manager with host TUN disabled at the test boundary."""
+        manager = ConnectionManager()
+        manager._prepareTUNPolicy = mock.Mock(return_value=(False, False))
+        self.managers.append(manager)
+
+        return manager
+
+    def _server(self):
+        """Listen on one real loopback endpoint."""
+        server = QtNetwork.QTcpServer(self.app)
+        self.assertTrue(
+            server.listen(
+                QtNetwork.QHostAddress.SpecialAddress.LocalHost,
+                0,
+            )
+        )
+        self.servers.append(server)
+
+        return server
+
+    def _operation(self, manager, launch):
+        """Start one operation through an injected registry."""
+        registry = _Registry([launch])
+        patcher = mock.patch(
+            'Furious.Service.ConnectionManager.getPluginRegistry',
+            return_value=registry,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        return manager.startAsync(
+            _Configuration(),
+            'Global',
+            deepcopy=False,
+        )
+
+    def testWfpExcludedProcessIdsUseLiveProxyCorePidsOnly(self):
+        """Expose fresh core PIDs while excluding tun2socks and invalid IDs."""
+        manager = self._manager()
+
+        class _PidRuntime:
+            def __init__(self, processId, running=True):
+                self.processId = processId
+                self.running = running
+
+            def isRunning(self):
+                return self.running
+
+        coreA = _PidRuntime(4321)
+        coreB = _PidRuntime(4321)
+        invalid = _PidRuntime(0)
+        missing = object()
+        tunRuntime = object.__new__(
+            importlib.import_module('Furious.Core.Tun2socks').Tun2socks
+        )
+
+        manager._leases = [
+            mock.Mock(runtime=coreA),
+            mock.Mock(runtime=coreB),
+            mock.Mock(runtime=invalid),
+            mock.Mock(runtime=missing),
+            mock.Mock(runtime=tunRuntime),
+        ]
+
+        with mock.patch.object(
+            type(tunRuntime),
+            'processId',
+            new_callable=mock.PropertyMock,
+            return_value=9876,
+        ):
+            self.assertEqual(manager.wfpExcludedProcessIds, (4321,))
+
+        # The property is a live snapshot, not a cached PID list.
+        coreA.processId = None
+        coreB.processId = 7654
+        self.assertEqual(manager.wfpExcludedProcessIds, (7654,))
+
+    def testWfpBrokerWaitsForCommittedPolicyAndIgnoresStaleCompletion(self):
+        """Never start a redirect broker for a policy transaction not yet committed."""
+        manager = self._manager()
+        manager._wfpActiveConfiguration = _Configuration()
+
+        class _WfpController:
+            def __init__(self):
+                self.nextRequestId = 40
+                self.policyRequests = []
+
+            def clearEndpointConfig(self):
+                return 10
+
+            def stopBroker(self):
+                return 11
+
+            def setPolicy(self, rules, backend, generation):
+                self.nextRequestId += 1
+                self.policyRequests.append((self.nextRequestId, generation))
+                return self.nextRequestId
+
+        controller = _WfpController()
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.sys.platform',
+                'win32',
+            ),
+            mock.patch.object(
+                manager, '_getWfpIpcController', return_value=controller
+            ),
+            mock.patch.object(manager, '_startWfpBroker') as startBroker,
+        ):
+            rules = [{
+                'path': r'C:\Apps\proxy.exe',
+                'priority': 1,
+                'action': 'proxy',
+            }]
+            firstRequest = manager.setWfpApplicationPolicy(rules, backend=1)
+            self.assertFalse(manager._wfpPolicyReady)
+            startBroker.assert_not_called()
+
+            secondRequest = manager.setWfpApplicationPolicy(rules, backend=1)
+            self.assertNotEqual(firstRequest, secondRequest)
+            self.assertFalse(manager._wfpPolicyReady)
+            startBroker.assert_not_called()
+
+            manager._onWfpIpcRequestFinished(
+                firstRequest, 'set-policy', None, ''
+            )
+            startBroker.assert_not_called()
+
+            manager._onWfpIpcRequestFinished(
+                secondRequest, 'set-policy', None, ''
+            )
+            self.assertTrue(manager._wfpPolicyReady)
+            startBroker.assert_called_once_with(
+                manager._wfpActiveConfiguration,
+                resetExisting=False,
+            )
+
+    def testWfpPolicyFailurePreventsBrokerActivation(self):
+        """A failed native policy transaction must not activate a TCP endpoint."""
+        manager = self._manager()
+        manager._wfpActiveConfiguration = _Configuration()
+
+        class _WfpController:
+            def clearEndpointConfig(self):
+                return 10
+
+            def stopBroker(self):
+                return 11
+
+            def setPolicy(self, rules, backend, generation):
+                return 42
+
+        controller = _WfpController()
+        with (
+            mock.patch(
+                'Furious.Service.ConnectionManager.sys.platform',
+                'win32',
+            ),
+            mock.patch.object(
+                manager, '_getWfpIpcController', return_value=controller
+            ),
+            mock.patch.object(manager, '_startWfpBroker') as startBroker,
+        ):
+            requestId = manager.setWfpApplicationPolicy([{
+                'path': r'C:\Apps\proxy.exe',
+                'priority': 1,
+                'action': 'proxy',
+            }], backend=1)
+
+            manager._onWfpIpcRequestFinished(
+                requestId, 'set-policy', None, 'native transaction failed'
+            )
+
+            self.assertFalse(manager._wfpPolicyReady)
+            self.assertFalse(manager._wfpPolicyHasProxyRules)
+            self.assertEqual(manager._wfpPolicyPending, {})
+            startBroker.assert_not_called()
+
+    def testLocalEndpointReadinessCompletesEarlyAndKeepsQtResponsive(self):
+        """Commit as soon as a real listener accepts while timers still run."""
+        server = self._server()
+        endpoint = f'127.0.0.1:{server.serverPort()}'
+        runtime = _Runtime()
+        launch = PreparedRuntime(
+            runtime,
+            readiness=CoreRuntimeStartup(endpoint=endpoint, timeout=1500),
+        )
+        manager = self._manager()
+
+        operation = self._operation(manager, launch)
+
+        succeeded = []
+        timerEvents = []
+
+        operation.succeeded.connect(succeeded.append)
+        QtCore.QTimer.singleShot(0, lambda: timerEvents.append(True))
+
+        self.assertEqual(operation.stage, ConnectionStartStage.Pending)
+
+        self.assertTrue(waitFor(lambda: bool(succeeded), timeout=0.5))
+
+        self.assertEqual(timerEvents, [True])
+        self.assertEqual(manager.runtimes, [runtime])
+        self.assertEqual(runtime.startOptions[0], {})
+
+    def testStaleLocalEndpointCannotSatisfyDeadRuntimeReadiness(self):
+        """Do not accept another process's listener for a dead core attempt."""
+        server = self._server()
+        endpoint = f'127.0.0.1:{server.serverPort()}'
+
+        class _DeadRuntime(_Runtime):
+            def start(self, _configuration=None, *_args, **kwargs):
+                self.startOptions.append(dict(kwargs))
+                # Simulate a core that failed to bind while an unrelated process
+                # already owns the configured local proxy port.
+                return False
+
+        runtime = _DeadRuntime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(endpoint=endpoint, timeout=500),
+            ),
+        )
+        succeeded = []
+        failures = []
+        operation.succeeded.connect(succeeded.append)
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        self.assertEqual(succeeded, [])
+        self.assertIn('core process exited before readiness', failures[0][2])
+        self.assertEqual(manager.runtimes, [])
+        self.assertEqual(runtime.stopCount, 1)
+        self.assertEqual(runtime.disposeCount, 1)
+
+    def testReadinessTimeoutRollsBackTheExactRuntime(self):
+        """Fail a live process whose promised local endpoint never appears."""
+        server = self._server()
+        port = server.serverPort()
+        server.close()
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(
+                    endpoint=f'127.0.0.1:{port}',
+                    timeout=60,
+                    retryInterval=5,
+                ),
+            ),
+        )
+        failures = []
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        self.assertEqual(failures[0][1], 'Failed to start core')
+        self.assertEqual(failures[0][2], 'core readiness check timed out')
+        self.assertEqual(manager.lastStartError, 'Failed to start core')
+        self.assertEqual(manager.runtimes, [])
+        self.assertEqual(runtime.stopCount, 1)
+        self.assertEqual(runtime.disposeCount, 1)
+
+    def testObservedConfigurationExitPreservesSemanticFailure(self):
+        """Let the runtime's typed exit remain the sole terminal authority."""
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(
+                    endpoint='127.0.0.1:1',
+                    timeout=500,
+                    retryInterval=5,
+                ),
+            ),
+        )
+        failures = []
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        processQtEvents()
+        runtime.fail(CoreRuntime.ExitCode.ConfigurationError.value)
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        processQtEvents(5)
+        self.assertEqual(len(failures), 1)
+        self.assertIs(failures[0][0], operation)
+        self.assertEqual(failures[0][1], 'Invalid server configuration')
+        self.assertEqual(
+            failures[0][2],
+            'Async Fixture exited during waiting-primary with code 23; '
+            'reason=invalid-configuration',
+        )
+        self.assertEqual(manager.lastStartError, 'Invalid server configuration')
+        self.assertEqual(runtime.stopCount, 1)
+        self.assertEqual(runtime.disposeCount, 1)
+
+    def testQueuedConfigurationExitOutranksReadinessTimeout(self):
+        """Preserve code 23 when timeout delivery races a queued runtime event."""
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(
+                    endpoint='127.0.0.1:1',
+                    timeout=500,
+                    retryInterval=5,
+                ),
+            ),
+        )
+        failures = []
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        processQtEvents()
+        runtime.fail(CoreRuntime.ExitCode.ConfigurationError.value)
+        operation._readinessProbe._finishFailed('core readiness check timed out')
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        processQtEvents(5)
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0][1], 'Invalid server configuration')
+        self.assertEqual(
+            failures[0][2],
+            'Async Fixture exited during waiting-primary with code 23; '
+            'reason=invalid-configuration',
+        )
+        self.assertEqual(manager.lastStartError, 'Invalid server configuration')
+        self.assertEqual(runtime.stopCount, 1)
+        self.assertEqual(runtime.disposeCount, 1)
+
+    def testRuntimeExitDetailsReachConnectionFailure(self):
+        """Keep the child's captured stderr visible in startup diagnostics."""
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(
+                    endpoint='127.0.0.1:1',
+                    timeout=500,
+                ),
+            ),
+        )
+        failures = []
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        processQtEvents()
+        interpreted = runtime.interpretExit(
+            CoreRuntime.ExitCode.ConfigurationError.value
+        )
+        operation.runtimeExited(
+            runtime,
+            RuntimeExit(
+                interpreted.code,
+                interpreted.reason,
+                interpreted.message,
+                'tun2socks: failed to create Wintun adapter',
+            ),
+        )
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        self.assertIn('failed to create Wintun adapter', failures[0][2])
+
+    def testEarlyRuntimeExitFailsOnceAndIgnoresLateProbeEvents(self):
+        """Let process termination own the terminal result before timeout."""
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(
+                runtime,
+                readiness=CoreRuntimeStartup(
+                    endpoint='127.0.0.1:1',
+                    timeout=500,
+                ),
+            ),
+        )
+        failures = []
+        operation.failed.connect(lambda *_args: failures.append(_args))
+
+        processQtEvents()
+        singleShotWeakly(0, runtime, 'fail')
+
+        self.assertTrue(waitFor(lambda: bool(failures)))
+        processQtEvents(5)
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0][1], 'Core terminated unexpectedly')
+        self.assertEqual(
+            failures[0][2],
+            'Async Fixture exited during waiting-primary with code 61; '
+            'reason=unexpected',
+        )
+        self.assertEqual(runtime.stopCount, 1)
+        self.assertEqual(runtime.disposeCount, 1)
+
+    def testCancellationAndReplacementCannotCommitAStaleGeneration(self):
+        """Cancel the first generation before a second ready launch commits."""
+        server = self._server()
+        first = _Runtime()
+        second = _Runtime()
+        manager = self._manager()
+        registry = _Registry(
+            [
+                PreparedRuntime(
+                    first,
+                    readiness=CoreRuntimeStartup(
+                        endpoint='127.0.0.1:1',
+                        timeout=5000,
+                    ),
+                ),
+                PreparedRuntime(
+                    second,
+                    readiness=CoreRuntimeStartup(
+                        endpoint=f'127.0.0.1:{server.serverPort()}',
+                        timeout=500,
+                    ),
+                ),
+            ]
+        )
+
+        with mock.patch(
+            'Furious.Service.ConnectionManager.getPluginRegistry',
+            return_value=registry,
+        ):
+            firstOperation = manager.startAsync(
+                _Configuration(),
+                'Global',
+                deepcopy=False,
+            )
+            cancelled = []
+            firstOperation.cancelled.connect(cancelled.append)
+            processQtEvents()
+
+            secondOperation = manager.startAsync(
+                _Configuration(),
+                'Global',
+                deepcopy=False,
+            )
+            succeeded = []
+            secondOperation.succeeded.connect(succeeded.append)
+
+            self.assertTrue(waitFor(lambda: bool(succeeded)))
+
+        self.assertEqual(cancelled, [firstOperation])
+        self.assertEqual(first.stopCount, 1)
+        self.assertEqual(first.disposeCount, 1)
+        self.assertEqual(manager.runtimes, [second])
+
+    def testPreparedLaunchWithoutReadinessStartsAndCommitsDirectly(self):
+        """Start a runtime without inventing an endpoint-readiness policy."""
+        runtime = _Runtime()
+        manager = self._manager()
+        operation = self._operation(
+            manager,
+            PreparedRuntime(runtime),
+        )
+        succeeded = []
+        operation.succeeded.connect(succeeded.append)
+
+        self.assertTrue(waitFor(lambda: bool(succeeded)))
+        self.assertEqual(runtime.startOptions, [{}])
+        self.assertEqual(manager.runtimes, [runtime])
+
+    def testDnsCancellationAndTimeoutIgnoreAlreadyDestroyedReplies(self):
+        """Earlier recursive replies may be deleted before later requests stop."""
+
+        class PendingReply(QtNetwork.QNetworkReply):
+            def __init__(self):
+                super().__init__()
+                self.abortCount = 0
+
+            def abort(self):
+                self.abortCount += 1
+                self.setFinished(True)
+
+        for synchronous in (False, True):
+            with self.subTest(synchronous=synchronous):
+                resolver = mock.Mock()
+                resolver._newResultMap = DnsResolver._newResultMap
+                operation = DnsResolutionOperation(resolver, 'example.test')
+
+                completed = PendingReply()
+                pending = PendingReply()
+                operation._resultMap['reference'] = [completed, pending]
+                operation._resultMap['depth'] = 1
+
+                completed.deleteLater()
+                processQtEvents()
+
+                try:
+                    if synchronous:
+                        with self.assertLogs(
+                            'Furious.Service.DnsResolver', level='ERROR'
+                        ):
+                            DnsResolver.wait(operation._resultMap, timeout=0)
+                    else:
+                        operation.cancel()
+                        operation.cancel()
+
+                    self.assertEqual(pending.abortCount, 1)
+                finally:
+                    pending.deleteLater()
+                    operation.deleteLater()
+                    processQtEvents()
+
+    def testDnsResolutionOperationCompletesAndCancelsWithoutNestedWait(self):
+        """Observe recursive DNS state through timers and suppress stale cancel."""
+        resolver = _ResolverFixture()
+        operation = DnsResolutionOperation(
+            resolver,
+            'example.test',
+            timeout=200,
+        )
+        results = []
+        operation.finished.connect(
+            lambda error, addresses: results.append((error, addresses))
+        )
+        operation.start()
+
+        self.assertTrue(waitFor(lambda: bool(results)))
+        self.assertEqual(results, [(False, ['192.0.2.10'])])
+
+        cancelled = DnsResolutionOperation(
+            resolver,
+            'cancelled.test',
+            timeout=200,
+        )
+        staleResults = []
+        cancelled.finished.connect(
+            lambda error, addresses: staleResults.append((error, addresses))
+        )
+        cancelled.start()
+        cancelled.cancel()
+        processQtEvents(5)
+
+        self.assertEqual(staleResults, [])
+
+        operation.deleteLater()
+        cancelled.deleteLater()
+        resolver.deleteLater()
+
+    def testLinuxTunPreservesDeviceBeforeRuntimeOrderingWithoutNestedWait(self):
+        """Create and observe the Linux device before launching tun2socks."""
+        module = importlib.import_module('Furious.Service.ConnectionManager')
+        server = self._server()
+        primary = _Runtime()
+        tun = _Runtime()
+        tun.cleanup = None
+        events = []
+        deviceChecks = 0
+
+        def tunFactory(*_args, **kwargs):
+            tun.bindExitCallback(kwargs.get('exitCallback'))
+
+            return tun
+
+        originalTunStart = tun.start
+
+        def startTun(*args, **kwargs):
+            events.append('tun-start')
+
+            return originalTunStart(*args, **kwargs)
+
+        tun.start = startTun
+
+        def findDevice(_name):
+            nonlocal deviceChecks
+
+            deviceChecks += 1
+            events.append('find-device')
+
+            return deviceChecks >= 2
+
+        def executeScript(*_args, **_kwargs):
+            events.append('script')
+
+            return True
+
+        manager = ConnectionManager()
+        manager._prepareTUNPolicy = mock.Mock(return_value=(False, True))
+        self.managers.append(manager)
+
+        registry = _Registry(
+            [
+                PreparedRuntime(
+                    primary,
+                    readiness=CoreRuntimeStartup(
+                        endpoint=f'127.0.0.1:{server.serverPort()}',
+                        timeout=500,
+                    ),
+                )
+            ]
+        )
+        shortSurvival = CoreRuntimeStartup(timeout=20, retryInterval=5)
+
+        with (
+            mock.patch.object(module, 'PLATFORM', 'Linux'),
+            mock.patch.object(module, 'Tun2socks', side_effect=tunFactory),
+            mock.patch.object(
+                module,
+                'CoreRuntimeStartup',
+                return_value=shortSurvival,
+            ),
+            mock.patch.object(
+                module,
+                'getPluginRegistry',
+                return_value=registry,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'managedRoutes',
+                [],
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'getDefaultGateway',
+                return_value=[('192.0.2.254', 'eth0')],
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'LinuxFindTUNDevice',
+                side_effect=findDevice,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'LinuxGetIpRoute',
+                return_value='',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'LinuxExecutePrivilegedScript',
+                side_effect=executeScript,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'LinuxDeleteTUNDevice',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'deleteRelations',
+            ),
+            mock.patch.object(
+                module.SystemRuntime,
+                'flatpakID',
+                return_value='',
+            ),
+            mock.patch.object(
+                module.PySide6Legacy,
+                'eventLoopWait',
+                side_effect=AssertionError('nested event loop used'),
+            ),
+        ):
+            operation = manager.startAsync(
+                _Configuration(),
+                'Global',
+                deepcopy=False,
+            )
+
+            succeeded = []
+            operation.succeeded.connect(succeeded.append)
+
+            self.assertTrue(waitFor(lambda: bool(succeeded)))
+
+        self.assertEqual(
+            events[:4],
+            ['find-device', 'script', 'find-device', 'tun-start'],
+        )
+        self.assertEqual(manager.runtimes, [primary, tun])
+        self.assertEqual(tun.startOptions[0], {})
+
+    def testWindowsTunStartsRuntimeBeforeObservingAndMutatingDevice(self):
+        """Keep the Windows launch, device, then host-mutation sequence."""
+        module = importlib.import_module('Furious.Service.ConnectionManager')
+        server = self._server()
+        primary = _Runtime()
+        tun = _Runtime()
+        tun.cleanup = None
+        events = []
+
+        def tunFactory(*_args, **kwargs):
+            tun.bindExitCallback(kwargs.get('exitCallback'))
+
+            return tun
+
+        originalTunStart = tun.start
+
+        def startTun(*args, **kwargs):
+            events.append('tun-start')
+
+            return originalTunStart(*args, **kwargs)
+
+        tun.start = startTun
+
+        def findDevice(_name):
+            events.append('find-device')
+
+            return True
+
+        def addRelations():
+            events.append('add-relations')
+
+        manager = ConnectionManager()
+        manager._prepareTUNPolicy = mock.Mock(return_value=(False, True))
+        self.managers.append(manager)
+
+        registry = _Registry(
+            [
+                PreparedRuntime(
+                    primary,
+                    readiness=CoreRuntimeStartup(
+                        endpoint=f'127.0.0.1:{server.serverPort()}',
+                        timeout=500,
+                    ),
+                )
+            ]
+        )
+
+        with (
+            mock.patch.object(module, 'PLATFORM', 'Windows'),
+            mock.patch.object(module, 'Tun2socks', side_effect=tunFactory),
+            mock.patch.object(
+                module,
+                'getPluginRegistry',
+                return_value=registry,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'managedRoutes',
+                [],
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'delete',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'getDefaultGateway',
+                return_value=[('192.0.2.254', '192.0.2.10')],
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'WIN32IpconfigFindContent',
+                side_effect=findDevice,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'WIN32GetInterfaceAliasByIP',
+                return_value='Ethernet',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'WIN32SetInterfaceDNS',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'WIN32FlushDNSCache',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'setDeviceGateway',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'addRelations',
+                side_effect=addRelations,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'deleteRelations',
+            ),
+            mock.patch.object(
+                module.PySide6Legacy,
+                'eventLoopWait',
+                side_effect=AssertionError('nested event loop used'),
+            ),
+        ):
+            operation = manager.startAsync(
+                _Configuration(),
+                'Global',
+                deepcopy=False,
+            )
+
+            succeeded = []
+            operation.succeeded.connect(succeeded.append)
+
+            self.assertTrue(waitFor(lambda: bool(succeeded)))
+
+        self.assertEqual(
+            events[:3],
+            ['tun-start', 'find-device', 'add-relations'],
+        )
+        self.assertEqual(manager.runtimes, [primary, tun])
+
+    def testDarwinTunSurvivalPrecedesDnsAndRouteMutation(self):
+        """Observe tun2socks survival before applying macOS host networking."""
+        module = importlib.import_module('Furious.Service.ConnectionManager')
+        server = self._server()
+        primary = _Runtime()
+        tun = _Runtime()
+        tun.cleanup = None
+        events = []
+
+        def tunFactory(*_args, **kwargs):
+            tun.bindExitCallback(kwargs.get('exitCallback'))
+
+            return tun
+
+        originalTunStart = tun.start
+
+        def startTun(*args, **kwargs):
+            events.append('tun-start')
+
+            return originalTunStart(*args, **kwargs)
+
+        tun.start = startTun
+
+        def dnsServers():
+            events.append('read-dns')
+
+            return [('Wi-Fi', ['192.0.2.53'])]
+
+        manager = ConnectionManager()
+        manager._prepareTUNPolicy = mock.Mock(return_value=(False, True))
+        self.managers.append(manager)
+
+        registry = _Registry(
+            [
+                PreparedRuntime(
+                    primary,
+                    readiness=CoreRuntimeStartup(
+                        endpoint=f'127.0.0.1:{server.serverPort()}',
+                        timeout=500,
+                    ),
+                )
+            ]
+        )
+        shortSurvival = CoreRuntimeStartup(timeout=20, retryInterval=5)
+
+        with (
+            mock.patch.object(module, 'PLATFORM', 'Darwin'),
+            mock.patch.object(module, 'Tun2socks', side_effect=tunFactory),
+            mock.patch.object(
+                module,
+                'CoreRuntimeStartup',
+                return_value=shortSurvival,
+            ),
+            mock.patch.object(
+                module,
+                'getPluginRegistry',
+                return_value=registry,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'managedRoutes',
+                [],
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'getDefaultGateway',
+                return_value=['192.0.2.254'],
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'DarwinGetDNSServers',
+                side_effect=dnsServers,
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'DarwinSetDNSServers',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'setDeviceGateway',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'addRelations',
+            ),
+            mock.patch.object(
+                module.SystemRoutingTable,
+                'deleteRelations',
+            ),
+            mock.patch.object(
+                module.PySide6Legacy,
+                'eventLoopWait',
+                side_effect=AssertionError('nested event loop used'),
+            ),
+        ):
+            operation = manager.startAsync(
+                _Configuration(),
+                'Global',
+                deepcopy=False,
+            )
+
+            succeeded = []
+            operation.succeeded.connect(succeeded.append)
+
+            self.assertTrue(waitFor(lambda: bool(succeeded)))
+
+        self.assertEqual(events, ['tun-start', 'read-dns'])
+        self.assertEqual(manager.runtimes, [primary, tun])
+
+    def testRepeatedCancellationReleasesOperationTimersAndRuntimes(self):
+        """Keep repeated startup cancellation bounded and independently owned."""
+        manager = self._manager()
+
+        for _index in range(12):
+            runtime = _Runtime()
+            operation = self._operation(
+                manager,
+                PreparedRuntime(
+                    runtime,
+                    readiness=CoreRuntimeStartup(
+                        endpoint='127.0.0.1:1',
+                        timeout=5000,
+                    ),
+                ),
+            )
+            processQtEvents()
+            self.assertTrue(manager.cancelStart(operation))
+            processQtEvents()
+            self.assertEqual(runtime.stopCount, 1)
+            self.assertEqual(runtime.disposeCount, 1)
+            self.assertIsNone(manager._activeStartOperation)
+
+
+    def testWfpTcpStartupNegotiatesUdpAddressFamiliesFromActualListeners(self):
+        """Start UDP only on the families the TCP broker really opened."""
+        manager = self._manager()
+        originalController = manager._wfpIpcController
+        controller = mock.Mock()
+        manager._wfpIpcController = controller
+
+        backend = 7
+        generation = manager.wfpRuntimeSnapshot.generation
+        pending = (backend, generation, '127.0.0.1', 10808)
+        requestId = 501
+        udpRequestId = 502
+        manager._wfpPolicyReady = True
+        manager._wfpPolicyHasProxyRules = True
+        manager._wfpPolicyBackend = backend
+        manager._wfpUdpExpected = True
+        manager._wfpBrokerPending[requestId] = pending
+        manager._completeWfpBrokerStartup = mock.Mock()
+
+        result = mock.Mock(
+            broker_process_id=4321,
+            tcp_port_v4=41000,
+            tcp_port_v6=0,
+        )
+        controller.startUdpBroker.return_value = udpRequestId
+        try:
+            manager._onWfpIpcRequestFinished(
+                requestId, 'start-broker', result, None
+            )
+        finally:
+            manager._wfpIpcController = originalController
+
+        controller.startUdpBroker.assert_called_once_with(
+            '127.0.0.1', 10808, True, False
+        )
+        self.assertEqual(manager._wfpUdpBrokerPending[udpRequestId], pending)
+        self.assertEqual(
+            manager._wfpTcpBrokerEndpoint,
+            (backend, 4321, 41000, 0),
+        )
+        manager._completeWfpBrokerStartup.assert_called_once_with()
+
+    def testWfpStopCompletionDoesNotEraseNewBrokerStartup(self):
+        """A delayed stop callback must not erase replacement start requests."""
+        manager = self._manager()
+        backend = 9
+        generation = manager.wfpRuntimeSnapshot.generation
+        pending = (backend, generation, '127.0.0.1', 10808)
+        manager._wfpBrokerPending = {601: pending}
+        manager._wfpUdpBrokerPending = {602: pending}
+        manager._wfpUdpExpected = True
+        manager._wfpTcpBrokerEndpoint = (backend, 4321, 41000, 0)
+
+        manager._onWfpIpcRequestFinished(
+            600, 'stop-broker', None, None
+        )
+
+        self.assertEqual(manager._wfpBrokerPending, {601: pending})
+        self.assertEqual(manager._wfpUdpBrokerPending, {602: pending})
+        self.assertTrue(manager._wfpUdpExpected)
+        self.assertEqual(
+            manager._wfpTcpBrokerEndpoint,
+            (backend, 4321, 41000, 0),
+        )
+
+    def testStaleWfpBrokerFailureDoesNotClearReplacementRequests(self):
+        """Ignore failures whose request IDs no longer belong to this startup."""
+        manager = self._manager()
+        backend = 11
+        generation = manager.wfpRuntimeSnapshot.generation
+        pending = (backend, generation, '127.0.0.1', 10808)
+        manager._wfpBrokerPending = {701: pending}
+        manager._wfpUdpBrokerPending = {702: pending}
+        manager._wfpPolicyBackend = backend
+        manager._wfpUdpExpected = True
+
+        manager._onWfpIpcRequestFinished(
+            700, 'start-broker', None, RuntimeError('stale failure')
+        )
+
+        self.assertEqual(manager._wfpBrokerPending, {701: pending})
+        self.assertEqual(manager._wfpUdpBrokerPending, {702: pending})
+        self.assertTrue(manager._wfpUdpExpected)
+
+
+if __name__ == '__main__':
+    application()
+    unittest.main()

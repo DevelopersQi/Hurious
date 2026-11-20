@@ -1,0 +1,386 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors <loren.eteval@proton.me>
+#
+# This file is part of Furious.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Apply persistent application preferences independently from their UI."""
+
+from __future__ import annotations
+
+from Furious.Frozenlib import *
+from Furious.Qt.DynamicTranslate import SUPPORTED_LANGUAGE
+from Furious.Qt.QtWidgets import showMBoxNewChangesNextTime
+from Furious.Service.TrafficStatsManager import (
+    CLEAR_TRAFFIC_USAGE_ON_RECONNECT_SETTING,
+    METRICS_COLLECTION_SETTING,
+)
+from Furious.Service.EndpointInfoService import PROXY_ENDPOINT_INFO_SETTING
+
+from PySide6 import QtCore
+
+__all__ = [
+    'APPLICATION_THEME_SETTING',
+    'LOG_AUTO_SCROLL_DOWN_SETTING',
+    'LOG_AUTO_CLEAR_SETTING',
+    'PROXY_ENDPOINT_INFO_SETTING',
+    'SYSTEM_PROXY_MODE_OPTIONS',
+    'TUN_BACKEND_OPTIONS',
+    'SettingsController',
+]
+
+APPLICATION_THEME_SETTING = 'ApplicationTheme'
+# Migrate legacy settings
+_LEGACY_DARK_MODE_SETTING = 'DarkMode'
+LOG_AUTO_SCROLL_DOWN_SETTING = 'LogAutoScrollDown'
+LOG_AUTO_CLEAR_SETTING = 'LogAutoClear'
+TUN_BACKEND_OPTIONS = (
+    ('Automatic (Recommended)', 'auto'),
+    ('Tun2socks', 'tun2socks'),
+    ('Xray-core Native TUN', 'xray'),
+    ('Hysteria 2 Native TUN', 'hysteria2'),
+)
+SYSTEM_PROXY_MODE_OPTIONS = (
+    ('Automatically Configure System Proxy', AppBuiltinProxyMode.Auto.value),
+    ('Do Not Change System Proxy', AppBuiltinProxyMode.NoChanges.value),
+)
+
+registerAppSettings(
+    'VPNMode',
+    isBinary=True,
+    default=AppBinarySettings.OFF,
+)
+registerAppSettings(
+    'TUNBackend',
+    validRange=[value for _label, value in TUN_BACKEND_OPTIONS],
+    default='auto',
+)
+registerAppSettings(
+    APPLICATION_THEME_SETTING,
+    validRange=[theme.value for theme in ApplicationTheme],
+    default=ApplicationTheme.System.value,
+)
+registerAppSettings(_LEGACY_DARK_MODE_SETTING, isBinary=True)
+registerAppSettings('UseMonochromeTrayIcon', isBinary=True)
+
+if PLATFORM == 'Darwin':
+    registerAppSettings('HideDockIcon', isBinary=True)
+
+registerAppSettings('StartupOnBoot', isBinary=True, default=AppBinarySettings.ON_)
+registerAppSettings('PowerSaveMode', isBinary=True, default=AppBinarySettings.ON_)
+registerAppSettings(
+    'ForceToLocalhostWhenSettingLocalProxy',
+    isBinary=True,
+    default=AppBinarySettings.OFF,
+)
+registerAppSettings(
+    'AutoUpdateAssetFiles', isBinary=True, default=AppBinarySettings.ON_
+)
+registerAppSettings(
+    'ShowProgressBarWhenConnecting', isBinary=True, default=AppBinarySettings.ON_
+)
+registerAppSettings('ShowTabAndSpacesInEditor', isBinary=True)
+registerAppSettings(
+    LOG_AUTO_SCROLL_DOWN_SETTING,
+    isBinary=True,
+    default=AppBinarySettings.ON_,
+)
+registerAppSettings(
+    LOG_AUTO_CLEAR_SETTING,
+    isBinary=True,
+    default=AppBinarySettings.ON_,
+)
+registerAppSettings(
+    'SystemProxyMode',
+    validRange=list(mode.value for mode in AppBuiltinProxyMode),
+)
+
+
+def _legacyDarkModeValue(preference: ApplicationTheme) -> str:
+    """Return the closest legacy binary representation of a preference."""
+    if preference == ApplicationTheme.Dark:
+        return AppBinarySettings.ON_
+
+    # Legacy releases represented both automatic and forced light as "not dark".
+    return AppBinarySettings.OFF
+
+
+def _synchronizeLegacyDarkModeSetting():
+    """Reconcile and retain the legacy dark-mode compatibility setting."""
+    settings = QtCore.QSettings()
+
+    hasLegacyValue, hasThemeValue = (
+        settings.contains(_LEGACY_DARK_MODE_SETTING),
+        settings.contains(APPLICATION_THEME_SETTING),
+    )
+
+    if hasLegacyValue:
+        legacyValue = settings.value(_LEGACY_DARK_MODE_SETTING)
+
+        legacyDarkEnabled = str(legacyValue).strip().lower() == AppBinarySettings.ON_
+
+        if not hasThemeValue:
+            preference = (
+                ApplicationTheme.Dark if legacyDarkEnabled else ApplicationTheme.System
+            )
+
+            AppSettings.set(APPLICATION_THEME_SETTING, preference.value)
+        else:
+            preference = ApplicationTheme(AppSettings.get(APPLICATION_THEME_SETTING))
+
+            # A mismatch means an older release changed its binary setting.
+            if legacyDarkEnabled and preference != ApplicationTheme.Dark:
+                preference = ApplicationTheme.Dark
+
+                AppSettings.set(APPLICATION_THEME_SETTING, preference.value)
+            elif not legacyDarkEnabled and preference == ApplicationTheme.Dark:
+                preference = ApplicationTheme.System
+
+                AppSettings.set(APPLICATION_THEME_SETTING, preference.value)
+    else:
+        preference = ApplicationTheme(AppSettings.get(APPLICATION_THEME_SETTING))
+
+    AppSettings.set(
+        _LEGACY_DARK_MODE_SETTING,
+        _legacyDarkModeValue(preference),
+    )
+
+
+class SettingsController(QtCore.QObject):
+    """Apply application settings independently from their presentation."""
+
+    tunModeChanged = QtCore.Signal(bool)
+    tunBackendChanged = QtCore.Signal(str)
+    systemProxyModeChanged = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        """Synchronize theme persistence after Qt application metadata is ready."""
+        super().__init__(parent)
+
+        _synchronizeLegacyDarkModeSetting()
+
+    @staticmethod
+    def _setBinary(settingName: str, enabled: bool):
+        """Persist one registered binary setting."""
+        if enabled:
+            AppSettings.turnON_(settingName)
+        else:
+            AppSettings.turnOFF(settingName)
+
+    @staticmethod
+    def tunModeAvailable() -> bool:
+        """Return whether this process can enable application-managed TUN."""
+        if PLATFORM == 'Linux':
+            return not SystemRuntime.flatpakID()
+
+        # On desktop platforms, let the TUN switch request elevation when
+        # needed instead of exposing a separate administrator-restart action.
+        if PLATFORM in ('Windows', 'Darwin'):
+            return True
+
+        return SystemRuntime.isAdmin()
+
+    def setTUNBackend(self, backend: str):
+        """Persist the preferred TUN implementation for the next connection."""
+        validBackends = tuple(value for _label, value in TUN_BACKEND_OPTIONS)
+        backend = str(backend or '').strip().casefold()
+
+        if backend not in validBackends or AppSettings.get('TUNBackend') == backend:
+            return
+
+        AppSettings.set('TUNBackend', backend)
+        self.tunBackendChanged.emit(backend)
+        showMBoxNewChangesNextTime()
+
+    def setTUNMode(self, enabled: bool):
+        """Persist the global TUN mode and notify active workflows."""
+        enabled = bool(enabled)
+
+        # Elevation is required to enable TUN, but clearing a stale persisted
+        # preference must remain possible from an unelevated launch. Otherwise
+        # the UI can show TUN as enabled with no way for the user to turn it off.
+        if enabled and PLATFORM != 'Linux':
+            assert SystemRuntime.isAdmin()
+
+        if AppSettings.isStateON_('VPNMode') == enabled:
+            return
+
+        self._setBinary('VPNMode', enabled)
+        self.tunModeChanged.emit(enabled)
+
+        showMBoxNewChangesNextTime()
+
+    @staticmethod
+    def setApplicationTheme(theme: ApplicationTheme | str):
+        """Persist and immediately apply one application theme preference."""
+        try:
+            preference = ApplicationTheme(theme)
+        except (TypeError, ValueError):
+            return
+
+        AppSettings.set(APPLICATION_THEME_SETTING, preference.value)
+        AppSettings.set(
+            _LEGACY_DARK_MODE_SETTING,
+            _legacyDarkModeValue(preference),
+        )
+
+        applyThemePreference = getattr(APP(), 'applyThemePreference', None)
+
+        if callable(applyThemePreference):
+            applyThemePreference()
+
+    @staticmethod
+    def setLanguage(language: str):
+        """Persist a supported UI language and refresh translated objects."""
+        if language not in SUPPORTED_LANGUAGE:
+            return
+
+        if AppSettings.get('Language') != language:
+            AppSettings.set('Language', language)
+
+            Mixins.QTranslatable.retranslateAll()
+
+    @classmethod
+    def setMonochromeTrayIcon(cls, enabled: bool):
+        """Persist and immediately refresh the tray-icon presentation."""
+        cls._setBinary('UseMonochromeTrayIcon', enabled)
+
+        try:
+            if enabled:
+                AppSystemTray().setMonochromeIcon()
+            elif AppConnectionController().isConnected():
+                AppSystemTray().setConnectedIcon()
+            else:
+                AppSystemTray().setDisconnectedIcon()
+        except (AttributeError, RuntimeError):
+            pass
+
+    @classmethod
+    def setDockIconHidden(cls, enabled: bool):
+        """Apply the macOS dock-icon visibility preference."""
+        if enabled:
+            APP().installDockIconVisibilityFeature()
+        else:
+            APP().installDockIconVisibilityFeature(remove=True)
+
+        cls._setBinary('HideDockIcon', enabled)
+
+    @classmethod
+    def setStartupOnBoot(cls, enabled: bool) -> bool:
+        """Persist startup preference only after host registration succeeds."""
+        if enabled:
+            success = StartupOnBoot.on_()
+        else:
+            success = StartupOnBoot.off()
+
+        if not success:
+            return False
+
+        cls._setBinary('StartupOnBoot', enabled)
+
+        return True
+
+    @classmethod
+    def setPowerSaveMode(cls, enabled: bool):
+        """Persist power-saving behavior for the next connection."""
+        cls._setBinary('PowerSaveMode', enabled)
+
+        showMBoxNewChangesNextTime()
+
+    @classmethod
+    def setForceLocalProxy(cls, enabled: bool):
+        """Persist local system-proxy address normalization."""
+        cls._setBinary('ForceToLocalhostWhenSettingLocalProxy', enabled)
+
+        showMBoxNewChangesNextTime()
+
+    def setSystemProxyMode(self, mode: str):
+        """Persist how Furious manages the operating-system proxy."""
+        validModes = tuple(item.value for item in AppBuiltinProxyMode)
+
+        if mode not in validModes or AppSettings.get('SystemProxyMode') == mode:
+            return
+
+        AppSettings.set('SystemProxyMode', mode)
+
+        self.systemProxyModeChanged.emit(mode)
+
+    @classmethod
+    def setAutoUpdateAssets(cls, enabled: bool):
+        """Persist automatic core-asset updates."""
+        cls._setBinary('AutoUpdateAssetFiles', enabled)
+
+    @classmethod
+    def setConnectionProgressVisible(cls, enabled: bool):
+        """Persist connection-progress visibility."""
+        cls._setBinary('ShowProgressBarWhenConnecting', enabled)
+
+    @classmethod
+    def setLogAutoScrollDown(cls, enabled: bool):
+        """Persist whether the log viewer may automatically follow its tail."""
+        cls._setBinary(LOG_AUTO_SCROLL_DOWN_SETTING, enabled)
+
+    @classmethod
+    def setLogAutoClear(cls, enabled: bool, manager=None):
+        """Persist and immediately apply Core-triggered log clearing."""
+        cls._setBinary(LOG_AUTO_CLEAR_SETTING, enabled)
+
+        if manager is None:
+            try:
+                manager = AppLogManager()
+            except (AttributeError, RuntimeError):
+                return
+
+        apply = getattr(manager, 'setAutoClearEnabled', None)
+
+        if callable(apply):
+            apply(enabled)
+
+    @classmethod
+    def setClearTrafficUsageOnReconnect(cls, enabled: bool):
+        """Persist whether reconnecting starts a fresh usage session."""
+        cls._setBinary(CLEAR_TRAFFIC_USAGE_ON_RECONNECT_SETTING, enabled)
+
+    @classmethod
+    def setMetricsCollectionEnabled(cls, enabled: bool):
+        """Persist and immediately apply network metrics collection."""
+        cls._setBinary(METRICS_COLLECTION_SETTING, enabled)
+
+        try:
+            AppTrafficStatsManager().setCollectionEnabled(enabled)
+        except (AttributeError, RuntimeError):
+            pass
+
+    @classmethod
+    def setProxyEndpointInfoEnabled(cls, enabled: bool):
+        """Persist and immediately apply privacy-sensitive endpoint inspection."""
+        cls._setBinary(PROXY_ENDPOINT_INFO_SETTING, enabled)
+
+        try:
+            AppEndpointInfoService().setEnabled(enabled)
+        except (AttributeError, RuntimeError):
+            pass
+
+    @classmethod
+    def setEditorWhitespaceVisible(cls, enabled: bool):
+        """Apply and persist editor whitespace visibility."""
+        cls._setBinary('ShowTabAndSpacesInEditor', enabled)
+
+        try:
+            if enabled:
+                AppMainWindow().showTabAndSpaces()
+            else:
+                AppMainWindow().hideTabAndSpaces()
+        except (AttributeError, RuntimeError):
+            pass

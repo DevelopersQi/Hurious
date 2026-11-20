@@ -1,0 +1,1452 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors <loren.eteval@proton.me>
+#
+# This file is part of Furious.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+from __future__ import annotations
+
+from Furious.Frozenlib import *
+
+import os
+import re
+import sys
+import uuid
+import glob
+import shutil
+import logging
+import tarfile
+import pathlib
+import argparse
+import hashlib
+import io
+import zipfile
+import datetime
+import subprocess
+import urllib.request
+
+from typing import AnyStr
+from xml.sax.saxutils import escape as xml_escape
+
+logging.basicConfig(
+    format='[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s',
+    level=logging.INFO,
+)
+logging.raiseExceptions = False
+
+logger = logging.getLogger('Deploy')
+
+# Exit status
+EXIT_SUCCESS = 0
+EXIT_FAILURE = 1
+
+USER_HOME = pathlib.Path.home()
+DEPLOY_DIR_NAME = f'{APPLICATION_NAME}-Deploy'
+
+HYSTERIA_DATA_DIR = DATA_DIR / 'hysteria'
+WINDOWS_7_COMPATIBILITY_DLL_NAME = 'api-ms-win-core-path-l1-1-0.dll'
+WINTUN_VERSION = '0.14.1'
+WINTUN_SHA256 = '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51'
+WINTUN_URL = f'https://www.wintun.net/builds/wintun-{WINTUN_VERSION}.zip'
+WINTUN_BUILD_ASSET_DIR = ROOT_DIR / '.build-assets' / 'wintun'
+WINTUN_ARCHITECTURES = {
+    'amd64': 'amd64',
+    'x86_64': 'amd64',
+    'x86': 'x86',
+    'i386': 'x86',
+    'i686': 'x86',
+    'arm64': 'arm64',
+    'aarch64': 'arm64',
+}
+
+NUITKA_BINARY_VERSION_OPTION = (
+    f'--company-name={APPLICATION_NAME} '
+    f'--product-name={APPLICATION_NAME} '
+    f'--file-version={APPLICATION_VERSION} '
+    f'--product-version={APPLICATION_VERSION} '
+)
+
+NUITKA_PACKAGE_DATA_OPTIONS = (
+    f'--include-package-data=Furious:Data/** '
+    f'--noinclude-data-files=Furious/Data/*.md '
+    f'--noinclude-data-files=Furious/Data/**/*.md '
+)
+
+PLATFORM_MACHINE_LOWER = PLATFORM_MACHINE.casefold()
+
+if PLATFORM == 'Windows':
+    windowsArchitectures = {
+        'amd64': ('amd64', 'x64'),
+        'x86_64': ('amd64', 'x64'),
+        'arm64': ('arm64', 'arm64'),
+        'aarch64': ('arm64', 'arm64'),
+    }
+
+    try:
+        WINDOWS_ARTIFACT_ARCHITECTURE, WINDOWS_WIX_ARCHITECTURE = windowsArchitectures[
+            PLATFORM_MACHINE_LOWER
+        ]
+    except KeyError:
+        raise RuntimeError(f'unsupported Windows architecture: {PLATFORM_MACHINE}')
+
+if PLATFORM == 'Windows':
+    NUITKA_BINARY_VERSION_OPTION += f'--file-description=\"{APPLICATION_DESCRIPTION}\" '
+
+if PLATFORM == 'Windows' or PLATFORM == 'Darwin':
+    NUITKA_BINARY_VERSION_OPTION += f'--copyright=\"Copyright (C) 2024–present  {APPLICATION_AUTHOR_NAME} & contributors <{APPLICATION_AUTHOR_EMAIL}>\" '
+
+if PLATFORM == 'Windows':
+    NUITKA_BUILD = (
+        f'python -m nuitka '
+        f'--standalone --plugin-enable=pyside6 '
+        f'--disable-console '
+        f'--assume-yes-for-downloads '
+        f'{NUITKA_PACKAGE_DATA_OPTIONS}'
+        f'--nofollow-import-to=numpy '
+        f'{NUITKA_BINARY_VERSION_OPTION}'
+        f'--windows-icon-from-ico=\"Icons/png/rocket-takeoff-window.png\" '
+        f'--force-stdout-spec=^%TEMP^%/_Furious_Enable_Stdout '
+        f'--force-stderr-spec=^%TEMP^%/_Furious_Enable_Stderr '
+        f'Furious '
+        f'--output-dir=\"{ROOT_DIR / DEPLOY_DIR_NAME}\"'
+    )
+elif PLATFORM == 'Darwin':
+    NUITKA_BUILD = (
+        f'python -m nuitka '
+        f'--include-module=objc '
+        f'--include-module=AppKit '
+        f'--include-module=Cocoa '
+        f'--standalone --plugin-enable=pyside6 '
+        f'--disable-console '
+        f'--assume-yes-for-downloads '
+        f'{NUITKA_PACKAGE_DATA_OPTIONS}'
+        f'--nofollow-import-to=numpy '
+        f'{NUITKA_BINARY_VERSION_OPTION}'
+        f'--macos-create-app-bundle '
+        f'--macos-app-icon=\"Icons/png/rocket-takeoff-window.png\" '
+        f'--macos-app-name=\"Furious\" '
+        f'Furious-GUI.py '
+        f'--output-dir=\"{ROOT_DIR / DEPLOY_DIR_NAME}\"'
+    )
+elif PLATFORM == 'Linux':
+    NUITKA_BUILD = (
+        f'python -m nuitka '
+        f'--standalone --plugin-enable=pyside6 '
+        f'--disable-console '
+        f'--assume-yes-for-downloads '
+        f'{NUITKA_PACKAGE_DATA_OPTIONS}'
+        f'--nofollow-import-to=numpy '
+        # The Essentials-only Linux build does not ship QtPdf, and Furious does
+        # not use the optional TIFF/WebP codecs or the embedded EGLFS backend.
+        # Excluding them at collection time prevents unusable plugins from
+        # acquiring host-specific dependencies in the portable artifacts.
+        f'--noinclude-qt-plugins=egldeviceintegrations '
+        f'--noinclude-dlls=*/libqeglfs*.so '
+        f'--noinclude-dlls=*/libqpdf.so '
+        f'--noinclude-dlls=*/libqtiff.so '
+        f'--noinclude-dlls=*/libqwebp.so '
+        f'{NUITKA_BINARY_VERSION_OPTION}'
+        f'Furious '
+        f'--output-dir=\"{ROOT_DIR / DEPLOY_DIR_NAME}\"'
+    )
+else:
+    # Deploy: Not implemented
+    NUITKA_BUILD = ''
+
+if PLATFORM == 'Windows':
+    if PLATFORM_RELEASE.endswith('Server'):
+        # Windows server. Fixed to windows10
+        winVerCompatible = f'{PLATFORM.casefold()}10'
+    else:
+        winVerCompatible = f'{PLATFORM.casefold()}{PLATFORM_RELEASE}'
+
+    if os.environ.get('WIN_VER_COMPATIBLE', ''):
+        winVerCompatible = os.environ['WIN_VER_COMPATIBLE']
+
+    ARTIFACT_NAME = (
+        f'{APPLICATION_NAME}-{APPLICATION_VERSION}-'
+        f'{winVerCompatible}-{WINDOWS_ARTIFACT_ARCHITECTURE}'
+    )
+
+    WIN_UNZIPPED = ARTIFACT_NAME
+elif PLATFORM == 'Darwin':
+    value = versionToValue(PYSIDE6_VERSION)
+
+    # https://doc.qt.io/qt-6/supported-platforms.html
+    if value <= versionToValue('6.4.3'):
+        macVerCompatible = 'macOS-10.9'
+    elif value <= versionToValue('6.7.3'):
+        macVerCompatible = 'macos-11.0'
+    else:
+        macVerCompatible = 'macOS-12.0'
+
+    ARTIFACT_NAME = (
+        f'{APPLICATION_NAME}-{APPLICATION_VERSION}-'
+        f'{macVerCompatible}-{PLATFORM_MACHINE_LOWER}'
+    )
+
+    MAC_APP_DIR = ROOT_DIR / 'app'
+    MAC_DMG_FILENAME = f'{ARTIFACT_NAME}.dmg'
+    MAC_CREATE_DMG_CMD = (
+        f'create-dmg '
+        f'--volname \"Furious\" '
+        f'--volicon \"Icons/png/rocket-takeoff-window.png\" '
+        f'--window-pos 200 120 '
+        f'--window-size 600 300 '
+        f'--icon-size 100 '
+        f'--icon \"Furious-GUI.app\" 175 120 '
+        f'--hide-extension \"Furious-GUI.app\" '
+        f'--app-drop-link 425 120 '
+        f'\"{ROOT_DIR / MAC_DMG_FILENAME}\" '
+        f'\"{MAC_APP_DIR}\"'
+    )
+elif PLATFORM == 'Linux':
+    LINUX_APP_DIR = ROOT_DIR / 'AppDir'
+    LINUX_ICON_FILE = 'rocket-takeoff-window-512x512.png'
+    LINUX_DESKTOP_FILE = f'{APPLICATION_NAME}.desktop'
+
+    ARTIFACT_NAME = (
+        f'{APPLICATION_NAME}-{APPLICATION_VERSION}-linux-{PLATFORM_MACHINE_LOWER}'
+    )
+
+    LINUX_APPIMAGE_FILENAME = f'{ARTIFACT_NAME}.AppImage'
+    LINUX_APPIMAGE_BUILDER = os.environ.get(
+        'LINUX_APPIMAGE_BUILDER', 'appimagetool'
+    ).casefold()
+
+    if LINUX_APPIMAGE_BUILDER == 'linuxdeploy':
+        LINUX_CREATE_APPIMAGE_CMD = [
+            f'linuxdeploy-{PLATFORM_MACHINE}.AppImage',
+            '--appdir',
+            LINUX_APP_DIR,
+            '-d',
+            LINUX_APP_DIR / LINUX_DESKTOP_FILE,
+            '-i',
+            LINUX_APP_DIR / LINUX_ICON_FILE,
+            '--plugin',
+            'qt',
+            '--output',
+            'appimage',
+        ]
+    elif LINUX_APPIMAGE_BUILDER == 'appimagetool':
+        LINUX_CREATE_APPIMAGE_CMD = [
+            f'appimagetool-{PLATFORM_MACHINE}.AppImage',
+            LINUX_APP_DIR,
+            ROOT_DIR / LINUX_APPIMAGE_FILENAME,
+        ]
+    else:
+        raise RuntimeError(
+            f'unsupported Linux AppImage builder: {LINUX_APPIMAGE_BUILDER!r}'
+        )
+
+    LINUX_DEBIAN_DIR = ROOT_DIR / 'debian'
+    LINUX_DEB_FILENAME = f'{ARTIFACT_NAME}.deb'
+
+    LINUX_FLATPAK_DIR = ROOT_DIR / 'flatpak'
+    LINUX_FLATPAK_FILENAME = f'{ARTIFACT_NAME}.flatpak'
+
+    LINUX_RPM_DIR = ROOT_DIR / 'rpmbuild'
+    LINUX_RPM_FILENAME = f'{ARTIFACT_NAME}.rpm'
+else:
+    # Deploy: Not implemented
+    ARTIFACT_NAME = ''
+
+
+def downloadFromURL(url, filepath):
+    try:
+        import requests
+    except ImportError:
+        raise ModuleNotFoundError('missing requests module')
+
+    # Send an HTTP GET request to the URL
+    response = requests.get(url)
+
+    try:
+        response.raise_for_status()  # Check if the request was successful
+
+        # Open the save_path in write-binary mode and write the content of the response
+        with open(filepath, 'wb') as file:
+            file.write(response.content)
+    except Exception:
+        # Any non-exit exceptions
+
+        return response.status_code, False
+    else:
+        return response.status_code, True
+
+
+def downloadXrayAssets(url, filepath):
+    # Make sure the save directory exists
+    if not os.path.exists(XRAY_ASSET_DIR):
+        os.makedirs(XRAY_ASSET_DIR)
+
+    code, success = downloadFromURL(url, filepath)
+
+    if success:
+        logger.info(f'xray asset downloaded successfully and saved to {filepath}')
+    else:
+        logger.error(f'failed to download xray asset from {url}. Status code: {code}')
+
+    return success
+
+
+def downloadHy1Asset():
+    def writeHy1Rules(response, pattern_, action_, file_):
+        count_ = 0
+
+        for domain in response:
+            m = re.search(pattern_, domain.decode('utf-8').strip()).group()
+
+            if m != 'payload':
+                count_ += 1
+
+                file_.write(f'{action_} domain-suffix {m}\n')
+
+        return count_
+
+    try:
+        urllib.request.urlretrieve(
+            'https://github.com/Loyalsoldier/geoip/releases/latest/download//Country.mmdb',
+            HYSTERIA_DATA_DIR / 'country.mmdb',
+        )
+
+        today = datetime.date.today().strftime('%B %d, %Y')
+
+        pattern = re.compile(r'([a-z]|[0-9]|[A-Z])(.*[a-z]|[A-Z])')
+
+        with open(
+            HYSTERIA_DATA_DIR / 'bypass-mainland-China.acl',
+            'w',
+            encoding='utf-8',
+        ) as file:
+            file.write(
+                f'# Author:github.com/A1-hub\n'
+                f'# Author:github.com/{APPLICATION_REPO_OWNER_NAME}\n'
+                f'# hysteria acl rules\n'
+                f'# Generated on {today}\n\n'
+            )
+
+            for action, url in zip(
+                [
+                    'block',
+                    'direct',
+                    'proxy',
+                ],
+                [
+                    'https://github.com/Loyalsoldier/clash-rules/releases/latest/download/reject.txt',
+                    'https://github.com/Loyalsoldier/clash-rules/releases/latest/download/direct.txt',
+                    'https://github.com/Loyalsoldier/clash-rules/releases/latest/download/proxy.txt',
+                ],
+            ):
+                count = writeHy1Rules(
+                    urllib.request.urlopen(url), pattern, action, file
+                )
+
+                logger.debug(f'genereated {count} {action} rules')
+
+            file.write('direct country cn\nproxy all\n')
+    except Exception as ex:
+        # Any non-exit exceptions
+
+        logger.error(f'download hy1 asset failed. {ex}')
+
+        return False
+    else:
+        logger.info(f'download hy1 asset success')
+
+        return True
+
+
+def downloadWintunAsset():
+    """Download the official, checksum-pinned Wintun runtime for this Windows build."""
+    if PLATFORM != 'Windows':
+        return True
+
+    architecture = WINTUN_ARCHITECTURES.get(PLATFORM_MACHINE_LOWER)
+
+    if not architecture:
+        logger.error(
+            f'Wintun does not provide a supported DLL for {PLATFORM_MACHINE_LOWER}'
+        )
+        return False
+
+    try:
+        with urllib.request.urlopen(WINTUN_URL, timeout=60) as response:
+            archiveData = response.read()
+
+        digest = hashlib.sha256(archiveData).hexdigest()
+
+        if digest != WINTUN_SHA256:
+            raise ValueError(
+                f'Wintun archive SHA-256 mismatch: expected {WINTUN_SHA256}, '
+                f'got {digest}'
+            )
+
+        dllMember = f'wintun/bin/{architecture}/wintun.dll'
+        licenseMember = 'wintun/LICENSE.txt'
+
+        with zipfile.ZipFile(io.BytesIO(archiveData)) as archive:
+            names = set(archive.namelist())
+
+            for member in (dllMember, licenseMember):
+                if member not in names:
+                    raise FileNotFoundError(
+                        f'Wintun archive is missing required file: {member}'
+                    )
+
+            dllData = archive.read(dllMember)
+            licenseData = archive.read(licenseMember)
+
+        if not dllData.startswith(b'MZ'):
+            raise ValueError('Downloaded Wintun DLL is not a valid PE image')
+
+        destination = WINTUN_BUILD_ASSET_DIR / architecture
+        destination.mkdir(parents=True, exist_ok=True)
+
+        dllPath = destination / 'wintun.dll'
+        temporaryDllPath = dllPath.with_suffix('.dll.tmp')
+        temporaryDllPath.write_bytes(dllData)
+        temporaryDllPath.replace(dllPath)
+
+        licensePath = WINTUN_BUILD_ASSET_DIR / 'LICENSE.txt'
+        temporaryLicensePath = licensePath.with_suffix('.txt.tmp')
+        temporaryLicensePath.write_bytes(licenseData)
+        temporaryLicensePath.replace(licensePath)
+
+    except Exception as ex:
+        logger.error(f'failed to download or verify Wintun {WINTUN_VERSION}: {ex}')
+        return False
+
+    logger.info(
+        f'Wintun {WINTUN_VERSION} ({architecture}) downloaded and SHA-256 verified'
+    )
+
+    return True
+
+
+def cleanup():
+    def rmtree(path, action: str = ''):
+        try:
+            shutil.rmtree(path)
+        except Exception as ex:
+            # Any non-exit exceptions
+
+            if action:
+                logger.error(f'{action} failed: {ex}')
+        else:
+            if action:
+                logger.info(f'{action} success')
+
+    def remove(path, action: str = ''):
+        try:
+            os.remove(path)
+        except Exception as ex:
+            # Any non-exit exceptions
+
+            if action:
+                logger.error(f'{action} failed: {ex}')
+        else:
+            if action:
+                logger.info(f'{action} success')
+
+    rmtree(ROOT_DIR / DEPLOY_DIR_NAME, 'remove deployment dir')
+    rmtree(WINTUN_BUILD_ASSET_DIR, 'remove Wintun build assets')
+
+    if PLATFORM == 'Windows':
+        # More cleanup on Windows
+        # Remove artifact
+        remove(ROOT_DIR / f'{ARTIFACT_NAME}.zip', 'remove artifact')
+        # Remove artifact
+        remove(ROOT_DIR / f'{ARTIFACT_NAME}.msi', 'remove artifact')
+        # Remove artifact
+        remove(ROOT_DIR / f'{ARTIFACT_NAME}.wixpdb', 'remove artifact')
+        # Remove unzipped folder
+        rmtree(ROOT_DIR / WIN_UNZIPPED, 'remove unzipped dir')
+    elif PLATFORM == 'Darwin':
+        # More cleanup on Darwin
+        # Remove artifact
+        remove(ROOT_DIR / MAC_DMG_FILENAME, 'remove artifact')
+        # Remove app folder
+        rmtree(MAC_APP_DIR, 'remove app dir')
+    elif PLATFORM == 'Linux':
+        # More cleanup on Linux
+        # Cleanup AppImage environment
+        # Remove artifact
+        remove(ROOT_DIR / LINUX_APPIMAGE_FILENAME, 'remove artifact')
+        # Remove app folder
+        rmtree(LINUX_APP_DIR, 'remove app dir')
+
+        # Cleanup deb environment
+        # Remove artifact
+        remove(ROOT_DIR / LINUX_DEB_FILENAME, 'remove artifact')
+        # Remove debian folder
+        rmtree(LINUX_DEBIAN_DIR, 'remove debian dir')
+
+        # Cleanup flatpak environment
+        # Remove artifact
+        remove(ROOT_DIR / LINUX_FLATPAK_FILENAME, 'remove artifact')
+        # Remove flatpak folder
+        rmtree(LINUX_FLATPAK_DIR, 'remove flatpak dir')
+
+        # Cleanup rpm environment
+        # Remove artifact
+        remove(ROOT_DIR / LINUX_RPM_FILENAME, 'remove artifact')
+        # Remove rpm folder
+        rmtree(LINUX_RPM_DIR, 'remove rpm dir')
+        # Remove home rpmbuild folder
+        rmtree(USER_HOME / 'rpmbuild', 'remove home rpmbuild')
+    else:
+        # Deploy: Not implemented
+        pass
+
+
+def download():
+    return all(
+        [
+            downloadXrayAssets(URL_GEOSITE, XRAY_ASSET_PATH_GEOSITE),
+            downloadXrayAssets(URL_GEOIP, XRAY_ASSET_PATH_GEOIP),
+            downloadHy1Asset(),
+            downloadWintunAsset(),
+        ]
+    )
+
+
+def printStandardStream(stdout: AnyStr, stderr: AnyStr):
+    if isinstance(stdout, str):
+        encoded_stdout = stdout.encode()
+    else:
+        encoded_stdout = stdout
+
+    if isinstance(stderr, str):
+        encoded_stderr = stderr.encode()
+    else:
+        encoded_stderr = stderr
+
+    encoded_output = b'stdout:\n%sstderr:\n%s' % (encoded_stdout, encoded_stderr)
+
+    print(encoded_output.decode('utf-8', 'ignore'), flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '-d',
+        '--download',
+        action='store_true',
+        help='Download latest asset files',
+    )
+    parser.add_argument(
+        '-c',
+        '--cleanup',
+        action='store_true',
+        help='Cleanup deployment files',
+    )
+
+    args = parser.parse_args()
+
+    if args.cleanup:
+        cleanup()
+
+        logger.info('cleanup done')
+
+        sys.exit(EXIT_SUCCESS)
+
+    if args.download:
+        success = EXIT_SUCCESS if download() else EXIT_FAILURE
+
+        sys.exit(success)
+
+    try:
+        import nuitka
+    except ImportError:
+        raise ModuleNotFoundError('please install nuitka to run this script')
+
+    logger.info('building')
+
+    try:
+        result = runExternalCommand(
+            NUITKA_BUILD,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as err:
+        logger.error(f'build failed with returncode {err.returncode}')
+
+        printStandardStream(err.stdout, err.stderr)
+
+        sys.exit(EXIT_FAILURE)
+    else:
+        logger.info(f'build success')
+
+        printStandardStream(result.stdout, result.stderr)
+
+    if PLATFORM == 'Windows':
+        distributionPath = ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist'
+
+        wintunArchitecture = WINTUN_ARCHITECTURES.get(PLATFORM_MACHINE_LOWER)
+        wintunDll = WINTUN_BUILD_ASSET_DIR / wintunArchitecture / 'wintun.dll'
+        wintunLicense = WINTUN_BUILD_ASSET_DIR / 'LICENSE.txt'
+
+        if not wintunDll.is_file() or not wintunLicense.is_file():
+            raise FileNotFoundError(
+                'Verified Wintun runtime or its license is missing; '
+                'run Deploy.py --download before packaging'
+            )
+
+        shutil.copy2(wintunDll, distributionPath / 'wintun.dll')
+        shutil.copy2(wintunLicense, distributionPath / 'Wintun-LICENSE.txt')
+
+        logger.info(
+            f'included Wintun {WINTUN_VERSION} ({wintunArchitecture}) '
+            'and its binary redistribution license'
+        )
+
+        # Package the complete WFP test runtime: service, test-signed driver,
+        # public test certificate, and elevated install/uninstall scripts.
+        driverBinary = os.environ.get('FURIOUS_WFP_DRIVER_BINARY')
+        serviceBinary = os.environ.get('FURIOUS_WFP_SERVICE_BINARY')
+        certificateBinary = os.environ.get('FURIOUS_WFP_TEST_CERTIFICATE')
+        requireWfpDriver = os.environ.get('FURIOUS_REQUIRE_WFP_DRIVER') == '1'
+        packageInputs = (driverBinary, serviceBinary, certificateBinary)
+        if requireWfpDriver and not all(packageInputs):
+            raise FileNotFoundError('The Windows 10 WFP test package requires driver, service, and test certificate outputs')
+        if any(packageInputs):
+            if not all(packageInputs):
+                raise FileNotFoundError('WFP package inputs are incomplete')
+            driverPackage = distributionPath / 'drivers' / 'wfp'
+            driverPackage.mkdir(parents=True, exist_ok=True)
+
+            def copyVerifiedAmd64Pe(sourceValue, destinationName, description):
+                source = pathlib.Path(sourceValue).resolve()
+                if not source.is_file():
+                    raise FileNotFoundError(f'{description} does not exist: {source}')
+                data = source.read_bytes()
+                if len(data) < 0x40 or data[:2] != b'MZ':
+                    raise ValueError(f'{description} has an invalid DOS/PE header')
+                peOffset = int.from_bytes(data[0x3C:0x40], 'little')
+                if (peOffset + 6 > len(data) or data[peOffset:peOffset + 4] != b'PE\0\0'
+                        or int.from_bytes(data[peOffset + 4:peOffset + 6], 'little') != 0x8664):
+                    raise ValueError(f'{description} is not a valid AMD64 PE image')
+                destination = driverPackage / destinationName
+                shutil.copy2(source, destination)
+                return destination
+
+            packagedDriver = copyVerifiedAmd64Pe(driverBinary, 'FuriousWfpCallout.sys', 'WFP callout driver')
+            packagedService = copyVerifiedAmd64Pe(serviceBinary, 'FuriousWfpService.exe', 'WFP user-mode service')
+            certificateSource = pathlib.Path(certificateBinary).resolve()
+            if not certificateSource.is_file():
+                raise FileNotFoundError(f'WFP test certificate does not exist: {certificateSource}')
+            shutil.copy2(certificateSource, driverPackage / 'FuriousWfpCallout.cer')
+            for scriptName in ('Install-WfpTest.ps1', 'Uninstall-WfpTest.ps1'):
+                scriptSource = ROOT_DIR / 'Windows' / 'Wfp' / 'package' / scriptName
+                if not scriptSource.is_file():
+                    raise FileNotFoundError(f'WFP package script is missing: {scriptSource}')
+                shutil.copy2(scriptSource, driverPackage / scriptName)
+            packageReadme = ROOT_DIR / 'Windows' / 'Wfp' / 'driver' / 'package' / 'README.txt'
+            if not packageReadme.is_file():
+                raise FileNotFoundError(f'WFP package notice is missing: {packageReadme}')
+            shutil.copy2(packageReadme, driverPackage / 'README.txt')
+            for filename in ('FuriousWfpCallout.sys', 'FuriousWfpService.exe'):
+                digest = hashlib.sha256((driverPackage / filename).read_bytes()).hexdigest()
+                (driverPackage / f'{filename}.sha256').write_text(f'{digest}  {filename}\n', encoding='ascii')
+            logger.info('included WFP service, test-signed driver, certificate, and install scripts')
+
+        if winVerCompatible.casefold() == 'windows7':
+            compatibilityDll = pathlib.Path(sys.executable).with_name(
+                WINDOWS_7_COMPATIBILITY_DLL_NAME
+            )
+
+            if not compatibilityDll.is_file():
+                raise FileNotFoundError(
+                    f'Windows 7 compatibility DLL not found: {compatibilityDll}'
+                )
+
+            shutil.copy2(compatibilityDll, distributionPath)
+
+            logger.info(f'included Windows 7 compatibility DLL: {compatibilityDll}')
+
+        try:
+            shutil.rmtree(ROOT_DIR / DEPLOY_DIR_NAME / WIN_UNZIPPED)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Copy LICENSE to distribution folder
+        shutil.copy(
+            ROOT_DIR / 'LICENSE',
+            distributionPath,
+        )
+        shutil.copy(
+            ROOT_DIR / 'LICENSE.rtf',
+            ROOT_DIR / DEPLOY_DIR_NAME,
+        )
+        shutil.copytree(
+            distributionPath,
+            ROOT_DIR / DEPLOY_DIR_NAME / WIN_UNZIPPED,
+        )
+        shutil.make_archive(
+            ARTIFACT_NAME,
+            'zip',
+            ROOT_DIR / DEPLOY_DIR_NAME,
+            WIN_UNZIPPED,
+            logger=logger,
+        )
+        shutil.copytree(
+            ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist',
+            ROOT_DIR / DEPLOY_DIR_NAME / 'SourceDir',
+        )
+
+        msifolder = ROOT_DIR / DEPLOY_DIR_NAME / 'msi'
+
+        os.makedirs(msifolder, exist_ok=True)
+
+        # Create Product.wxs file
+        try:
+            with open(
+                msifolder / 'Product.wxs',
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'<?xml version=\"1.0\" encoding=\"utf-8\"?>\n'
+                    f'<Wix\n'
+                    f'  xmlns=\"http://wixtoolset.org/schemas/v4/wxs\"\n'
+                    f'  xmlns:ui=\"http://wixtoolset.org/schemas/v4/wxs/ui\">\n'
+                    f'\n'
+                    f'  <Package\n'
+                    f'    Name=\"{APPLICATION_NAME}\"\n'
+                    f'    Manufacturer=\"{APPLICATION_NAME}\"\n'
+                    f'    Version=\"{APPLICATION_VERSION}\"\n'
+                    f'    UpgradeCode=\"{uuid.uuid4()}\"\n'
+                    f'    Compressed=\"yes\">\n'
+                    f'\n'
+                    f'    <!-- Major upgrade behavior -->\n'
+                    f'    <MajorUpgrade DowngradeErrorMessage=\"A newer version is already installed.\" />\n'
+                    f'    <MediaTemplate EmbedCab=\"yes\" />\n'
+                    f'\n'
+                    f'    <!-- Enable InstallDir UI -->\n'
+                    f'    <ui:WixUI Id=\"WixUI_InstallDir\" />\n'
+                    f'    <Property Id=\"WIXUI_INSTALLDIR\" Value=\"INSTALLFOLDER\" />\n'
+                    f'\n'
+                    f'    <!-- LICENSE shown in installer UI (RTF required) -->\n'
+                    f'    <WixVariable Id=\"WixUILicenseRtf\" Value=\"LICENSE.rtf\" />\n'
+                    f'\n'
+                    f'    <!-- Installation directory -->\n'
+                    f'    <StandardDirectory Id=\"ProgramFiles6432Folder\">\n'
+                    f'      <Directory Id=\"INSTALLFOLDER\" Name=\"{WIN_UNZIPPED}\" />\n'
+                    f'    </StandardDirectory>\n'
+                    f'\n'
+                    f'    <!-- Files harvested by WiX for the selected architecture -->\n'
+                    f'    <ComponentGroup Id="FuriousComponents" Directory="INSTALLFOLDER">\n'
+                    f'      <Files Include="{xml_escape(str(ROOT_DIR / DEPLOY_DIR_NAME / "SourceDir" / "**"))}" />\n'
+                    f'    </ComponentGroup>\n'
+                    f'\n'
+                    f'    <!-- Features -->\n'
+                    f'    <Feature Id=\"MainFeature\" Title=\"{APPLICATION_NAME}\" Level=\"1\">\n'
+                    f'      <ComponentGroupRef Id=\"FuriousComponents\" />\n'
+                    f'      <ComponentRef Id=\"FuriousShortcut\" />\n'
+                    f'    </Feature>\n'
+                    f'\n'
+                    f'    <!-- Desktop shortcut -->\n'
+                    f'    <Component\n'
+                    f'      Id=\"FuriousShortcut\"\n'
+                    f'      Guid=\"{uuid.uuid4()}\"\n'
+                    f'      Directory=\"INSTALLFOLDER\">\n'
+                    f'\n'
+                    f'      <Shortcut\n'
+                    f'        Id=\"DesktopShortcut\"\n'
+                    f'        Directory=\"DesktopFolder\"\n'
+                    f'        Name=\"{APPLICATION_NAME}\"\n'
+                    f'        Description=\"{xml_escape(APPLICATION_DESCRIPTION)}\"\n'
+                    f'        Target=\"[INSTALLFOLDER]{APPLICATION_NAME}.exe\"\n'
+                    f'        WorkingDirectory=\"INSTALLFOLDER\" />\n'
+                    f'    </Component>\n'
+                    f'\n'
+                    f'  </Package>\n'
+                    f'\n'
+                    f'</Wix>\n'
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # WixUI_InstallDir is supplied by the installed WixToolset.UI.wixext
+        # extension and referenced directly by Product.wxs; no external source
+        # download is required here.
+
+        cwd = os.getcwd()
+
+        try:
+            os.chdir(ROOT_DIR / DEPLOY_DIR_NAME)
+
+            # Requires "wix extension add WixToolset.UI.wixext"
+            result = runExternalCommand(
+                [
+                    'wix',
+                    'build',
+                    msifolder / 'Product.wxs',
+                    '-arch',
+                    WINDOWS_WIX_ARCHITECTURE,
+                    '-o',
+                    ROOT_DIR / f'{ARTIFACT_NAME}.msi',
+                    '-ext',
+                    'WixToolset.UI.wixext',
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            logger.error(f'wix build failed with returncode {err.returncode}')
+
+            printStandardStream(err.stdout, err.stderr)
+
+            sys.exit(EXIT_FAILURE)
+        else:
+            logger.info(f'wix build success: {ARTIFACT_NAME}.msi')
+
+            printStandardStream(result.stdout, result.stderr)
+        finally:
+            os.chdir(cwd)
+    elif PLATFORM == 'Darwin':
+        try:
+            shutil.rmtree(MAC_APP_DIR)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        try:
+            os.mkdir(MAC_APP_DIR)
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        sourceApp = ROOT_DIR / DEPLOY_DIR_NAME / 'Furious-GUI.app'
+        stagedApp = MAC_APP_DIR / 'Furious-GUI.app'
+
+        try:
+            result = runExternalCommand(
+                (
+                    'ditto',
+                    '--rsrc',
+                    '--extattr',
+                    str(sourceApp),
+                    str(stagedApp),
+                ),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            logger.error(f'stage macOS app failed with returncode {err.returncode}')
+
+            printStandardStream(err.stdout, err.stderr)
+
+            sys.exit(EXIT_FAILURE)
+        else:
+            logger.info('stage macOS app success')
+
+            printStandardStream(result.stdout, result.stderr)
+
+        logger.info('generating dmg')
+
+        try:
+            result = runExternalCommand(
+                MAC_CREATE_DMG_CMD,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            logger.error(f'generate dmg failed with returncode {err.returncode}')
+
+            printStandardStream(err.stdout, err.stderr)
+
+            sys.exit(EXIT_FAILURE)
+        else:
+            logger.info(f'generate dmg success: {MAC_DMG_FILENAME}')
+
+            printStandardStream(result.stdout, result.stderr)
+    elif PLATFORM == 'Linux':
+        try:
+            shutil.rmtree(LINUX_APP_DIR)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        try:
+            os.makedirs(LINUX_APP_DIR / 'usr' / 'bin', exist_ok=True)
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        iconbase = 'rocket-takeoff-window-512x512'
+
+        shutil.copytree(
+            ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist',
+            LINUX_APP_DIR / 'usr' / 'bin',
+            dirs_exist_ok=True,
+        )
+        shutil.copy(
+            ROOT_DIR / 'Icons' / 'png' / f'{iconbase}.png',
+            LINUX_APP_DIR,
+        )
+
+        DESKTOP_FILE_CONTENT = (
+            f'[Desktop Entry]\n'
+            f'Type=Application\n'
+            f'Name={APPLICATION_NAME}\n'
+            f'Exec={APPLICATION_NAME}.bin\n'
+            f'Icon={iconbase}\n'
+            f'Terminal=false\n'
+            f'Categories=Utility\n'
+        )
+
+        try:
+            with open(
+                LINUX_APP_DIR / LINUX_DESKTOP_FILE,
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(DESKTOP_FILE_CONTENT)
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        appRun = LINUX_APP_DIR / 'AppRun'
+
+        with open(appRun, 'w', encoding='utf-8') as file:
+            file.write(
+                '#!/bin/sh\n'
+                'APPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\n'
+                f'exec "$APPDIR/usr/bin/{APPLICATION_NAME}.bin" "$@"\n'
+            )
+
+        appRun.chmod(0o755)
+
+        logger.info('generating AppImage')
+
+        if LINUX_APPIMAGE_BUILDER == 'linuxdeploy':
+            os.environ['LDAI_OUTPUT'] = LINUX_APPIMAGE_FILENAME
+            os.environ['LINUXDEPLOY_OUTPUT_VERSION'] = APPLICATION_VERSION
+        else:
+            # Nuitka's standalone directory already owns its complete Qt runtime.
+            # appimagetool packages it as-is instead of harvesting Qt a second time.
+            os.environ['ARCH'] = PLATFORM_MACHINE
+
+        try:
+            result = runExternalCommand(
+                LINUX_CREATE_APPIMAGE_CMD,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            logger.error(f'generate AppImage failed with returncode {err.returncode}')
+
+            printStandardStream(err.stdout, err.stderr)
+
+            sys.exit(EXIT_FAILURE)
+        else:
+            logger.info(f'generate AppImage success: {LINUX_APPIMAGE_FILENAME}')
+
+            printStandardStream(result.stdout, result.stderr)
+
+        try:
+            result = runExternalCommand(
+                ['chmod', '+x', LINUX_APPIMAGE_FILENAME],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except subprocess.CalledProcessError as err:
+            logger.error(f'chmod +x failed with returncode {err.returncode}')
+
+            printStandardStream(err.stdout, err.stderr)
+
+            sys.exit(EXIT_FAILURE)
+        else:
+            logger.info(f'chmod +x success: {LINUX_APPIMAGE_FILENAME}')
+
+            printStandardStream(result.stdout, result.stderr)
+
+        # Create .deb package
+        logger.info('generating deb')
+
+        # Prepare package layout
+        try:
+            os.makedirs(LINUX_DEBIAN_DIR / 'DEBIAN', exist_ok=True)
+            os.makedirs(LINUX_DEBIAN_DIR / 'usr' / 'bin', exist_ok=True)
+            os.makedirs(
+                LINUX_DEBIAN_DIR / 'usr' / 'share' / APPLICATION_NAME,
+                exist_ok=True,
+            )
+            os.makedirs(
+                LINUX_DEBIAN_DIR / 'usr' / 'share' / 'applications',
+                exist_ok=True,
+            )
+            os.makedirs(
+                LINUX_DEBIAN_DIR
+                / 'usr'
+                / 'share'
+                / 'icons'
+                / 'hicolor'
+                / '512x512'
+                / 'apps',
+                exist_ok=True,
+            )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Copy output
+        shutil.copytree(
+            ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist',
+            LINUX_DEBIAN_DIR / 'usr' / 'share' / APPLICATION_NAME,
+            dirs_exist_ok=True,
+        )
+        shutil.copy(
+            ROOT_DIR / 'Icons' / 'png' / f'{iconbase}.png',
+            LINUX_DEBIAN_DIR
+            / 'usr'
+            / 'share'
+            / 'icons'
+            / 'hicolor'
+            / '512x512'
+            / 'apps',
+        )
+
+        # Create launcher script
+        try:
+            launcherScript = LINUX_DEBIAN_DIR / 'usr' / 'bin' / APPLICATION_NAME
+
+            with open(
+                launcherScript,
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'#!/bin/bash\n'
+                    f'exec /usr/share/{APPLICATION_NAME}/{APPLICATION_NAME}.bin \"$@\"\n'
+                )
+
+            runExternalCommand(
+                ['chmod', '+x', launcherScript],
+                check=True,
+            )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Create desktop entry file
+        try:
+            with open(
+                LINUX_DEBIAN_DIR
+                / 'usr'
+                / 'share'
+                / 'applications'
+                / LINUX_DESKTOP_FILE,
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(DESKTOP_FILE_CONTENT)
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Create control file
+        try:
+            if PLATFORM_MACHINE_LOWER == 'x86_64':
+                arch = 'amd64'
+            elif PLATFORM_MACHINE_LOWER == 'aarch64':
+                arch = 'arm64'
+            else:
+                raise
+
+            with open(
+                LINUX_DEBIAN_DIR / 'DEBIAN' / 'control',
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'Package: {APPLICATION_NAME}\n'
+                    f'Version: {APPLICATION_VERSION}\n'
+                    f'Section: utils\n'
+                    f'Priority: optional\n'
+                    f'Architecture: {arch}\n'
+                    f'Depends: libc6, libstdc++6, libgl1, libxcb-cursor0, libxcb-xinerama0\n'
+                    f'Maintainer: {APPLICATION_AUTHOR_NAME} <{APPLICATION_AUTHOR_EMAIL}>\n'
+                    f'Description: {APPLICATION_DESCRIPTION}\n'
+                    f'Homepage: {APPLICATION_ABOUT_PAGE}\n'
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Fix permissions
+        try:
+            runExternalCommand(
+                f'find debian -type d -exec chmod 755 {{}} \\;',
+                shell=True,
+                check=True,
+            )
+            runExternalCommand(
+                f'find debian -type f -exec chmod 644 {{}} \\;',
+                shell=True,
+                check=True,
+            )
+            runExternalCommand(
+                ['chmod', '755', LINUX_DEBIAN_DIR / 'usr' / 'bin' / APPLICATION_NAME],
+                check=True,
+            )
+            runExternalCommand(
+                [
+                    'chmod',
+                    '755',
+                    LINUX_DEBIAN_DIR
+                    / 'usr'
+                    / 'share'
+                    / APPLICATION_NAME
+                    / f'{APPLICATION_NAME}.bin',
+                ],
+                check=True,
+            )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        try:
+            runExternalCommand(
+                f'dpkg-deb --build debian {LINUX_DEB_FILENAME}',
+                shell=True,
+                check=True,
+            )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Create .flatpak package
+        logger.info('generating flatpak')
+
+        # Prepare package layout
+        try:
+            os.makedirs(LINUX_FLATPAK_DIR / APPLICATION_NAME, exist_ok=True)
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Copy output
+        shutil.copytree(
+            ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist',
+            LINUX_FLATPAK_DIR / APPLICATION_NAME,
+            dirs_exist_ok=True,
+        )
+        shutil.copy(
+            ROOT_DIR / 'Icons' / 'png' / f'{iconbase}.png',
+            LINUX_FLATPAK_DIR / f'{APPLICATION_FLATPAK_ID}.png',
+        )
+
+        # Create flatpak manifest file
+        try:
+            with open(
+                LINUX_FLATPAK_DIR / f'{APPLICATION_FLATPAK_ID}.yml',
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'app-id: {APPLICATION_FLATPAK_ID}\n'
+                    f'runtime: org.kde.Platform\n'
+                    f'runtime-version: \"6.8\"\n'
+                    f'sdk: org.kde.Sdk\n'
+                    f'command: {APPLICATION_NAME}\n'
+                    f'\n'
+                    f'finish-args:\n'
+                    f'  - --share=ipc\n'
+                    f'  - --share=network\n'
+                    f'  - --socket=wayland\n'
+                    f'  - --socket=fallback-x11\n'
+                    f'  - --device=dri\n'
+                    f'  - --filesystem=home\n'
+                    f'  - --talk-name=org.freedesktop.Flatpak\n'
+                    f'\n'
+                    f'modules:\n'
+                    f'  - name: double-conversion\n'
+                    f'    buildsystem: cmake-ninja\n'
+                    f'    config-opts:\n'
+                    f'      - -DBUILD_SHARED_LIBS=ON\n'
+                    f'      - -DBUILD_TESTING=OFF\n'
+                    f'      - -DCMAKE_INSTALL_LIBDIR=lib\n'
+                    f'    sources:\n'
+                    f'      - type: archive\n'
+                    f'        url: https://github.com/google/double-conversion/archive/refs/tags/v3.3.1.tar.gz\n'
+                    f'        sha256: fe54901055c71302dcdc5c3ccbe265a6c191978f3761ce1414d0895d6b0ea90e\n'
+                    f'  - name: mit-krb5\n'
+                    f'    buildsystem: simple\n'
+                    f'    sources:\n'
+                    f'      - type: archive\n'
+                    f'        url: https://kerberos.org/dist/krb5/1.21/krb5-1.21.3.tar.gz\n'
+                    f'        sha256: b7a4cd5ead67fb08b980b21abd150ff7217e85ea320c9ed0c6dadd304840ad35\n'
+                    f'    build-commands:\n'
+                    f'      - cd src && autoreconf -i  # Ensure Autotools files are generated\n'
+                    f'      - cd src && ./configure --prefix=/app --disable-static --enable-shared\n'
+                    f'      - cd src && make -j$(nproc)\n'
+                    f'      - cd src && make install\n'
+                    f'  - name: {APPLICATION_NAME}\n'
+                    f'    buildsystem: simple\n'
+                    f'    build-commands:\n'
+                    f'      # Script\n'
+                    f'      - install -Dm755 {APPLICATION_NAME}.sh /app/bin/{APPLICATION_NAME}\n'
+                    f'      # Whole application directory\n'
+                    f'      - mkdir -p /app/lib/{APPLICATION_NAME}/\n'
+                    f'      - cp -a . /app/lib/{APPLICATION_NAME}/\n'
+                    f'      # Desktop + icon\n'
+                    f'      - install -Dm644 {APPLICATION_FLATPAK_ID}.desktop /app/share/applications/{APPLICATION_FLATPAK_ID}.desktop\n'
+                    f'      - install -Dm644 {APPLICATION_FLATPAK_ID}.png /app/share/icons/hicolor/512x512/apps/{APPLICATION_FLATPAK_ID}.png\n'
+                    f'    sources:\n'
+                    f'      - type: file\n'
+                    f'        path: {APPLICATION_NAME}.sh\n'
+                    f'      - type: dir\n'
+                    f'        path: {APPLICATION_NAME}\n'
+                    f'      - type: file\n'
+                    f'        path: {APPLICATION_FLATPAK_ID}.desktop\n'
+                    f'      - type: file\n'
+                    f'        path: {APPLICATION_FLATPAK_ID}.png\n'
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Create desktop entry file
+        try:
+            with open(
+                LINUX_FLATPAK_DIR / f'{APPLICATION_FLATPAK_ID}.desktop',
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'[Desktop Entry]\n'
+                    f'Type=Application\n'
+                    f'Name={APPLICATION_NAME}\n'
+                    f'Exec={APPLICATION_NAME}\n'
+                    f'Icon={APPLICATION_FLATPAK_ID}\n'
+                    f'Terminal=false\n'
+                    f'Categories=Utility\n'
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Create launcher script
+        try:
+            with open(
+                LINUX_FLATPAK_DIR / f'{APPLICATION_NAME}.sh',
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'#!/usr/bin/env bash\n'
+                    f'exec /app/lib/{APPLICATION_NAME}/{APPLICATION_NAME}.bin \"$@\"\n'
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        cwd = os.getcwd()
+
+        try:
+            os.chdir(LINUX_FLATPAK_DIR)
+
+            runExternalCommand(
+                f'flatpak-builder build-dir {APPLICATION_FLATPAK_ID}.yml --force-clean',
+                shell=True,
+                check=True,
+            )
+            runExternalCommand(
+                f'flatpak build-export repo build-dir',
+                shell=True,
+                check=True,
+            )
+            runExternalCommand(
+                f'flatpak build-bundle repo {LINUX_FLATPAK_FILENAME} {APPLICATION_FLATPAK_ID}',
+                shell=True,
+                check=True,
+            )
+
+            shutil.copy(
+                LINUX_FLATPAK_FILENAME,
+                ROOT_DIR,
+            )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+        finally:
+            os.chdir(cwd)
+
+        # Create .rpm package
+        logger.info('generating rpm')
+
+        # Prepare package layout
+        try:
+            os.makedirs(
+                LINUX_RPM_DIR / f'{APPLICATION_NAME}-{APPLICATION_VERSION}',
+                exist_ok=True,
+            )
+
+            for name in ['BUILD', 'RPMS', 'SOURCES', 'SPECS', 'SRPMS']:
+                os.makedirs(
+                    USER_HOME / 'rpmbuild' / name,
+                    exist_ok=True,
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        # Copy output
+        shutil.copytree(
+            ROOT_DIR / DEPLOY_DIR_NAME / f'{APPLICATION_NAME}.dist',
+            LINUX_RPM_DIR / f'{APPLICATION_NAME}-{APPLICATION_VERSION}',
+            dirs_exist_ok=True,
+        )
+        shutil.copy(
+            ROOT_DIR / 'Icons' / 'png' / f'{iconbase}.png',
+            LINUX_RPM_DIR / f'{APPLICATION_NAME}-{APPLICATION_VERSION}',
+        )
+
+        with tarfile.open(LINUX_RPM_DIR / f'{ARTIFACT_NAME}.tar.gz', 'w:gz') as tar:
+            tar.add(
+                LINUX_RPM_DIR / f'{APPLICATION_NAME}-{APPLICATION_VERSION}',
+                arcname=f'{APPLICATION_NAME}-{APPLICATION_VERSION}',
+            )
+
+        shutil.move(
+            LINUX_RPM_DIR / f'{ARTIFACT_NAME}.tar.gz',
+            USER_HOME / 'rpmbuild' / 'SOURCES',
+        )
+
+        # Create rpm manifest file
+        try:
+            with open(
+                USER_HOME / 'rpmbuild' / 'SPECS' / f'{APPLICATION_NAME}.spec',
+                'w',
+                encoding='utf-8',
+            ) as file:
+                file.write(
+                    f'Name:           {APPLICATION_NAME}\n'
+                    f'Version:        {APPLICATION_VERSION}\n'
+                    f'Release:        1%{{?dist}}\n'
+                    f'Summary:        {APPLICATION_DESCRIPTION}\n'
+                    f'\n'
+                    f'License:        GPLv3\n'
+                    f'URL:            {APPLICATION_ABOUT_PAGE}\n'
+                    f'Source0:        {ARTIFACT_NAME}.tar.gz\n'
+                    f'\n'
+                    f'BuildArch:      {PLATFORM_MACHINE_LOWER}\n'
+                    f'\n'
+                    f'%description\n'
+                    f'{APPLICATION_DESCRIPTION}\n'
+                    f'\n'
+                    f'%prep\n'
+                    f'%autosetup\n'
+                    f'\n'
+                    f'%install\n'
+                    f'rm -rf %{{buildroot}}\n'
+                    f'\n'
+                    f'# App directory\n'
+                    f'mkdir -p %{{buildroot}}/opt/{APPLICATION_NAME}\n'
+                    f'cp -a * %{{buildroot}}/opt/{APPLICATION_NAME}/\n'
+                    f'\n'
+                    f'# Binary symlink\n'
+                    f'mkdir -p %{{buildroot}}/usr/bin\n'
+                    f'ln -s /opt/{APPLICATION_NAME}/{APPLICATION_NAME}.bin %{{buildroot}}/usr/bin/{APPLICATION_NAME}\n'
+                    f'\n'
+                    f'# Desktop entry\n'
+                    f'mkdir -p %{{buildroot}}/usr/share/applications\n'
+                    f'cat > %{{buildroot}}/usr/share/applications/{APPLICATION_NAME}.desktop <<EOF\n'
+                    f'[Desktop Entry]\n'
+                    f'Type=Application\n'
+                    f'Name={APPLICATION_NAME}\n'
+                    f'Exec={APPLICATION_NAME}\n'
+                    f'Icon={iconbase}\n'
+                    f'Categories=Utility\n'
+                    f'EOF\n'
+                    f'\n'
+                    f'mkdir -p %{{buildroot}}/usr/share/icons/hicolor/512x512/apps\n'
+                    f'cp {iconbase}.png %{{buildroot}}/usr/share/icons/hicolor/512x512/apps/{iconbase}.png\n'
+                    f'\n'
+                    f'%files\n'
+                    f'/opt/{APPLICATION_NAME}\n'
+                    f'/usr/bin/{APPLICATION_NAME}\n'
+                    f'/usr/share/applications/{APPLICATION_NAME}.desktop\n'
+                    f'/usr/share/icons/hicolor/512x512/apps/{iconbase}.png\n'
+                )
+        except Exception:
+            # Any non-exit exceptions
+
+            raise
+
+        runExternalCommand(
+            [
+                'rpmbuild',
+                '-ba',
+                USER_HOME / 'rpmbuild' / 'SPECS' / f'{APPLICATION_NAME}.spec',
+            ],
+            check=True,
+        )
+
+        for file in glob.glob(
+            (
+                USER_HOME / 'rpmbuild' / 'RPMS' / PLATFORM_MACHINE_LOWER / '*.rpm'
+            ).as_posix()
+        ):
+            shutil.copy(
+                file,
+                ROOT_DIR / LINUX_RPM_FILENAME,
+            )
+    else:
+        # Deploy: Not implemented
+        pass
+
+    sys.exit(EXIT_SUCCESS)
+
+
+if __name__ == '__main__':
+    main()

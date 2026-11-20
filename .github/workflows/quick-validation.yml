@@ -1,0 +1,229 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors
+#
+# This file is part of Furious and is distributed under the GNU General Public
+# License, version 3 or (at your option) any later version.
+
+name: Quick validation
+
+on:
+  push:
+    branches:
+      - integrate/native-bindings-forks
+      - fix/windows-startup-smoke-test
+      - fix/windows-native-session-notifications
+      - feat/auto-detect-tun-network
+  pull_request:
+    branches:
+      - integrate/native-bindings-forks
+      - feat/auto-detect-tun-network
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quick-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-wfp-service-build:
+    name: Windows WFP service and protocol tests
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure WFP service
+        run: cmake -S Windows/Wfp/service -B build/wfp-service -A x64
+
+      - name: Build WFP service and tests
+        run: cmake --build build/wfp-service --config Release
+
+      - name: Run WFP IPC protocol tests
+        run: ctest --test-dir build/wfp-service -C Release --output-on-failure
+
+      - name: Configure WFP TCP and UDP brokers
+        run: cmake -S Windows/Wfp/broker -B build/wfp-broker -A x64
+
+      - name: Build WFP TCP and UDP brokers and tests
+        run: cmake --build build/wfp-broker --config Release
+
+      - name: Run WFP TCP, SOCKS5 UDP, and UDP broker tests
+        run: ctest --test-dir build/wfp-broker -C Release --output-on-failure
+
+  windows-wfp-driver-build:
+    name: Windows x64 WFP kernel driver build
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore pinned Windows SDK and WDK packages
+        run: nuget restore packages.config -PackagesDirectory packages
+
+      - name: Build WFP callout driver for Windows 10 x64
+        run: |
+          msbuild Windows/Wfp/driver/FuriousWfpCallout.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:TargetVersion=Windows10 /p:WindowsTargetPlatformVersion=10.0.28000.0
+
+      - name: Verify driver binary was produced
+        shell: pwsh
+        run: |
+          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse | Select-Object -First 1
+          if ($null -eq $driver) { throw "FuriousWfpCallout.sys was not produced." }
+          Write-Host "Built driver: $($driver.FullName)"
+          Get-FileHash $driver.FullName -Algorithm SHA256
+
+      - name: Create ephemeral test certificate and verify test signature
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $driver = Get-ChildItem Windows/Wfp/driver -Filter FuriousWfpCallout.sys -Recurse |
+            Select-Object -First 1
+          if ($null -eq $driver) { throw 'FuriousWfpCallout.sys was not produced.' }
+
+          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $signTool = Get-ChildItem -LiteralPath $sdkRoot -Filter signtool.exe -Recurse |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $signTool) { throw "Windows SDK SignTool was not found below $sdkRoot" }
+
+          $output = Join-Path $env:RUNNER_TEMP 'furious-wfp-test-signed'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $certificatePath = Join-Path $output 'FuriousWfpCallout-TestCertificate.cer'
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'FuriousWfpCallout-TestCertificate.pfx'
+          $pfxPasswordText = [Guid]::NewGuid().ToString('N')
+          $pfxPassword = ConvertTo-SecureString $pfxPasswordText -AsPlainText -Force
+
+          $certificate = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject 'CN=Furious WFP Driver Test Signing' `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -KeyExportPolicy Exportable `
+            -NotAfter (Get-Date).AddYears(5)
+
+          try {
+            Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $pfxPassword |
+              Out-Null
+            Export-Certificate -Cert $certificate -FilePath $certificatePath |
+              Out-Null
+
+            & $signTool.FullName sign /v /fd SHA256 /f $pfxPath /p $pfxPasswordText $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "SignTool signing failed with exit code $LASTEXITCODE" }
+
+            Write-Host 'Trusting the ephemeral certificate in the isolated CI runner stores.'
+            & certutil.exe -f -addstore Root $certificatePath
+            if ($LASTEXITCODE -ne 0) { throw "certutil Root import failed with exit code $LASTEXITCODE" }
+            & certutil.exe -f -addstore TrustedPublisher $certificatePath
+            if ($LASTEXITCODE -ne 0) { throw "certutil TrustedPublisher import failed with exit code $LASTEXITCODE" }
+
+            Write-Host 'Verifying Authenticode signature.'
+            & $signTool.FullName verify /pa /v $driver.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed with exit code $LASTEXITCODE" }
+
+            # A self-created test certificate is intentionally not chained to a Microsoft
+            # production root. SignTool /kp therefore cannot be used as a pass criterion:
+            # it tests the production kernel signing chain, not TESTSIGNING acceptance.
+            # Validate the embedded Authenticode signature and pin it to this run's cert.
+            $signature = Get-AuthenticodeSignature -FilePath $driver.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Test driver signature is not valid: $($signature.StatusMessage)"
+            }
+            if ($null -eq $signature.SignerCertificate -or
+                $signature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+              throw 'Driver signer does not match the ephemeral test certificate.'
+            }
+            Write-Host "Test signature verified. Thumbprint: $($certificate.Thumbprint)"
+
+            Copy-Item -LiteralPath $driver.FullName -Destination (Join-Path $output 'FuriousWfpCallout.sys')
+            $hash = (Get-FileHash -LiteralPath (Join-Path $output 'FuriousWfpCallout.sys') -Algorithm SHA256).Hash
+            "$hash  FuriousWfpCallout.sys" |
+              Set-Content -LiteralPath (Join-Path $output 'FuriousWfpCallout.sha256') -Encoding ascii
+            @'
+          INTERNAL TEST BUILD ONLY
+          This driver is signed with an ephemeral, self-created test certificate.
+          It is not a production-signed Windows driver and is not suitable for retail distribution.
+          Loading requires Windows test-signing mode (TESTSIGNING) and a compatible test machine.
+          Secure Boot policy may prevent enabling TESTSIGNING. Do not weaken security on customer devices.
+          Import the included public certificate into the test machine's Trusted Root Certification Authorities
+          and Trusted Publishers stores when required by the test configuration.
+          This package does not enable TESTSIGNING, change Secure Boot, or install/start the driver.
+          '@ | Set-Content -LiteralPath (Join-Path $output 'README-test-signing.txt') -Encoding utf8
+          }
+          finally {
+            Remove-Item -LiteralPath $pfxPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload test-signed driver build
+        uses: actions/upload-artifact@v7
+        with:
+          name: furious-wfp-driver-windows10-x64-test-signed
+          path: ${{ runner.temp }}/furious-wfp-test-signed/
+          if-no-files-found: error
+          retention-days: 7
+
+  quick-checks:
+    name: Python syntax and TUN runtime regression checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Compile Python sources
+        run: |
+          python -m compileall -q Deploy.py Furious tests
+          echo "Python syntax validation passed"
+
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1
+
+      - name: Install lightweight runtime-test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            PySide6-Essentials PySide6-Addons \
+            ujson pybase64 segno icmplib mss zxing-cpp pillow darkdetect
+
+      - name: Run TUN UI, backend-selection, network, startup, and packaging tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m unittest \
+            tests.test_hysteria2_stats \
+            tests.test_isolation_and_navigation \
+            tests.test_tun_settings_ui \
+            tests.test_native_tun_semantics \
+            tests.test_system_network_detection \
+            tests.test_tun2socks_launch \
+            tests.test_connection_startup_async \
+            tests.test_runtime_lifecycle \
+            tests.test_wintun_deployment \
+            tests.test_xray_application_routing \
+            tests.test_wfp_endpoint_config \
+            tests.test_wfp_flow_lifecycle \
+            tests.test_wfp_leak_status \
+            tests.test_wfp_ipc_controller \
+            -v

@@ -1,0 +1,27 @@
+name: Windows session native API tests
+
+on:
+  push:
+    branches:
+      - fix/windows-native-session-notifications
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  win32-session:
+    name: Windows 10 session notification API
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Compile native session listener
+        run: python -m py_compile Furious/Frozenlib/Win32SessionNative.py Furious/Frozenlib/Win32Session.py tests/test_win32session_native.py
+
+      - name: Test Windows session messages and listener cleanup
+        run: python -m unittest tests.test_win32session_native -v

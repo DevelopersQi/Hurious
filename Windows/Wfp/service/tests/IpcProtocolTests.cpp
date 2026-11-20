@@ -1,0 +1,384 @@
+#include "../../include/WfpControlProtocol.h"
+#include "../../include/WfpRedirectProtocol.h"
+#include "../WfpIpcDispatcher.h"
+#include "../WfpDriverClient.h"
+#include "../WfpPolicyValidator.h"
+#include "../WfpPolicyCompiler.h"
+
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+#define CHECK(condition) do { \
+    if (!(condition)) { \
+        std::fprintf(stderr, "Check failed at line %d: %s\\n", __LINE__, #condition); \
+        return 1; \
+    } \
+} while (0)
+
+int main() {
+    static_assert(sizeof(FURIOUS_WFP_DRIVER_STATUS) == 16,
+                  "Driver status ABI must remain 16 bytes");
+    FURIOUS_WFP_DRIVER_STATUS driverStatus = {};
+    driverStatus.Size = sizeof(driverStatus);
+    driverStatus.Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
+    CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Version = 1;
+    CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Version = FURIOUS_WFP_DRIVER_ABI_VERSION;
+    driverStatus.Reserved = 1;
+    CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Reserved = 0;
+    driverStatus.Flags = 0x80000000u;
+    CHECK(!furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Flags = FURIOUS_WFP_DRIVER_FLAG_CALLOUT_REGISTERED;
+    CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
+    driverStatus.Flags |= FURIOUS_WFP_DRIVER_FLAG_ENDPOINT_CONFIGURED;
+    CHECK(furious::wfp::driver::IsValidStatus(driverStatus));
+    using furious::wfp::ipc::ValidateRequest;
+    using furious::wfp::ipc::ValidationResult;
+
+    FURIOUS_WFP_IPC_HEADER request = {};
+    request.Magic = FURIOUS_WFP_IPC_MAGIC;
+    request.Version = FURIOUS_WFP_IPC_VERSION;
+    request.HeaderSize = sizeof(request);
+    request.TotalSize = sizeof(request);
+    request.Command = FURIOUS_WFP_IPC_COMMAND_STATUS;
+    request.RequestId = 42;
+
+    CHECK(ValidateRequest(&request, sizeof(request)) == ValidationResult::Valid);
+
+    std::array<uint8_t, sizeof(FURIOUS_WFP_IPC_HEADER) +
+                        sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG)> endpointRequestBytes = {};
+    auto endpointRequest = request;
+    endpointRequest.Command = FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG;
+    endpointRequest.TotalSize = static_cast<uint32_t>(endpointRequestBytes.size());
+    std::memcpy(endpointRequestBytes.data(), &endpointRequest, sizeof(endpointRequest));
+    CHECK(ValidateRequest(
+        endpointRequestBytes.data(), endpointRequestBytes.size()) == ValidationResult::Valid);
+    endpointRequest.Command = FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG;
+    endpointRequest.TotalSize = sizeof(FURIOUS_WFP_IPC_HEADER);
+    CHECK(ValidateRequest(
+        &endpointRequest, sizeof(endpointRequest)) == ValidationResult::Valid);
+    CHECK(ValidateRequest(nullptr, sizeof(request)) == ValidationResult::NullMessage);
+    CHECK(ValidateRequest(&request, sizeof(request) - 1) == ValidationResult::MessageTooSmall);
+
+    auto invalid = request;
+    invalid.Magic = 0;
+    CHECK(ValidateRequest(&invalid, sizeof(invalid)) == ValidationResult::InvalidMagic);
+
+    invalid = request;
+    invalid.Version = 99;
+    CHECK(ValidateRequest(&invalid, sizeof(invalid)) == ValidationResult::UnsupportedVersion);
+
+    invalid = request;
+    invalid.HeaderSize--;
+    CHECK(ValidateRequest(&invalid, sizeof(invalid)) == ValidationResult::InvalidHeaderSize);
+
+    invalid = request;
+    invalid.TotalSize++;
+    CHECK(ValidateRequest(&invalid, sizeof(invalid)) == ValidationResult::InvalidTotalSize);
+
+    invalid = request;
+    invalid.Command = 0xFFFFFFFFu;
+    CHECK(ValidateRequest(&invalid, sizeof(invalid)) == ValidationResult::UnsupportedCommand);
+
+    std::array<uint8_t, FURIOUS_WFP_IPC_MAX_MESSAGE_SIZE + 1> oversized = {};
+    CHECK(ValidateRequest(oversized.data(), oversized.size()) == ValidationResult::MessageTooLarge);
+
+    using furious::wfp::ipc::DispatchCommand;
+    using furious::wfp::ipc::CopyPolicySnapshot;
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STATUS, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_START_BROKER, nullptr, 0) == ERROR_INVALID_DATA);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STOP_BROKER, nullptr, 1) == ERROR_INVALID_PARAMETER);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STOP_BROKER, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_START_UDP_BROKER, nullptr, 0) == ERROR_INVALID_DATA);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER, nullptr, 1) == ERROR_INVALID_PARAMETER);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_STOP_UDP_BROKER, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY, nullptr, 0) == ERROR_INVALID_DATA);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY, nullptr, 0) == ERROR_SUCCESS);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          nullptr, 0) == ERROR_INVALID_DATA);
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG invalidEndpointPayload = {};
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &invalidEndpointPayload, sizeof(invalidEndpointPayload)) ==
+          ERROR_INVALID_PARAMETER);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_ENDPOINT_CONFIG,
+                          &invalidEndpointPayload, 1) == ERROR_INVALID_PARAMETER);
+    CHECK(DispatchCommand(0xFFFFFFFFu, nullptr, 0) == ERROR_INVALID_FUNCTION);
+
+    using furious::wfp::policy::ValidatePolicy;
+    using PolicyValidationResult = furious::wfp::policy::ValidationResult;
+    CHECK(furious::wfp::policy::EqualPathInsensitive(
+        L"C:\\Program Files\\Furious\\代理.exe",
+        L"c:\\program files\\furious\\代理.exe"));
+    CHECK(!furious::wfp::policy::EqualPathInsensitive(
+        L"C:\\Program Files\\Furious\\代理.exe",
+        L"C:\\Program Files\\Furious\\other.exe"));
+    FURIOUS_WFP_POLICY_HEADER policyHeader = {};
+    policyHeader.Size = sizeof(policyHeader);
+    policyHeader.AbiVersion = FURIOUS_WFP_POLICY_ABI_VERSION;
+    policyHeader.RuleCount = 1;
+    policyHeader.Backend = FuriousWfpBackendXray;
+    policyHeader.PolicyGeneration = 1;
+    FURIOUS_WFP_APPLICATION_RULE policyRule = {};
+    policyRule.Size = sizeof(policyRule);
+    policyRule.Priority = 10;
+    policyRule.Enabled = 1;
+    policyRule.Action = FuriousWfpActionProxy;
+    wchar_t currentExecutable[FURIOUS_WFP_MAX_IMAGE_PATH_CHARS] = {};
+    const DWORD executableChars = GetModuleFileNameW(
+        nullptr, currentExecutable, static_cast<DWORD>(_countof(currentExecutable)));
+    CHECK(executableChars > 0 && executableChars < _countof(currentExecutable));
+    policyRule.ImagePathChars = executableChars;
+    std::memcpy(policyRule.ImagePath, currentExecutable,
+                (static_cast<size_t>(executableChars) + 1) * sizeof(wchar_t));
+    std::array<uint8_t, sizeof(policyHeader) + sizeof(policyRule)> policyBytes = {};
+    std::memcpy(policyBytes.data(), &policyHeader, sizeof(policyHeader));
+    std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
+    CHECK(ValidatePolicy(policyBytes.data(), policyBytes.size()) == PolicyValidationResult::Valid);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
+                          policyBytes.data(), policyBytes.size()) == ERROR_SUCCESS);
+    std::vector<uint8_t> policySnapshot;
+    uint64_t storedGeneration = 0;
+    CHECK(CopyPolicySnapshot(policySnapshot, &storedGeneration) == ERROR_SUCCESS);
+    CHECK(policySnapshot.size() == policyBytes.size());
+    CHECK(storedGeneration == 1);
+    std::vector<furious::wfp::policy::CompiledApplicationRule> storedCompiled;
+    CHECK(furious::wfp::ipc::CopyCompiledPolicySnapshot(storedCompiled) == ERROR_SUCCESS);
+    CHECK(storedCompiled.size() == 1 && !storedCompiled[0].AppId.empty());
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_POLICY,
+                          policyBytes.data(), policyBytes.size()) == ERROR_REVISION_MISMATCH);
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_CLEAR_POLICY,
+                          nullptr, 0) == ERROR_SUCCESS);
+    CHECK(CopyPolicySnapshot(policySnapshot, &storedGeneration) == ERROR_SUCCESS);
+    CHECK(policySnapshot.empty());
+    CHECK(storedGeneration == 1);
+    CHECK(ValidatePolicy(nullptr, policyBytes.size()) == PolicyValidationResult::NullPolicy);
+    auto missingBackend = policyBytes;
+    policyHeader.Backend = FuriousWfpBackendNone;
+    std::memcpy(missingBackend.data(), &policyHeader, sizeof(policyHeader));
+    CHECK(ValidatePolicy(missingBackend.data(), missingBackend.size()) ==
+          PolicyValidationResult::ProxyBackendRequired);
+    policyHeader.Backend = FuriousWfpBackendXray;
+    auto zeroGeneration = policyBytes;
+    policyHeader.PolicyGeneration = 0;
+    std::memcpy(zeroGeneration.data(), &policyHeader, sizeof(policyHeader));
+    CHECK(ValidatePolicy(zeroGeneration.data(), zeroGeneration.size()) ==
+          PolicyValidationResult::InvalidPolicyGeneration);
+    policyHeader.PolicyGeneration = 1;
+    auto badPolicy = policyBytes;
+    policyHeader.RuleCount = FURIOUS_WFP_MAX_RULES + 1;
+    std::memcpy(badPolicy.data(), &policyHeader, sizeof(policyHeader));
+    policyHeader.RuleCount = 1;
+    CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::TooManyRules);
+    badPolicy = policyBytes;
+    FURIOUS_WFP_APPLICATION_RULE badRule = policyRule;
+    badRule.ImagePath[1] = L'!';
+    std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
+    CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::PathNotAbsolute);
+    badPolicy = policyBytes;
+    badRule = policyRule;
+    badRule.Action = 99;
+    std::memcpy(badPolicy.data() + sizeof(policyHeader), &badRule, sizeof(badRule));
+    CHECK(ValidatePolicy(badPolicy.data(), badPolicy.size()) == PolicyValidationResult::InvalidAction);
+
+    policyHeader.PolicyGeneration = 2;
+    std::memcpy(policyBytes.data(), &policyHeader, sizeof(policyHeader));
+
+    std::vector<furious::wfp::policy::CompiledApplicationRule> compiledRules;
+    CHECK(furious::wfp::policy::CompilePolicy(
+              policyBytes.data(), policyBytes.size(), compiledRules) == ERROR_SUCCESS);
+    CHECK(compiledRules.size() == 1);
+    CHECK(compiledRules[0].Priority == policyRule.Priority);
+    CHECK(compiledRules[0].Action == FuriousWfpActionProxy);
+    CHECK(compiledRules[0].Backend == FuriousWfpBackendXray);
+    CHECK(!compiledRules[0].AppId.empty());
+
+    const auto previousCompiledSize = compiledRules.size();
+    const wchar_t missingPath[] = L"Z:\\furious-missing.exe";
+    std::memset(policyRule.ImagePath, 0, sizeof(policyRule.ImagePath));
+    std::memcpy(policyRule.ImagePath, missingPath, sizeof(missingPath));
+    policyRule.ImagePathChars = static_cast<uint32_t>(
+        (sizeof(missingPath) / sizeof(missingPath[0])) - 1);
+    std::memcpy(policyBytes.data() + sizeof(policyHeader), &policyRule, sizeof(policyRule));
+    CHECK(furious::wfp::policy::CompilePolicy(
+              policyBytes.data(), policyBytes.size(), compiledRules) != ERROR_SUCCESS);
+    CHECK(compiledRules.size() == previousCompiledSize);
+
+    using furious::wfp::redirect::IsValidEndpointConfig;
+    using furious::wfp::redirect::IsValidRedirectContext;
+    static_assert(sizeof(FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG) == 76,
+                  "Redirect endpoint ABI v2 must remain 76 bytes");
+    static_assert(sizeof(FURIOUS_WFP_REDIRECT_CONTEXT) == 64,
+                  "Redirect context ABI must remain 64 bytes");
+    FURIOUS_WFP_REDIRECT_ENDPOINT_CONFIG endpoint = {};
+    endpoint.Size = sizeof(endpoint);
+    endpoint.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    endpoint.Backend = 1;
+    endpoint.Flags = FURIOUS_WFP_REDIRECT_FLAG_IPV4 |
+                     FURIOUS_WFP_REDIRECT_FLAG_IPV6 |
+                     FURIOUS_WFP_REDIRECT_FLAG_TCP |
+                     FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    endpoint.ProxyProcessId = 1234;
+    endpoint.ExcludedProcessCount = 2;
+    endpoint.ExcludedProcessIds[0] = 2345;
+    endpoint.ExcludedProcessIds[1] = 3456;
+    endpoint.PolicyGeneration = 7;
+    endpoint.TcpPortV4 = 10808;
+    endpoint.UdpPortV4 = 10808;
+    endpoint.TcpPortV6 = 10809;
+    endpoint.UdpPortV6 = 10809;
+    CHECK(IsValidEndpointConfig(endpoint));
+    CHECK(furious::wfp::ipc::TcpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::TcpBrokerListenerPorts{10808, 10809}));
+    CHECK(!furious::wfp::ipc::TcpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::TcpBrokerListenerPorts{10808, 10810}));
+    CHECK(furious::wfp::ipc::UdpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 10809}));
+    CHECK(!furious::wfp::ipc::UdpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 10810}));
+    CHECK(!furious::wfp::ipc::UdpBrokerMatchesEndpoint(
+        endpoint, furious::wfp::broker::UdpBrokerListenerPorts{10808, 0}));
+
+    // The user-mode validator must enforce the same minimum family/transport
+    // requirements as the kernel before an endpoint reaches the driver.
+    auto noAddressFamilyEndpoint = endpoint;
+    noAddressFamilyEndpoint.Flags &=
+        ~(FURIOUS_WFP_REDIRECT_FLAG_IPV4 | FURIOUS_WFP_REDIRECT_FLAG_IPV6);
+    noAddressFamilyEndpoint.TcpPortV4 = 0;
+    noAddressFamilyEndpoint.TcpPortV6 = 0;
+    noAddressFamilyEndpoint.UdpPortV4 = 0;
+    noAddressFamilyEndpoint.UdpPortV6 = 0;
+    CHECK(!IsValidEndpointConfig(noAddressFamilyEndpoint));
+
+    auto noTransportEndpoint = endpoint;
+    noTransportEndpoint.Flags &=
+        ~(FURIOUS_WFP_REDIRECT_FLAG_TCP | FURIOUS_WFP_REDIRECT_FLAG_UDP);
+    noTransportEndpoint.TcpPortV4 = 0;
+    noTransportEndpoint.TcpPortV6 = 0;
+    noTransportEndpoint.UdpPortV4 = 0;
+    noTransportEndpoint.UdpPortV6 = 0;
+    CHECK(!IsValidEndpointConfig(noTransportEndpoint));
+
+    // UDP endpoint activation now requires a live engine and matching UDP broker;
+    // it must not be rejected solely because the experimental gate is enabled.
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &endpoint, sizeof(endpoint)) == ERROR_INVALID_HANDLE);
+    auto tcpOnlyEndpoint = endpoint;
+    tcpOnlyEndpoint.Flags &= ~FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    tcpOnlyEndpoint.UdpPortV4 = 0;
+    tcpOnlyEndpoint.UdpPortV6 = 0;
+    CHECK(IsValidEndpointConfig(tcpOnlyEndpoint));
+    auto udpOnlyEndpoint = endpoint;
+    udpOnlyEndpoint.Flags = FURIOUS_WFP_REDIRECT_FLAG_IPV4 |
+                            FURIOUS_WFP_REDIRECT_FLAG_UDP;
+    udpOnlyEndpoint.TcpPortV4 = 0;
+    udpOnlyEndpoint.TcpPortV6 = 0;
+    udpOnlyEndpoint.UdpPortV6 = 0;
+    CHECK(IsValidEndpointConfig(udpOnlyEndpoint));
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+        &udpOnlyEndpoint, sizeof(udpOnlyEndpoint)) == ERROR_NOT_SUPPORTED);
+    auto udpFlagOnlyEndpoint = endpoint;
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &udpFlagOnlyEndpoint, sizeof(udpFlagOnlyEndpoint)) ==
+          ERROR_INVALID_HANDLE);
+    auto udpPortOnlyEndpoint = tcpOnlyEndpoint;
+    udpPortOnlyEndpoint.UdpPortV6 = 10809;
+    CHECK(DispatchCommand(FURIOUS_WFP_IPC_COMMAND_SET_ENDPOINT_CONFIG,
+                          &udpPortOnlyEndpoint, sizeof(udpPortOnlyEndpoint)) ==
+          ERROR_INVALID_PARAMETER);
+
+    // Exited core PIDs must be removed from the redirect exclusion snapshot
+    // before Windows can reuse those PIDs for unrelated applications.
+    auto exclusions = endpoint;
+    CHECK(FuriousWfpRemoveExcludedProcessId(&exclusions, 2345));
+    CHECK(exclusions.ExcludedProcessCount == 1);
+    CHECK(exclusions.ExcludedProcessIds[0] == 3456);
+    CHECK(exclusions.ExcludedProcessIds[1] == 0);
+    CHECK(FuriousWfpRemoveExcludedProcessId(&exclusions, 3456));
+    CHECK(exclusions.ExcludedProcessCount == 0);
+    CHECK(exclusions.ExcludedProcessIds[0] == 0);
+    CHECK(!FuriousWfpRemoveExcludedProcessId(&exclusions, 3456));
+    CHECK(!FuriousWfpRemoveExcludedProcessId(&exclusions, 0));
+    CHECK(!FuriousWfpRemoveExcludedProcessId(nullptr, 3456));
+    exclusions = endpoint;
+    exclusions.ExcludedProcessCount = FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS + 1;
+    CHECK(!FuriousWfpRemoveExcludedProcessId(&exclusions, 2345));
+
+    auto invalidEndpoint = endpoint;
+    invalidEndpoint.ProxyProcessId = 0;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.TcpPortV4 = 0;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessIds[1] = invalidEndpoint.ExcludedProcessIds[0];
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessIds[0] = invalidEndpoint.ProxyProcessId;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessCount = FURIOUS_WFP_MAX_EXCLUDED_PROCESS_IDS + 1;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.ExcludedProcessIds[2] = 4567;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+    invalidEndpoint = endpoint;
+    invalidEndpoint.Flags |= 0x80000000u;
+    CHECK(!IsValidEndpointConfig(invalidEndpoint));
+
+    FURIOUS_WFP_REDIRECT_CONTEXT redirectContext = {};
+    redirectContext.Magic = FURIOUS_WFP_REDIRECT_CONTEXT_MAGIC;
+    redirectContext.Size = sizeof(redirectContext);
+    redirectContext.AbiVersion = FURIOUS_WFP_REDIRECT_ABI_VERSION;
+    redirectContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V4;
+    redirectContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_TCP;
+    redirectContext.OriginalPortNetworkOrder = 0x5000;
+    redirectContext.OriginalAddress[0] = 192;
+    redirectContext.OriginalAddress[1] = 0;
+    redirectContext.OriginalAddress[2] = 2;
+    redirectContext.OriginalAddress[3] = 1;
+    redirectContext.OriginalProcessId = 4321;
+    redirectContext.RulePriority = 10;
+    redirectContext.PolicyGeneration = 7;
+    CHECK(IsValidRedirectContext(redirectContext));
+    auto udpRedirectContext = redirectContext;
+    udpRedirectContext.Protocol = FURIOUS_WFP_REDIRECT_PROTOCOL_UDP;
+    CHECK(IsValidRedirectContext(udpRedirectContext));
+    auto invalidTransportContext = redirectContext;
+    invalidTransportContext.Protocol = 1;
+    CHECK(!IsValidRedirectContext(invalidTransportContext));
+    auto invalidContext = redirectContext;
+    invalidContext.AddressFamily = 5;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.Reserved[2] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.OriginalAddress[0] = 224;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    invalidContext.OriginalAddress[0] = 0x20;
+    invalidContext.OriginalAddress[1] = 0x01;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(IsValidRedirectContext(invalidContext));
+    invalidContext.OriginalAddress[0] = 0xFE;
+    invalidContext.OriginalAddress[1] = 0x80;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+    invalidContext = redirectContext;
+    invalidContext.AddressFamily = FURIOUS_WFP_REDIRECT_FAMILY_V6;
+    invalidContext.OriginalAddress[0] = 0xFF;
+    invalidContext.OriginalAddress[1] = 0x02;
+    invalidContext.OriginalAddress[15] = 1;
+    CHECK(!IsValidRedirectContext(invalidContext));
+
+    return 0;
+}

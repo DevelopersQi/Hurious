@@ -1,0 +1,63 @@
+name: Repair GitHub Release Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful six-platform build workflow run ID"
+        required: true
+        default: "41968804158"
+        type: string
+      tag_name:
+        description: "Existing Git tag / GitHub Release"
+        required: true
+        default: "v1.0.0"
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: repair-release-${{ inputs.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  upload-existing-artifacts:
+    name: Upload existing six-platform artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts from the original build run
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          pattern: binary-distributions-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Verify downloaded files
+        shell: bash
+        run: |
+          mapfile -t files < <(find dist -type f -not -name '.*' | sort)
+          printf 'Found %s files to upload:\n' "${#files[@]}"
+          printf '%s\n' "${files[@]}"
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No release artifacts were downloaded."
+            exit 1
+          fi
+
+      - name: Upload assets to the existing GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          gh release view "$TAG_NAME" --repo "$REPOSITORY" >/dev/null
+
+          mapfile -t files < <(find dist -type f -not -name '.*' | sort)
+          gh release upload "$TAG_NAME" "${files[@]}" \
+            --repo "$REPOSITORY" \
+            --clobber

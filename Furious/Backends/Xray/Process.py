@@ -1,0 +1,158 @@
+# Copyright (C) 2024–present  Loren Eteval & contributors <loren.eteval@proton.me>
+#
+# This file is part of Furious.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Wrap the embedded Xray core process."""
+
+from __future__ import annotations
+
+from Furious.Frozenlib import *
+from Furious.Interface import *
+from Furious.Models import *
+from Furious.Core import *
+
+from enum import Enum
+from typing import Union
+
+import io
+import time
+import threading
+import functools
+import multiprocessing
+
+__all__ = ['XrayCore']
+
+
+def startXrayCore(jsonString: str, msgQueue: multiprocessing.Queue):
+    """Start Xray core."""
+    try:
+        import xray
+    except ImportError:
+        # Fake running process
+        while True:
+            time.sleep(3600)
+    else:
+        if versionToValue(xray.__version__) <= versionToValue('1.8.4'):
+            redirect = False
+        else:
+            # Can be redirected
+            redirect = True
+
+        if not SystemRuntime.isPythonw():
+            return ProcessOutputRedirector.launch(
+                msgQueue,
+                functools.partial(xray.startFromJSON, jsonString),
+                redirect,
+            )
+
+        if not redirect:
+            return xray.startFromJSON(jsonString)
+
+        try:
+            jsonObject = UJSONEncoder.decode(jsonString)
+        except Exception:
+            # Any non-exit exceptions
+
+            xray.startFromJSON(jsonString)
+        else:
+            loggingPath = list()
+            fileStreams = list()
+
+            for loggingAttr in ['access', 'error']:
+                try:
+                    path = jsonObject['log'][loggingAttr]
+                except Exception:
+                    # Any non-exit exceptions
+
+                    continue
+
+                if path not in loggingPath:
+                    loggingPath.append(path)
+
+                    try:
+                        stream = open(path, 'rb')
+                    except Exception:
+                        # Any non-exit exceptions
+
+                        pass
+                    else:
+                        stream.seek(0, io.SEEK_END)
+
+                        fileStreams.append(stream)
+
+            def produceMsg():
+                """Forward one process-output message to the shared queue."""
+                while True:
+                    for file in fileStreams:
+                        for line in iter(file.readline, b''):
+                            if line and not line.isspace():
+                                try:
+                                    msgQueue.putMessage(line.decode('utf-8', 'replace'))
+                                except (OSError, ValueError):
+                                    pass
+
+                    time.sleep(MsgQueue.MSG_PRODUCE_THRESHOLD / 1000)
+
+            try:
+                if fileStreams:
+                    msgThread = threading.Thread(target=produceMsg, daemon=True)
+                    msgThread.start()
+
+                xray.startFromJSON(jsonString)
+            finally:
+                for stream in fileStreams:
+                    stream.close()
+
+
+class XrayCore(MultiprocessingRuntime):
+    """Manage the embedded Xray core subprocess."""
+
+    class ExitCode(Enum):
+        """Enumerate process exit codes."""
+
+        ConfigurationError = 23
+        # Windows: 4294967295. Darwin, Linux: 255 (-1)
+        ServerStartFailure = 4294967295 if PLATFORM == 'Windows' else 255
+        # Windows shutting down
+        SystemShuttingDown = 0x40010004
+
+    def __init__(self, configuration: str, **kwargs):
+        """Initialize a fully prepared Xray execution runtime."""
+        super().__init__(
+            lambda output: ProcessLaunchSpec(
+                target=startXrayCore,
+                args=(configuration, output),
+                processOptions=kwargs.pop('processOptions', {}),
+            ),
+            **kwargs,
+        )
+
+    @staticmethod
+    def name() -> str:
+        """Return the process implementation name."""
+        return 'Xray-core'
+
+    @staticmethod
+    def version() -> str:
+        """Return the bundled core version."""
+        try:
+            import xray
+
+            return xray.__version__
+        except Exception:
+            # Any non-exit exceptions
+
+            return '0.0.0'
