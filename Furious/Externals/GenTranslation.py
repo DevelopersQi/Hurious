@@ -1,4 +1,15 @@
 TRANSLATION = {
+    "Xray's gateway is a virtual TUN address. The detected physical adapter is used for the outbound interface.": {
+        "source": ["Furious.Backends.Xray.TunSettingsDialog"],
+        "ZH": "Xray 的 Gateway 是虚拟 TUN 地址；检测到的物理网卡将用于出站接口。",
+        "isReviewed": "True"
+    },
+    "The physical adapter IPv4 and default gateway are automatically excluded from Hysteria 2 TUN routes.": {
+        "source": ["Furious.Backends.Hysteria2.TunSettingsDialog"],
+        "ZH": "物理网卡 IPv4 地址和默认网关会自动加入 Hysteria 2 TUN 排除路由。",
+        "isReviewed": "True"
+    },
+
     "Application Routing": {
         "source": ["Furious.Backends.Xray.RoutingWindow"],
         "ZH": "应用分流",

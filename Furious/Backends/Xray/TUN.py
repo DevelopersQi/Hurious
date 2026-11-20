@@ -26,6 +26,7 @@ import json
 
 __all__ = [
     'DEFAULT_XRAY_TUN_SETTINGS',
+    'applyXrayTUNAutoNetworkSettings',
     'buildXrayTUNInbound',
     'getXrayTUNSettings',
     'hasXrayTUNInbound',
@@ -102,6 +103,26 @@ def _normalizedXrayTUNSettings(settings) -> dict:
         and userLevel >= 0
     ):
         result['userLevel'] = userLevel
+
+    return result
+
+
+def applyXrayTUNAutoNetworkSettings(settings, networkInfo) -> dict:
+    """Apply the detected host interface without replacing explicit choices.
+
+    Xray's gateway is the virtual TUN address, not the host default gateway.
+    The physical adapter is therefore applied only to autoOutboundsInterface.
+    """
+    result = _normalizedXrayTUNSettings(settings)
+    networkInfo = networkInfo if isinstance(networkInfo, dict) else {}
+    interface = networkInfo.get('name', '')
+
+    if (
+        isinstance(interface, str)
+        and interface.strip()
+        and result['autoOutboundsInterface'].casefold() in ('', 'auto')
+    ):
+        result['autoOutboundsInterface'] = interface.strip()
 
     return result
 

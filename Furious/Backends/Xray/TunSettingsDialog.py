@@ -299,6 +299,7 @@ class XrayTunSettingsDialog(GuiEditorWidgetQDialog):
         self.setFixedSize(int(650 * GOLDEN_RATIO), 770)
 
         self._settings = getXrayTUNSettings()
+        self._originalSettings = copy.deepcopy(self._settings)
 
         self.networkInfoWidget = SystemNetworkInfoWidget(self)
         self.layout().insertRow(0, self.networkInfoWidget)
@@ -310,6 +311,10 @@ class XrayTunSettingsDialog(GuiEditorWidgetQDialog):
         networkNote.setWordWrap(True)
         self.layout().insertRow(1, networkNote)
 
+        self._settings = applyXrayTUNAutoNetworkSettings(
+            self._settings,
+            self.networkInfoWidget.info(),
+        )
         self.factoryToInput(self._settings)
 
         connectWeakly(self.accepted, self, 'handleAccepted')
@@ -325,11 +330,9 @@ class XrayTunSettingsDialog(GuiEditorWidgetQDialog):
 
     def handleAccepted(self):
         """Persist changed settings and offer to reconnect when connected."""
-        oldSettings = copy.deepcopy(self._settings)
-
         self.inputToFactory(self._settings)
 
-        if self._settings == oldSettings:
+        if self._settings == self._originalSettings:
             return
 
         saveXrayTUNSettings(self._settings)

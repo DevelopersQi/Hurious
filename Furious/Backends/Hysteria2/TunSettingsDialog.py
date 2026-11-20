@@ -313,6 +313,7 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
         self.setFixedSize(int(650 * GOLDEN_RATIO), 770)
 
         self._settings = getHysteria2TUNSettings()
+        self._originalSettings = copy.deepcopy(self._settings)
 
         self.networkInfoWidget = SystemNetworkInfoWidget(self)
         self.layout().insertRow(0, self.networkInfoWidget)
@@ -324,6 +325,10 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
         networkNote.setWordWrap(True)
         self.layout().insertRow(1, networkNote)
 
+        self._settings = applyHysteria2TUNAutoNetworkSettings(
+            self._settings,
+            self.networkInfoWidget.info(),
+        )
         self.factoryToInput(self._settings)
 
         connectWeakly(self.accepted, self, 'handleAccepted')
@@ -339,11 +344,9 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
 
     def handleAccepted(self):
         """Persist changed settings and offer to reconnect when connected."""
-        oldSettings = copy.deepcopy(self._settings)
-
         self.inputToFactory(self._settings)
 
-        if self._settings == oldSettings:
+        if self._settings == self._originalSettings:
             return
 
         saveHysteria2TUNSettings(self._settings)

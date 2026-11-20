@@ -29,6 +29,7 @@ import ipaddress
 
 __all__ = [
     'DEFAULT_HYSTERIA2_TUN_SETTINGS',
+    'applyHysteria2TUNAutoNetworkSettings',
     'buildHysteria2TUNConfig',
     'getHysteria2TUNSettings',
     'hasHysteria2TUNConfig',
@@ -132,6 +133,37 @@ def _normalizedHysteria2TUNSettings(settings) -> dict:
 
             if isinstance(value, (list, tuple)):
                 result['route'][key] = _normalizedStringList(value)
+
+    return result
+
+
+def applyHysteria2TUNAutoNetworkSettings(settings, networkInfo) -> dict:
+    """Exclude host IPv4 address and gateway without reusing them as TUN IPs.
+
+    Hysteria 2 address fields belong to its virtual interface. Physical host
+    routes are instead added as /32 exclusions; server exclusions are added
+    separately by the runtime configuration builder.
+    """
+    result = _normalizedHysteria2TUNSettings(settings)
+    networkInfo = networkInfo if isinstance(networkInfo, dict) else {}
+    excluded = result['route']['ipv4Exclude']
+
+    for key in ('ip', 'gateway'):
+        value = networkInfo.get(key, '')
+        if not isinstance(value, str) or not value.strip():
+            continue
+        try:
+            address = ipaddress.ip_address(value.strip())
+        except ValueError:
+            continue
+        if address.version != 4 or any((
+            address.is_unspecified, address.is_loopback,
+            address.is_link_local, address.is_multicast,
+        )):
+            continue
+        route = f'{address}/32'
+        if route not in excluded:
+            excluded.append(route)
 
     return result
 
