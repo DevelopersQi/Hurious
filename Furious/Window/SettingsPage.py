@@ -637,6 +637,7 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, Mixins.ThemeAware, QFrame):
         self.statusLabel.setWordWrap(True)
         self._connectionController = AppConnectionController()
         self._connectionController.stateChanged.connect(self.syncRuntimeStatus)
+        self._connectionController.errorOccurred.connect(self.syncRuntimeStatus)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(8)
@@ -749,7 +750,13 @@ class _TUNBackendSettingsCard(Mixins.QTranslatable, Mixins.ThemeAware, QFrame):
         if controller.isConnecting():
             message = _('Actual TUN backend: connecting…')
         elif not controller.isConnected():
-            message = _('Actual TUN backend: not connected')
+            error = controller.lastError
+            if error is not None and error.message:
+                message = _('TUN backend error: {error}').format(
+                    error=error.message
+                )
+            else:
+                message = _('Actual TUN backend: not connected')
         else:
             backend = controller.activeTUNBackend
             labels = {

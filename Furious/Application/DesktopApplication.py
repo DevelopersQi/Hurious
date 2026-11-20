@@ -47,6 +47,7 @@ from Furious.Frozenlib import (
     callRateLimited,
 )
 from Furious.Interface import ApplicationRunner
+from Furious.Frozenlib.SystemNetwork import getPrimaryAdapterInfo
 from Furious.Core import Tun2socks
 from Furious.Backends import OFFICIAL_PLUGIN_TYPES
 from Furious.Controllers import (
@@ -641,6 +642,36 @@ class DesktopApplication(ApplicationRunner, SingletonApplication):
         self._userServers = Storage.UserServers()
         self._userSubs = Storage.UserSubs()
         self._userTUNSettings = Storage.UserTUNSettings()
+
+        # Keep the Tun2socks fallback ready before the first connection. Refresh
+        # host adapter values only while automatic detection is enabled; explicit
+        # user overrides remain untouched.
+        tunSettings = self._userTUNSettings
+        modified = False
+        defaults = {
+            'tunAdapterInterfaceDNS': '1.1.1.1,8.8.8.8',
+            'tcpAutoTuning': 'True',
+            'tcpReceiveBufferSize': 1,
+        }
+        for key, value in defaults.items():
+            if key not in tunSettings or tunSettings.get(key) in ('', None):
+                tunSettings[key] = value
+                modified = True
+
+        if tunSettings.get('autoDetectPrimaryAdapter', 'True') == 'True':
+            detected = getPrimaryAdapterInfo()
+            for key, field in (
+                ('primaryAdapterInterfaceName', 'name'),
+                ('primaryAdapterInterfaceIP', 'ip'),
+                ('defaultPrimaryGatewayIP', 'gateway'),
+            ):
+                value = detected.get(field, '')
+                if value and tunSettings.get(key) != value:
+                    tunSettings[key] = value
+                    modified = True
+
+        if modified:
+            Storage.persistUserTUNSettings()
 
     def _initializeControllers(self):
         """Create the process-lifetime application state authorities."""

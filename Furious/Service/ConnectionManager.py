@@ -1767,6 +1767,12 @@ class ConnectionManager(Mixins.CleanupOnExit):
 
         useAppTun2socks = registry.usesApplicationTun2socks(config)
 
+        if not useAppTun2socks and tunBackend == 'auto':
+            raise TUNPreparationError(
+                'No compatible TUN backend is available for the selected core. '
+                'Native TUN and application Tun2socks are both unavailable.'
+            )
+
         if useAppTun2socks:
             self._activeTUNBackend = 'tun2socks'
             logger.info(

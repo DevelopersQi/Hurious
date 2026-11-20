@@ -149,6 +149,11 @@ class Storage:
         return Storage._UserTUNSettingsStorage().data()
 
     @staticmethod
+    def persistUserTUNSettings():
+        """Persist the shared TUN settings collection through its repository."""
+        Storage._UserTUNSettingsStorage().sync()
+
+    @staticmethod
     def UserRoutings() -> dict[str, dict]:
         """Return the user routings value."""
         return Storage._UserRoutingsStorage().data()

@@ -175,14 +175,30 @@ class SystemRoutingTable:
                 )
             else:
                 assert address is not None
+                addresses = [
+                    item.strip()
+                    for item in str(address).replace(';', ',').split(',')
+                    if item.strip()
+                ]
+                if not addresses:
+                    raise ValueError('at least one DNS server is required')
 
                 result = runExternalCommand(
-                    f'netsh interface ip set dns name=\"{name}\" static {address}',
+                    f'netsh interface ip set dns name=\"{name}\" static {addresses[0]}',
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     shell=True,
                     check=True,
                 )
+                for index, dnsAddress in enumerate(addresses[1:], start=2):
+                    result = runExternalCommand(
+                        f'netsh interface ip add dnsservers name=\"{name}\" '
+                        f'address={dnsAddress} index={index} validate=no',
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        shell=True,
+                        check=True,
+                    )
         except subprocess.CalledProcessError as err:
             logger.error(
                 f'set interface \'{name}\' DNS failed. '

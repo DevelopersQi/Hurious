@@ -63,6 +63,8 @@ _TRANSLATABLE_TUN_BACKEND_ERRORS = (
 )
 
 _TUN_BACKEND_ERROR_ZH = {
+    'No compatible TUN backend is available for the selected core. Native TUN and application Tun2socks are both unavailable.':
+        '当前核心既无法使用原生 TUN，也无法使用 Tun2socks。请检查 TUN 后端配置及虚拟网卡组件。',
     'Hysteria 2 Native TUN is not supported by the selected Xray-core configuration. Open Settings > TUN Backend and select Auto or Xray-core Native TUN.':
         '当前服务器使用 Xray-core，不能选择 Hysteria 2 原生 TUN。请前往“设置 → TUN 后端”，选择“自动”或“Xray-core 原生 TUN”。',
     'Xray-core Native TUN is not supported by the selected Hysteria 2 configuration. Open Settings > TUN Backend and select Auto or Hysteria 2 Native TUN.':
