@@ -332,6 +332,16 @@ class XrayTunSettingsDialog(GuiEditorWidgetQDialog):
         """Persist changed settings and offer to reconnect when connected."""
         self.inputToFactory(self._settings)
 
+        # Keep an automatically detected interface as the "auto" preference.
+        # The current adapter is shown in the editor, but is resolved again
+        # when the next connection starts.
+        detectedInterface = self.networkInfoWidget.info().get('name', '')
+        if (
+            detectedInterface
+            and self._settings.get('autoOutboundsInterface') == detectedInterface
+        ):
+            self._settings['autoOutboundsInterface'] = 'auto'
+
         if self._settings == self._originalSettings:
             return
 
