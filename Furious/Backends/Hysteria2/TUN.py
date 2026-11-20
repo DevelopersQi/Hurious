@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from Furious.Frozenlib import *
+from Furious.Frozenlib.SystemNetwork import getPrimaryAdapterInfo
 
 import json
 import copy
@@ -188,7 +189,7 @@ def applyHysteria2TUNAutoNetworkSettings(settings, networkInfo) -> dict:
 
 
 def getHysteria2TUNSettings() -> dict:
-    """Return a validated copy of the persisted Hysteria 2 TUN settings."""
+    """Return user settings, excluding previously generated host-network routes."""
     try:
         settings = json.loads(AppSettings.get('Hysteria2TUNSettings'))
     except Exception:
@@ -196,14 +197,28 @@ def getHysteria2TUNSettings() -> dict:
 
         settings = None
 
-    return _normalizedHysteria2TUNSettings(settings)
+    result = _normalizedHysteria2TUNSettings(settings)
+    # Older releases persisted automatically detected host routes. Remove only
+    # entries explicitly tracked as generated; never erase user exclusions.
+    for route in result.get('_autoDetectedIPv4Exclude', []):
+        if route in result['route']['ipv4Exclude']:
+            result['route']['ipv4Exclude'].remove(route)
+    result['_autoDetectedIPv4Exclude'] = []
+    return result
 
 
 def saveHysteria2TUNSettings(settings: dict):
-    """Validate and persist Hysteria 2 TUN settings."""
+    """Persist user-authored settings, never automatic network detection."""
+    result = _normalizedHysteria2TUNSettings(settings)
+    # The dialog/runtime may contain a temporary projection of the current
+    # adapter. Strip only those generated entries before writing preferences.
+    for route in result.get('_autoDetectedIPv4Exclude', []):
+        if route in result['route']['ipv4Exclude']:
+            result['route']['ipv4Exclude'].remove(route)
+    result['_autoDetectedIPv4Exclude'] = []
     AppSettings.set(
         'Hysteria2TUNSettings',
-        json.dumps(_normalizedHysteria2TUNSettings(settings), ensure_ascii=False),
+        json.dumps(result, ensure_ascii=False),
     )
 
 
@@ -296,6 +311,12 @@ def buildHysteria2TUNConfig(settings=None, serverAddresses=()) -> dict:
     """Build a native TUN config and merge server route-loop exclusions."""
     settings = _normalizedHysteria2TUNSettings(
         getHysteria2TUNSettings() if settings is None else settings
+    )
+    # Automatic host-network exclusions are runtime data. Resolve them for
+    # every config build so Wi-Fi/Ethernet/DHCP changes take effect immediately.
+    settings = applyHysteria2TUNAutoNetworkSettings(
+        settings,
+        getPrimaryAdapterInfo(),
     )
 
     for address in serverAddresses:
