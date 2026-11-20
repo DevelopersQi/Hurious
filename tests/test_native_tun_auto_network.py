@@ -22,7 +22,11 @@ from __future__ import annotations
 import copy
 import unittest
 
-from Furious.Backends.Xray.TUN import DEFAULT_XRAY_TUN_SETTINGS, applyXrayTUNAutoNetworkSettings
+from Furious.Backends.Xray.TUN import (
+    DEFAULT_XRAY_TUN_SETTINGS,
+    applyXrayTUNAutoNetworkSettings,
+    buildXrayTUNInbound,
+)
 from Furious.Backends.Hysteria2.TUN import DEFAULT_HYSTERIA2_TUN_SETTINGS, applyHysteria2TUNAutoNetworkSettings
 
 
@@ -47,6 +51,28 @@ class XrayTUNAutoNetworkSettingsTest(unittest.TestCase):
     def testMissingDetectedAdapterLeavesAutomaticModeUnchanged(self):
         result = applyXrayTUNAutoNetworkSettings(DEFAULT_XRAY_TUN_SETTINGS, {'name': ''})
         self.assertEqual(result['autoOutboundsInterface'], 'auto')
+
+    def testInboundResolvesAutomaticInterfaceFromCurrentNetwork(self):
+        from unittest import mock
+
+        with mock.patch(
+            'Furious.Backends.Xray.TUN.getPrimaryAdapterInfo',
+            return_value={'name': 'Wi-Fi', 'ip': '192.168.1.20', 'gateway': '192.168.1.1'},
+        ):
+            inbound = buildXrayTUNInbound({'autoOutboundsInterface': 'auto'})
+
+        self.assertEqual(inbound['settings']['autoOutboundsInterface'], 'Wi-Fi')
+
+    def testInboundPreservesExplicitOutboundInterface(self):
+        from unittest import mock
+
+        with mock.patch(
+            'Furious.Backends.Xray.TUN.getPrimaryAdapterInfo',
+            return_value={'name': 'Wi-Fi'},
+        ):
+            inbound = buildXrayTUNInbound({'autoOutboundsInterface': 'Ethernet 2'})
+
+        self.assertEqual(inbound['settings']['autoOutboundsInterface'], 'Ethernet 2')
 
 
 class Hysteria2TUNAutoNetworkSettingsTest(unittest.TestCase):
