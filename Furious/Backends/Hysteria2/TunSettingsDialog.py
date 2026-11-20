@@ -313,7 +313,6 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
         self.setFixedSize(int(650 * GOLDEN_RATIO), 770)
 
         self._settings = getHysteria2TUNSettings()
-        self._originalSettings = copy.deepcopy(self._settings)
 
         self.networkInfoWidget = SystemNetworkInfoWidget(self)
         self.layout().insertRow(0, self.networkInfoWidget)
@@ -329,6 +328,9 @@ class Hysteria2TunSettingsDialog(GuiEditorWidgetQDialog):
             self._settings,
             self.networkInfoWidget.info(),
         )
+        # Compare against the same live projection shown in the editor. This
+        # avoids treating automatic network refresh as a user modification.
+        self._originalSettings = copy.deepcopy(self._settings)
         self.factoryToInput(self._settings)
 
         connectWeakly(self.accepted, self, 'handleAccepted')
